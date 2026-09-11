@@ -2,6 +2,8 @@
  import {sceneWalls,wallKey,wallCells,hasTile} from '../../../packages/world/src/walls';
  import {walkable} from '../../../packages/world/src/navigation';
  import type {Wall,MapBrush,WallMaterial} from '@isometrico/world';
+ import {loadAdventureLibrary,storeAdventure,selectAdventure} from '$lib/demo/adventure-library';
+ let availableAdventures=$state<Adventure[]>([]);
  import { draggablePanel } from '$lib/actions/draggable-panel';
  const panelPositions = new Map();
  import MapDissolve from '$lib/components/MapDissolve.svelte';
@@ -11,13 +13,12 @@
  import { graphics } from '$lib/demo/pixelart';
  import { untrack, onMount } from 'svelte';
  import { goto } from '$app/navigation';
- import {loadPlayableAdventure} from '$lib/demo/playable-adventure';
  import { World, parseScene, visualCatalog, type WorldScene, type WorldEntity, type WorldAdapter, type WorldEditor, type WorldController, type Facing, type TileKind, type Cell } from '@isometrico/world';
  import { insertEntity, moveEntity, flipEntity, paintTiles } from '$lib/demo/editor';
  import { office, outdoors } from '$lib/demo/scenes';
  import { ArrowLeft, Download, Upload, Plus, Trash2, Undo2, Play, Check, Minus, Scan, Hand, MousePointer2, Layers, Paintbrush, Link, List, MoreHorizontal, X, Search, ChevronUp, ChevronDown } from 'lucide-svelte';
- import {createAdventure,parseAdventure,saveAdventure,connectMaps,travel,type Adventure,type MapExit} from '$lib/demo/adventure';
- type ToolPanel='maps'|'objects'|'catalog'|'paint'|'connect';
+ import {createAdventure,parseAdventure,connectMaps,travel,type Adventure,type MapExit} from '$lib/demo/adventure';
+ type ToolPanel='adventures'|'maps'|'objects'|'catalog'|'paint'|'connect';
  let toolPanel=$state<ToolPanel|null>(null),mapProperties=$state(false),fileMenu=$state(false);
  let toolCollapsed=$state(false),inspectorCollapsed=$state(false);
  const objectCategories=[{id:'office',label:'Oficina'},{id:'nature',label:'Naturaleza'},{id:'urban',label:'Urbano'},{id:'people',label:'Personajes'}] as const;
@@ -64,12 +65,23 @@
  function fitMap(){if(!cameraReady)return;controller?.recenter();zoomLevel=1;}
  const editing=$derived<WorldEditor|undefined>(testing?undefined:{selectedId:selected??'',onpick:pickingExitId?pickArrival:pendingAsset||pendingExit?placeAt:undefined,wallTool:wallTool??undefined,onwall:editWall,wallOpacity,brush:selected===null?brush??undefined:undefined,onpaint:paint,onselect:selectObject,onmove:move});
  onMount(()=>{
-  try{const saved=loadPlayableAdventure(localStorage),query=new URLSearchParams(location.search);
+  try{const library=loadAdventureLibrary(localStorage),query=new URLSearchParams(location.search);availableAdventures=library.adventures;const saved=library.adventures.find(a=>a.id===(query.get('adventure')??library.activeId))??library.adventures.find(a=>a.id===library.activeId)!;
    adopt(saved,query.get('map')??query.get('world')??saved.startMap);
   }catch(e){error=`No se pudo cargar la aventura: ${(e as Error).message}`;}
  });
- function persist(){try{adventure=saveAdventure(localStorage,bundle());error='';notice='Aventura guardada en este navegador.';return true;}catch(e){error=(e as Error).message;return false;}}
- async function playSaved(){if(persist())await goto('/');}
+ function syncUrl(){const url=new URL(location.href);url.search='';url.searchParams.set('adventure',adventure.id);url.searchParams.set('map',draft.id);window.history.replaceState(null,'',url);}
+ function persist(){try{const library=storeAdventure(localStorage,bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en este navegador.';return true;}catch(e){error=(e as Error).message;return false;}}
+ async function playSaved(){if(persist())await goto(`/?adventure=${encodeURIComponent(adventure.id)}`);}
+ function switchAdventure(id:string){
+  if(id===adventure.id||!persist())return;
+  try{const next=selectAdventure(localStorage,id);adopt(next,next.startMap);syncUrl();history=[];toolPanel='adventures';notice='Aventura seleccionada.';}catch(e){error=(e as Error).message;}
+ }
+ function newAdventure(){
+  if(!persist())return;
+  const map:WorldScene={schemaVersion:1,id:crypto.randomUUID(),name:'Mapa inicial',theme:'outdoors',width:12,height:12,spawn:{x:1,y:1},entities:[]};
+  const next={...createAdventure([map]),id:crypto.randomUUID(),name:`Aventura ${availableAdventures.length+1}`};
+  try{const library=storeAdventure(localStorage,next);availableAdventures=library.adventures;adopt(next,map.id);syncUrl();history=[];toolPanel='adventures';}catch(e){error=(e as Error).message;}
+ }
  function chooseWallMaterial(material:WallMaterial){
   wallMaterial=material;
   if(selectedWall?.kind!=='wall')return;
@@ -162,7 +174,7 @@
  function returnExit(){if(!selectedExit)return;try{const a=connectMaps(bundle(),selectedExit.toMap,draft.id,crypto.randomUUID());snapshot();adventure=a;notice='Conexión de vuelta creada. Selecciona el mapa destino para colocarla.';error='';}catch(e){error=(e as Error).message;}}
  function download(){try{const valid=parseAdventure(bundle());const blob=new Blob([JSON.stringify(valid,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${valid.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);error='';notice='Aventura completa exportada.';}catch(e){error=(e as Error).message;}}
  async function upload(event:Event){const input=event.currentTarget as HTMLInputElement;const file=input.files?.[0];if(!file)return;try{if(file.size>10_000_000)throw new Error('El archivo no puede superar 10 MB.');const data=JSON.parse(await file.text());let a:Adventure;let mapId:string;
-  if(data.kind==='isometric-adventure'){a=parseAdventure(data);mapId=a.startMap;}
+  if(data.kind==='isometric-adventure'){a=parseAdventure(data);if(!persist())return;if(availableAdventures.some(item=>item.id===a.id))a={...a,id:crypto.randomUUID(),name:`${a.name} (importada)`};mapId=a.startMap;}
   else{const scene=parseScene(data);const current=parseAdventure(bundle());if(current.maps.some(m=>m.id===scene.id))scene.id=crypto.randomUUID();a=parseAdventure({...current,maps:[...current.maps,scene]});mapId=scene.id;}
   snapshot();adopt(a,mapId);testing=false;error='';notice='Importación validada. Guarda para conservarla.';
  }catch(e){error=(e as Error).message;}finally{input.value='';}}
@@ -181,12 +193,13 @@
   <button aria-pressed={toolPanel==='catalog'||!!pendingAsset} onclick={()=>showTool('catalog')}><Plus size={18}/>Añadir</button>
   <button aria-pressed={toolPanel==='connect'||pendingExit} onclick={()=>showTool('connect')}><Link size={18}/>Conectar</button>
   <span class="tool-divider"></span>
-  <button aria-pressed={toolPanel==='maps'} onclick={()=>showTool('maps')}><Layers size={18}/>Mapas</button>
+  <button aria-pressed={toolPanel==='adventures'} onclick={()=>showTool('adventures')}><Layers size={18}/>Aventuras</button><button aria-pressed={toolPanel==='maps'} onclick={()=>showTool('maps')}><Layers size={18}/>Mapas</button>
   <button aria-pressed={toolPanel==='objects'} onclick={()=>showTool('objects')}><List size={18}/>Objetos</button>
  </nav>
  <div class="editor-body">
-  {#if toolPanel}<aside use:draggablePanel={{key:"tools",positions:panelPositions}} class="editor-objects" class:collapsed={toolCollapsed} aria-label="Herramienta activa"><div class="panel-heading"><h2>{toolPanel==='maps'?'Mapas de la aventura':toolPanel==='objects'?'Objetos del mapa':toolPanel==='catalog'?'Añadir objeto':toolPanel==='paint'?'Editar mapa':'Conectar mapas'}</h2><div class="panel-actions"><button aria-label={toolCollapsed?"Expandir herramienta":"Minimizar herramienta"} aria-expanded={!toolCollapsed} onclick={()=>toolCollapsed=!toolCollapsed}>{#if toolCollapsed}<ChevronDown size={18}/>{:else}<ChevronUp size={18}/>{/if}</button><button aria-label="Cerrar herramienta" onclick={()=>showTool(null)}><X size={18}/></button></div></div><div hidden={toolCollapsed}>
-   {#if toolPanel==='maps'}<label>Nombre de la aventura<input value={adventure.name} onchange={e=>{snapshot();adventure={...adventure,name:e.currentTarget.value};}}/></label><label for="template">Mapas · {adventure.maps.length}</label><select id="template" value={draft.id} onchange={e=>changeWorld(e.currentTarget.value)}>{#each adventure.maps as map}<option value={map.id}>{map.id===draft.id?draft.name:map.name}{map.id===adventure.startMap?' · Inicio':''}</option>{/each}</select><div class="paint-actions"><button onclick={()=>newMap()}>+ Nuevo mapa</button><button onclick={()=>newMap(true)}>Duplicar</button><button disabled={adventure.startMap===draft.id} onclick={()=>{snapshot();adventure={...adventure,startMap:draft.id};}}>Empezar aquí</button></div><button class="panel-primary" onclick={()=>{selectObject('');}}>Propiedades del mapa actual</button>
+  {#if toolPanel}<aside use:draggablePanel={{key:"tools",positions:panelPositions}} class="editor-objects" class:collapsed={toolCollapsed} aria-label="Herramienta activa"><div class="panel-heading"><h2>{toolPanel==='adventures'?'Aventuras':toolPanel==='maps'?'Mapas de la aventura':toolPanel==='objects'?'Objetos del mapa':toolPanel==='catalog'?'Añadir objeto':toolPanel==='paint'?'Editar mapa':'Conectar mapas'}</h2><div class="panel-actions"><button aria-label={toolCollapsed?"Expandir herramienta":"Minimizar herramienta"} aria-expanded={!toolCollapsed} onclick={()=>toolCollapsed=!toolCollapsed}>{#if toolCollapsed}<ChevronDown size={18}/>{:else}<ChevronUp size={18}/>{/if}</button><button aria-label="Cerrar herramienta" onclick={()=>showTool(null)}><X size={18}/></button></div></div><div hidden={toolCollapsed}>
+   {#if toolPanel==='adventures'}<label>Aventura<select value={adventure.id} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each availableAdventures as item}<option value={item.id}>{item.id===adventure.id?adventure.name:item.name}</option>{/each}</select></label><label>Nombre de la aventura<input value={adventure.name} onchange={e=>{snapshot();adventure={...adventure,name:e.currentTarget.value};}}/></label><p class="environment-note">{adventure.maps.length} mapas en esta aventura. Al cambiar de aventura se guardan tus cambios.</p><button class="panel-primary" onclick={newAdventure}>Nueva aventura</button><button class="panel-primary" onclick={()=>showTool('maps')}>Gestionar mapas de esta aventura</button>
+   {:else if toolPanel==='maps'}<label for="template">Mapas · {adventure.maps.length}</label><select id="template" value={draft.id} onchange={e=>changeWorld(e.currentTarget.value)}>{#each adventure.maps as map}<option value={map.id}>{map.id===draft.id?draft.name:map.name}{map.id===adventure.startMap?' · Inicio':''}</option>{/each}</select><div class="paint-actions"><button onclick={()=>newMap()}>+ Nuevo mapa</button><button onclick={()=>newMap(true)}>Duplicar</button><button disabled={adventure.startMap===draft.id} onclick={()=>{snapshot();adventure={...adventure,startMap:draft.id};}}>Empezar aquí</button></div><button class="panel-primary" onclick={()=>{selectObject('');}}>Propiedades del mapa actual</button>
    {:else if toolPanel==='connect'}<p class="environment-note">Elige el destino y después pulsa una casilla del mapa para colocar la salida.</p><label>Conectar con<select bind:value={destination}><option value="">Elegir destino…</option>{#each adventure.maps.filter(m=>m.id!==draft.id) as map}<option value={map.id}>{map.name}</option>{/each}</select></label><div class="paint-actions"><button disabled={!destination||destination===draft.id} onclick={()=>{pendingExit=true;pendingAsset=null;toolPanel=null;notice='Pulsa una casilla para colocar la salida. Escape cancela.';}}>+ Añadir salida</button></div>
    {:else if toolPanel==='objects'}<label class="search-label"><Search size={16}/><input aria-label="Buscar objetos" placeholder="Buscar objeto…" bind:value={search}/></label><div class="object-list">{#each draft.entities.filter(e=>e.label.toLocaleLowerCase().includes(search.toLocaleLowerCase())) as e}<button onclick={()=>selectObject(e.id)}><span>{e.label}</span><small>{e.position.x}, {e.position.y}</small></button>{:else}<p class="environment-note">No hay objetos que coincidan.</p>{/each}</div>
    {:else if toolPanel==='catalog'}<div class="catalog-categories" role="group" aria-label="Categorías de objetos">{#each objectCategories as category}<button aria-pressed={objectCategory===category.id} onclick={()=>objectCategory=category.id}>{category.label}</button>{/each}</div><label class="search-label"><Search size={16}/><input aria-label="Buscar en la categoría" placeholder="Buscar…" bind:value={catalogSearch}/></label><p class="environment-note">Elige un objeto y pulsa sobre el mapa para colocarlo.</p><div class="asset-grid">{#each visualCatalog.filter(a=>a.category===objectCategory&&a.label.toLocaleLowerCase().includes(catalogSearch.toLocaleLowerCase())) as asset}<button onclick={()=>beginPlacement(asset.id)}>{#if graphics.objects[asset.id]}<img src={graphics.objects[asset.id].image} alt=""/>{:else}<span class="person-preview" style={`background-image:url(${asset.color===0xce936a?'/pixelart/characters/lucia/idle.png':asset.color===0x819582?'/pixelart/characters/marcos/idle.png':graphics.character.image})`}></span>{/if}<span>{asset.label.replace(' · Pixel','')}</span><small>{asset.size.x} × {asset.size.y}</small></button>{:else}<p class="environment-note">No hay elementos que coincidan.</p>{/each}</div>

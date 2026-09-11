@@ -3,7 +3,9 @@
  import { graphics } from '$lib/demo/pixelart';
  import { tick,onMount } from 'svelte';
  import MapDissolve from '$lib/components/MapDissolve.svelte';
- import {loadPlayableAdventure,objectiveKey} from '$lib/demo/playable-adventure';
+ import {objectiveKey} from '$lib/demo/playable-adventure';
+ import {loadAdventureLibrary,selectAdventure} from '$lib/demo/adventure-library';
+ let adventures=$state<Adventure[]>([]);
  import {travel,type Adventure} from '$lib/demo/adventure';
  import {parseScene,type WorldScene,type Facing} from '@isometrico/world';
  import { World, type WorldController, type WorldInteraction } from '@isometrico/world';
@@ -20,7 +22,9 @@
  let completed=$state<string[]>([]);
  let resourceEntityId=$state('');
  onMount(()=>{try{
-  adventure=loadPlayableAdventure(localStorage);
+  const library=loadAdventureLibrary(localStorage);adventures=library.adventures;
+  const requestedAdventure=new URLSearchParams(location.search).get('adventure');
+  adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
   const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
   const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
   currentScene=parseScene(initial);mode=currentScene.id;
@@ -71,7 +75,18 @@
 
  async function closePanel(){panel=null;controller?.setConversation(null);await tick();if(opener?.isConnected)opener.focus();else document.querySelector<HTMLElement>('[role=application]')?.focus();}
  function shortcut(entityId:string){const e=scene.entities.find(e=>e.id===entityId);if(e?.interaction)void adapter.interact({sceneId:scene.id,entityId:e.id,action:e.interaction.action,resourceId:e.interaction.resourceId});}
- function switchMode(value:string){if(!adventure||transitionImage||value===mode)return;const next=adventure.maps.find(m=>m.id===value);if(next)changeScene(parseScene(next),controller?.getFacing()??'se');}
+ const adventureProgress=new globalThis.Map<string,{tasks:Task[];completed:string[];messages:typeof messages}>();
+ function switchAdventure(value:string){
+  if(!adventure||transitionImage||value===adventure.id)return;
+  try{
+   const next=selectAdventure(localStorage,value);
+   adventureProgress.set(adventure.id,{tasks:structuredClone($state.snapshot(tasks)),completed:[...completed],messages:structuredClone($state.snapshot(messages))});
+   const progress=adventureProgress.get(value);tasks=progress?.tasks??structuredClone(initialTasks);completed=progress?.completed??[];messages=progress?.messages??{};
+   adventure=next;changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
+   const url=new URL(location.href);url.search='';url.searchParams.set('adventure',value);history.replaceState(null,'',url);
+  }catch(e){status=(e as Error).message;}
+ }
+
  function startTask(id:string){tasks=tasks.map(t=>({...t,status:t.id===id?'active':t.status==='active'?'todo':t.status}));status='En camino a tu puesto de trabajo.';void closePanel();}
  function finishTask(id:string){tasks=tasks.map(t=>t.id===id?{...t,status:'done'}:t);status='¡Un paso más! Tarea completada.';celebration++;void closePanel();}
  function pauseTask(){tasks=tasks.map(t=>t.status==='active'?{...t,status:'todo'}:t);status='Tarea en pausa.';void closePanel();}
@@ -85,8 +100,8 @@
  <header class="topbar">
   <a class="immersive-brand" href="/" aria-label="Isométrico, inicio"><span class="brand-mark"><Layers size={22}/></span><span class="wordmark">isométrico</span></a>
   <div class="header-divider"></div>
-  <div class="world-select"><label class="sr-only" for="world-select">Cambiar de mundo</label><div><Layers size={17}/><select id="world-select" value={mode} disabled={!!transitionImage} onchange={e=>switchMode(e.currentTarget.value as typeof mode)}>{#each adventure?.maps??[] as map}<option value={map.id}>{map.name}</option>{/each}</select><ChevronDown size={15}/></div></div>
-  <div class="topbar-right"><a class="editor-link" href="/sprites">Sprites</a><a class="editor-link" href={`/editor?map=${encodeURIComponent(mode)}`}>Editar mapa</a><span class="demo-badge">DEMO LOCAL</span><button class="header-action" onclick={()=>showPanel('space')} aria-label="Abrir lugares y progreso" title="Lugares y progreso"><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label="Ayuda" title="Ayuda"><CircleHelp size={19}/></button><span class="avatar-mini">E</span></div>
+  <div class="world-select"><label class="sr-only" for="world-select">Cambiar de aventura</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{item.name}</option>{/each}</select><ChevronDown size={15}/></div></div>
+  <div class="topbar-right"><a class="editor-link" href="/sprites">Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>Editar mapa</a><span class="demo-badge">DEMO LOCAL</span><button class="header-action" onclick={()=>showPanel('space')} aria-label="Abrir lugares y progreso" title="Lugares y progreso"><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label="Ayuda" title="Ayuda"><CircleHelp size={19}/></button><span class="avatar-mini">E</span></div>
  </header>
  <main class="immersive-world" aria-label="Espacio virtual">
   <div class:outdoors={scene.theme==='outdoors'} class="map-stage">
