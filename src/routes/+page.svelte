@@ -56,9 +56,9 @@
   <div class="topbar-right"><a class="editor-link" href="/sprites">Sprites</a><a class="editor-link" href={`/editor?world=${mode}`}>Editar mapa</a><span class="demo-badge">DEMO LOCAL</span><button class="header-action" onclick={()=>showPanel('space')} aria-label="Abrir lugares y progreso" title="Lugares y progreso"><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label="Ayuda" title="Ayuda"><CircleHelp size={19}/></button><span class="avatar-mini">E</span></div>
  </header>
  <main class="immersive-world" aria-label="Espacio virtual">
-  <div class:outdoors={mode==='routingtales'} class="map-stage">
+  <div class:outdoors={scene.theme==='outdoors'} class="map-stage">
    {#if mapsReady}{#key worldKey}<World {panMode} {graphics} {adapter} {celebration} working={mode==='checkpoint'&&!!active} onready={c=>controller=c} onstatus={s=>status=s}/>{/key}{/if}
-   <div class="scene-heading"><div class="eyebrow">{mode==='checkpoint'?'CHECKPOINT / EQUIPO ATLAS':'ROUTINGTALES / EXPLORACIÓN'}</div><h1>{scene.name}</h1><span>{mode==='checkpoint'?'Planta 01 · Tu oficina virtual':'Capítulo 01 · Explora a tu ritmo'}</span></div>
+   <div class="scene-heading"><div class="eyebrow">{mode==='checkpoint'?'CHECKPOINT / EQUIPO ATLAS':'ROUTINGTALES / EXPLORACIÓN'}</div><h1>{scene.name}</h1><span>{scene.theme==='office'?'Interior · Tu espacio virtual':'Exterior · Explora a tu ritmo'}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <div class="map-controls"><button aria-label="Mover vista" aria-pressed={panMode} title="Mover vista: arrastra con ratón o dedo" onclick={()=>panMode=!panMode}><Hand size={18}/></button><button onclick={()=>controller?.zoom(-.15)} aria-label="Alejar mapa" title="Alejar"><Minus size={17}/></button><button onclick={()=>controller?.recenter()} aria-label="Centrar mapa" title="Centrar"><Scan size={17}/></button><button onclick={()=>controller?.zoom(.15)} aria-label="Acercar mapa" title="Acercar"><Plus size={17}/></button></div>
    <div class="player-hud"><div class="my-avatar">E</div><div><strong>Explorador <span>Tú</span></strong><small>{mode==='checkpoint'&&active?'En foco · '+active.title:'Disponible para explorar'}</small></div></div>

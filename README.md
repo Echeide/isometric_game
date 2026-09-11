@@ -131,3 +131,5 @@ Este guardado es local al navegador y al origen (host/puerto); no sincroniza dis
 ## Desplazar la cámara
 
 En el mundo y en el editor, activa **Mover vista** (mano) y arrastra con ratón o dedo. También puedes mantener Espacio y arrastrar con el botón izquierdo, o usar el botón central. Enter conserva la interacción con objetos; Espacio se reserva ahora para la cámara. El modo mano tiene prioridad sobre pintar y mover objetos. Ajustar/Centrar restablece el desplazamiento y el zoom. En el editor el encuadre se conserva al modificar el mapa, pero no se guarda en el JSON.
+
+En **Mapa → Entorno**, elige Interior o Exterior. Cambia paredes, ventanas y el suelo predeterminado; conserva las baldosas pintadas y los objetos. El entorno es independiente del mundo anfitrión: una oficina Checkpoint puede ser exterior sin reemplazar el mapa de RoutingTales. Los JSON importados se aplican al mundo seleccionado en el editor.

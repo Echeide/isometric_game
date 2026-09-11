@@ -19,3 +19,12 @@ it('ignores corrupt saved maps and surfaces write failures',()=>{
  expect(readMaps(storage).maps.routingtales).toEqual(outdoors);expect(readMaps(storage).maps.checkpoint).toBeUndefined();
  expect(()=>saveMap({...storage,setItem:()=>{throw new Error('Storage full');}},office)).toThrow('Storage full');
 });
+it('keeps the host world when changing its indoor/outdoor environment',()=>{
+ const storage=memory();saveMap(storage,outdoors,'routingtales');
+ saveMap(storage,{...office,theme:'outdoors',tiles:{'3,5':'office'}},'checkpoint');
+ const saved=readMaps(storage);
+ expect(saved.active).toBe('checkpoint');expect(saved.maps.checkpoint?.theme).toBe('outdoors');
+ expect(saved.maps.checkpoint?.tiles).toEqual({'3,5':'office'});expect(saved.maps.routingtales).toEqual(outdoors);
+ saveMap(storage,{...outdoors,theme:'office'},'routingtales');
+ expect(readMaps(storage).maps.routingtales?.theme).toBe('office');
+});
