@@ -6,6 +6,7 @@ it('adds consecutive trees at distinct valid locations without changing the orig
  const original=parseScene(office);
  const first=insertEntity(original,'tree','added-1');
  const second=insertEntity(first,'tree','added-2');
+ expect(first.entities.at(-1)?.visualId).toBe('pixel.tree');
  expect(second.entities.length).toBe(original.entities.length+2);
  expect(second.entities.at(-1)?.position).not.toEqual(first.entities.at(-1)?.position);
  expect(()=>parseScene(second)).not.toThrow();
@@ -37,4 +38,13 @@ it('places the workstation on the keyboard side, facing the monitor',()=>{
  expect(desk.seat?.cell).toEqual({x:desk.position.x,y:desk.position.y+desk.size!.y});
  expect(desk.seat?.facing).toBe('ne');
  expect(desk.interactionPoints).toEqual([desk.seat!.cell]);
+});
+
+it('places a chosen sprite on the clicked tile and rejects occupied tiles without relocating it',()=>{
+ const original=parseScene(office);
+ const added=insertEntity(original,'tree','placed','pixel.tree',{x:1,y:9});
+ expect(added.entities.at(-1)?.position).toEqual({x:1,y:9});
+ expect(()=>insertEntity(original,'tree','invalid','pixel.tree',original.spawn)).toThrow('entrada');
+ expect(()=>insertEntity(original,'tree','invalid','pixel.tree',original.entities[0].position)).toThrow('solapa');
+ expect(original.entities.some(e=>e.id==='placed')).toBe(false);
 });

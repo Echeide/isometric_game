@@ -49,6 +49,11 @@ export interface WorldController {
   setPanMode: (enabled:boolean)=>void;
   panBy: (x:number,y:number)=>void;
   getPan: ()=>{x:number;y:number};
+  getFacing: () => Facing;
+  getCamera: () => { zoom: number; scale: number };
+  restoreCamera: (camera: { zoom: number; scale: number }) => void;
+  captureFrame: () => string;
+  setFacing: (facing: Facing) => void;
   celebrate: () => void;
   setConversation: (entityId: string | null) => void;
 }
@@ -56,6 +61,8 @@ export interface WorldController {
 /** Optional authoring hooks. Omit them for normal gameplay. */
 export interface WorldEditor {
   selectedId: string;
+  /** Optional tile picker used when choosing a destination in another map. */
+  onpick?: (cell: Cell) => void;
   brush?: TileKind | 'erase';
   onpaint?: (cells:Cell[],tile:TileKind | 'erase')=>void;
   onselect: (id: string) => void;

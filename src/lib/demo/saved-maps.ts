@@ -2,7 +2,7 @@ import {parseScene,type WorldScene} from '@isometrico/world';
 export type WorldSlot='checkpoint'|'routingtales';
 export const MAP_STORAGE_KEY='isometrico.maps.v1';
 type StorageAccess=Pick<Storage,'getItem'|'setItem'>;
-export function readMaps(storage:StorageAccess):{active:WorldSlot;maps:Partial<Record<WorldSlot,WorldScene>>}{
+export function readMaps(storage:Pick<Storage,'getItem'>):{active:WorldSlot;maps:Partial<Record<WorldSlot,WorldScene>>}{
  const result:{active:WorldSlot;maps:Partial<Record<WorldSlot,WorldScene>>}={active:'checkpoint',maps:{}};
  const raw=storage.getItem(MAP_STORAGE_KEY);if(!raw)return result;
  let data;try{data=JSON.parse(raw);}catch{return result;}

@@ -1,10 +1,13 @@
 import { parseScene, visualCatalog, type WorldEntity, type WorldScene } from '@isometrico/world';
 /** Find a valid free placement rather than stacking every new item at (1,1). */
-export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string): WorldScene {
+export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string, position?: {x:number;y:number}): WorldScene {
  const base=parseScene(draft);
  const asset=visualCatalog.find(a=>a.kind===kind&&(!visualId||a.id===visualId));
  if(!asset)throw new Error('Este objeto no está en el catálogo.');
  const size={x:kind==='desk'||kind==='table'?2:kind==='board'?3:1,y:kind==='sofa'?3:1};
+ if(position){
+  return parseScene({...base,entities:[...base.entities,{id,label:asset.label,kind,visualId:asset.id,position,size}]});
+ }
  // Prefer the front of the room so new objects are easy to see.
  for(let y=base.height-1;y>=0;y--)for(let x=0;x<=base.width-size.x;x++){
   const entity:WorldEntity={id,label:asset.label,kind,visualId:asset.id,position:{x,y},size};

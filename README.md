@@ -13,6 +13,28 @@ npm run dev
 
 Abre la URL que muestra Vite. `npm run check`, `npm test` y `npm run build` verifican tipos, rutas alrededor de obstáculos y compilación. `npm run package:world` genera la biblioteca instalable.
 
+## Controles de cámara
+
+- Pantalla táctil: desplaza con dos dedos y pellizca para acercar o alejar. Con la mano activada también puedes desplazar con un dedo.
+- Escritorio: rueda del ratón o pellizco del trackpad para zoom; Mayús + desplazamiento para pan. También puedes arrastrar con la mano activada, espacio + arrastre o el botón central.
+- El zoom mantiene fijo el punto bajo el cursor o el centro de los dedos. Los botones de zoom y centrar siguen disponibles.
+- Un dedo conserva las acciones de tocar, mover objetos y pintar. Al añadir el segundo dedo se cancela la edición en curso y se controla la cámara.
+
+## Aventuras con mapas conectados
+
+El editor `/editor` gestiona una aventura completa. Al abrirlo por primera vez incorpora los dos escenarios guardados de la demo; el guardado de aventuras usa una clave independiente y conserva esos mapas anteriores.
+
+1. En **Mapas**, selecciona, crea o duplica un escenario. Renómbralo en sus propiedades. Las copias no incluyen salidas para evitar enlaces involuntarios.
+2. Abre **Conectar**, selecciona el destino en **Conectar con**, pulsa **Añadir salida** y elige una casilla del mapa. Se coloca una loseta con una flecha discreta hacia el borde más cercano, que puedes mover como los demás objetos.
+3. En el inspector configura el destino y la llegada por coordenadas o con **Elegir llegada en el mapa**. **Crear conexión de vuelta** añade una salida en el destino, que después puedes recolocar.
+4. **Empezar aquí** establece el mapa inicial; su entrada es la posición de inicio de la aventura.
+5. **Guardar** conserva todo en este navegador; **Guardar y jugar** abre `/` desde el mapa inicial.
+6. **Exportar JSON** descarga la aventura completa. **Importar** abre una aventura o incorpora un mapa JSON antiguo como un mapa adicional; las colisiones de identificadores se resuelven asignando uno nuevo.
+
+Las salidas se activan al pulsarlas (o con Enter desde una casilla adyacente), nunca por caminar cerca. Se validan los mapas, referencias, accesibilidad de salidas y llegadas libres conectadas con la entrada. El progreso de objetivos del jugador se mantiene durante los viajes de la sesión, pero se reinicia al recargar. El jugador único en `/` integra las tareas, el proyecto, el chat local y los objetivos de la demo. `/adventure` redirige a `/` y conserva los parámetros del enlace. El selector muestra todos los mapas de la aventura. Los mensajes, tareas y objetivos conservan su estado al cambiar de mapa durante la sesión.
+
+El documento tiene `kind: "isometric-adventure"`, `version: 1`, `id`, `name`, `startMap`, `maps` y `exits`. Cada salida contiene `id`, `fromMap`, `entityId`, `toMap` y `arrival: {x, y}`. Su objeto de origen usa la acción `adventure.exit`; el motor de mundo sigue siendo independiente del formato de aventura.
+
 ## Qué incluye
 
 - Escenario a todo el cuerpo de la ventana, con selector de mundo en la cabecera.
@@ -83,7 +105,7 @@ Instala el `.tgz` generado desde Passport, Checkpoint u otro proyecto con Svelte
 - `World`: `adapter`, `working`, `onready(controller)` y `onstatus(message)`.
 - `WorldController`: `goTo(entityId)`, `zoom(delta)` y `recenter()`.
 
-Monta un `World` nuevo al cambiar la geometría/escenario (por ejemplo, `{#key scene.id}`). En esta demo los hitos completados del mundo exterior también remontan el mapa para actualizar las banderas, por lo que el avatar vuelve al inicio. `working` se actualiza sin remontar. La cámara permite zoom, ajuste y desplazamiento manual con la mano, espacio + arrastre o botón central. El motor admite un catálogo gráfico opcional mediante la prop `graphics`; la demo ya usa PNG para personajes, escritorios, árboles y suelo. WASD/flechas corresponden a los ejes de la cuadrícula isométrica.
+Monta un `World` nuevo al cambiar la geometría/escenario (por ejemplo, `{#key scene.id}`). Las banderas de objetivos completados se actualizan sin remontar el mapa ni cambiar la posición del avatar. `working` se actualiza sin remontar. La cámara permite zoom, ajuste y desplazamiento manual con la mano, espacio + arrastre o botón central. El motor admite un catálogo gráfico opcional mediante la prop `graphics`; la demo ya usa PNG para personajes, escritorios, árboles y suelo. WASD/flechas corresponden a los ejes de la cuadrícula isométrica.
 
 ## Conectar SvelteKit y Prisma
 
@@ -108,9 +130,9 @@ El catálogo `visualCatalog` incluye IDs `builtin.*` y `pixel.*`. `pixelart.ts` 
 
 ### Editor inicial
 
-Abre `/editor` o el enlace **Editar mapa** en la cabecera. Selecciona objetos, cambia posición y dimensiones, añade/elimina elementos, define interacciones y asientos, configura la entrada y prueba el mapa. El editor guarda hasta 30 pasos de deshacer en memoria. Los cambios válidos se reflejan automáticamente en la vista, incluidos añadir, eliminar y deshacer. Los objetos nuevos buscan una posición libre que mantenga accesibles las interacciones. **Probar mapa** permite recorrer la vista validada; se mantiene la última vista válida si hay un error. Los errores muestran qué hay que corregir. Las interacciones del editor muestran su acción/recurso para comprobar la configuración, sin ejecutar acciones de negocio.
+Abre `/editor` o el enlace **Editar mapa** en la cabecera. Selecciona objetos, cambia posición y dimensiones, añade/elimina elementos, define interacciones y asientos, configura la entrada y prueba el mapa. El editor guarda hasta 30 pasos de deshacer en memoria. Los cambios válidos se reflejan automáticamente en la vista, incluidos añadir, eliminar y deshacer. En **Añadir**, elige un sprite del catálogo y pulsa una casilla para colocarlo. Una posición inválida muestra el motivo y permite elegir otra casilla. La selección directa abre un inspector contextual, con posición, colisiones e interacciones desplegables. Pulsa una casilla vacía o el título sobre el mapa para abrir sus propiedades. Los paneles se pueden minimizar con el icono junto a cerrar, conservando la selección y el pincel. **Suelo** abre el pincel; **Objetos** permite buscar elementos; **Mapas** contiene las propiedades del escenario. Importar y exportar están en **Más opciones**. Se mantiene la última vista válida si hay un error. Los errores muestran qué hay que corregir. Las interacciones del editor muestran su acción/recurso para comprobar la configuración, sin ejecutar acciones de negocio.
 
-Importación y exportación usan el JSON nativo versionado. El editor trabaja en memoria: exportar descarga el archivo; volver al mundo no reemplaza los mapas del proyecto. Para incorporar un mapa exportado, sustituye el JSON fuente correspondiente y conserva los IDs/acciones utilizados por el adaptador. No se han implementado todavía pintura de tiles, rotación gráfica de muebles, importación Tiled, publicación de versiones ni persistencia en Prisma. Esta entrega proporciona el formato y las reglas sobre las que construir esas herramientas.
+Importación y exportación usan el JSON nativo versionado. El editor trabaja en memoria: exportar descarga el archivo; volver al mundo no reemplaza los mapas del proyecto. Para incorporar un mapa exportado, sustituye el JSON fuente correspondiente y conserva los IDs/acciones utilizados por el adaptador. No se han implementado todavía rotación gráfica de muebles, importación Tiled, publicación de versiones ni persistencia en Prisma. Esta entrega proporciona el formato y las reglas sobre las que construir esas herramientas.
 
 ### Selección y colocación directa
 

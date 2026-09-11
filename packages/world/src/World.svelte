@@ -26,6 +26,7 @@
     return ()=>{disposed=true;engine?.destroy();};
   });
   $effect(()=>{engine?.setWorking(working);});
+  $effect(()=>{engine?.setCompleted(adapter.scene.entities.filter(e=>e.completed).map(e=>e.id));});
   $effect(()=>{engine?.setEditor(editor);});
   $effect(()=>{engine?.setPanMode(panMode);});
   let lastCelebration=0;

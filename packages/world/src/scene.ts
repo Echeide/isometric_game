@@ -4,12 +4,12 @@ export const visualCatalog = [
  {id:'pixel.plant',kind:'plant',label:'Planta · Pixel'}, {id:'pixel.sofa',kind:'sofa',label:'Sofá · Pixel'},
  {id:'pixel.table',kind:'table',label:'Mesa · Pixel'}, {id:'pixel.board',kind:'board',label:'Panel · Pixel'},
  {id:'pixel.goal',kind:'goal',label:'Bandera · Pixel'},
- {id:'pixel.desk',kind:'desk',label:'Escritorio · Pixel'}, {id:'pixel.tree',kind:'tree',label:'Roble · Pixel'},
+ {id:'pixel.desk',kind:'desk',label:'Escritorio · Pixel'}, {id:'pixel.tree',kind:'tree',label:'Árbol · Roble · Pixel'},
  {id:'pixel.person',kind:'person',label:'Personaje · Pixel'},
- {id:'builtin.desk',kind:'desk',label:'Escritorio'}, {id:'builtin.board',kind:'board',label:'Panel'},
- {id:'builtin.person',kind:'person',label:'Personaje'}, {id:'builtin.plant',kind:'plant',label:'Planta'},
- {id:'builtin.sofa',kind:'sofa',label:'Sofá'}, {id:'builtin.table',kind:'table',label:'Mesa'},
- {id:'builtin.goal',kind:'goal',label:'Bandera'}, {id:'builtin.tree',kind:'tree',label:'Árbol'}
+ {id:'builtin.desk',kind:'desk',label:'Escritorio · Clásico'}, {id:'builtin.board',kind:'board',label:'Panel · Clásico'},
+ {id:'builtin.person',kind:'person',label:'Personaje · Clásico'}, {id:'builtin.plant',kind:'plant',label:'Planta · Clásico'},
+ {id:'builtin.sofa',kind:'sofa',label:'Sofá · Clásico'}, {id:'builtin.table',kind:'table',label:'Mesa · Clásico'},
+ {id:'builtin.goal',kind:'goal',label:'Bandera · Clásico'}, {id:'builtin.tree',kind:'tree',label:'Árbol · Clásico'}
 ] as const;
 /** Validate external data before allocating a renderer or changing the active map. */
 export function parseScene(value: unknown): WorldScene {
