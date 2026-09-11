@@ -2,7 +2,7 @@
   import type { PixelArtPack } from './pixelart';
   import { onMount } from 'svelte';
   import type { WorldAdapter, WorldController, WorldEntity, WorldEditor } from './types';
-  let { adapter, working = false, celebration = 0, editor, graphics, onready, onstatus }: {adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics?: PixelArtPack; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void} = $props();
+  let { adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus }: {adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics?: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void} = $props();
   let host: HTMLDivElement;
   let engine: Awaited<ReturnType<typeof import('./renderer').createWorld>> | undefined = $state();
   let error = $state('');
@@ -27,6 +27,7 @@
   });
   $effect(()=>{engine?.setWorking(working);});
   $effect(()=>{engine?.setEditor(editor);});
+  $effect(()=>{engine?.setPanMode(panMode);});
   let lastCelebration=0;
   $effect(()=>{if(engine&&celebration>lastCelebration){lastCelebration=celebration;engine.celebrate();}});
 </script>

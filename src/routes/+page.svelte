@@ -1,10 +1,11 @@
 <script lang="ts">
+ let panMode=$state(false);
  import { graphics } from '$lib/demo/pixelart';
  import { tick,onMount } from 'svelte';
  import {readMaps} from '$lib/demo/saved-maps';
  import { World, type WorldController, type WorldInteraction } from '@isometrico/world';
  import { office,outdoors,makeAdapter,initialTasks,initialGoals,type Task } from '$lib/demo/scenes';
- import { Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Send, Flag, Armchair, CircleHelp, CheckCheck } from 'lucide-svelte';
+ import { Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Send, Flag, Armchair, CircleHelp, CheckCheck, Hand } from 'lucide-svelte';
  let localOffice=$state(office),localOutdoors=$state(outdoors),mapsReady=$state(false);
  onMount(()=>{try{const saved=readMaps(localStorage);localOffice=saved.maps.checkpoint??office;localOutdoors=saved.maps.routingtales??outdoors;const requested=new URLSearchParams(location.search).get('world');mode=requested==='checkpoint'||requested==='routingtales'?requested:saved.active;}catch{status='No se pudieron leer los mapas guardados.';}finally{mapsReady=true;}});
  let mode=$state<'checkpoint'|'routingtales'>('checkpoint');
@@ -56,10 +57,10 @@
  </header>
  <main class="immersive-world" aria-label="Espacio virtual">
   <div class:outdoors={mode==='routingtales'} class="map-stage">
-   {#if mapsReady}{#key worldKey}<World {graphics} {adapter} {celebration} working={mode==='checkpoint'&&!!active} onready={c=>controller=c} onstatus={s=>status=s}/>{/key}{/if}
+   {#if mapsReady}{#key worldKey}<World {panMode} {graphics} {adapter} {celebration} working={mode==='checkpoint'&&!!active} onready={c=>controller=c} onstatus={s=>status=s}/>{/key}{/if}
    <div class="scene-heading"><div class="eyebrow">{mode==='checkpoint'?'CHECKPOINT / EQUIPO ATLAS':'ROUTINGTALES / EXPLORACIÓN'}</div><h1>{scene.name}</h1><span>{mode==='checkpoint'?'Planta 01 · Tu oficina virtual':'Capítulo 01 · Explora a tu ritmo'}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
-   <div class="map-controls"><button onclick={()=>controller?.zoom(-.15)} aria-label="Alejar mapa" title="Alejar"><Minus size={17}/></button><button onclick={()=>controller?.recenter()} aria-label="Centrar mapa" title="Centrar"><Scan size={17}/></button><button onclick={()=>controller?.zoom(.15)} aria-label="Acercar mapa" title="Acercar"><Plus size={17}/></button></div>
+   <div class="map-controls"><button aria-label="Mover vista" aria-pressed={panMode} title="Mover vista: arrastra con ratón o dedo" onclick={()=>panMode=!panMode}><Hand size={18}/></button><button onclick={()=>controller?.zoom(-.15)} aria-label="Alejar mapa" title="Alejar"><Minus size={17}/></button><button onclick={()=>controller?.recenter()} aria-label="Centrar mapa" title="Centrar"><Scan size={17}/></button><button onclick={()=>controller?.zoom(.15)} aria-label="Acercar mapa" title="Acercar"><Plus size={17}/></button></div>
    <div class="player-hud"><div class="my-avatar">E</div><div><strong>Explorador <span>Tú</span></strong><small>{mode==='checkpoint'&&active?'En foco · '+active.title:'Disponible para explorar'}</small></div></div>
    <div class="scene-instructions"><MousePointer2 size={14}/><span>Haz clic para caminar · Interactúa con objetos y compañeros</span></div>
    <p class="sr-only" role="status">{status}</p>

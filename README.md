@@ -83,7 +83,7 @@ Instala el `.tgz` generado desde Passport, Checkpoint u otro proyecto con Svelte
 - `World`: `adapter`, `working`, `onready(controller)` y `onstatus(message)`.
 - `WorldController`: `goTo(entityId)`, `zoom(delta)` y `recenter()`.
 
-Monta un `World` nuevo al cambiar la geometría/escenario (por ejemplo, `{#key scene.id}`). En esta demo los hitos completados del mundo exterior también remontan el mapa para actualizar las banderas, por lo que el avatar vuelve al inicio. `working` se actualiza sin remontar. La cámara tiene ajuste y zoom, no desplazamiento manual. El motor admite un catálogo gráfico opcional mediante la prop `graphics`; la demo ya usa PNG para personajes, escritorios, árboles y suelo. WASD/flechas corresponden a los ejes de la cuadrícula isométrica.
+Monta un `World` nuevo al cambiar la geometría/escenario (por ejemplo, `{#key scene.id}`). En esta demo los hitos completados del mundo exterior también remontan el mapa para actualizar las banderas, por lo que el avatar vuelve al inicio. `working` se actualiza sin remontar. La cámara permite zoom, ajuste y desplazamiento manual con la mano, espacio + arrastre o botón central. El motor admite un catálogo gráfico opcional mediante la prop `graphics`; la demo ya usa PNG para personajes, escritorios, árboles y suelo. WASD/flechas corresponden a los ejes de la cuadrícula isométrica.
 
 ## Conectar SvelteKit y Prisma
 
@@ -127,3 +127,7 @@ Abre `/sprites` para previsualizar animaciones y descargar hojas y plantillas. C
 En `/editor`, **Guardar y jugar** valida y guarda el mapa en localStorage y abre el mundo con sus interacciones reales. **Volver al mundo** también guarda antes de salir. Al volver al editor se recupera la versión guardada; al cambiar de escenario en el editor se guarda primero el actual. Oficina y ruta tienen espacios de guardado separados. Un mapa inválido o un fallo de almacenamiento impide salir mediante esas acciones para evitar fingir un guardado correcto.
 
 Este guardado es local al navegador y al origen (host/puerto); no sincroniza dispositivos ni escribe en Prisma. Exportar JSON sigue siendo la forma de conservar una copia portable. Los cambios pendientes que no se hayan guardado no sobreviven a una recarga del editor.
+
+## Desplazar la cámara
+
+En el mundo y en el editor, activa **Mover vista** (mano) y arrastra con ratón o dedo. También puedes mantener Espacio y arrastrar con el botón izquierdo, o usar el botón central. Enter conserva la interacción con objetos; Espacio se reserva ahora para la cámara. El modo mano tiene prioridad sobre pintar y mover objetos. Ajustar/Centrar restablece el desplazamiento y el zoom. En el editor el encuadre se conserva al modificar el mapa, pero no se guarda en el JSON.
