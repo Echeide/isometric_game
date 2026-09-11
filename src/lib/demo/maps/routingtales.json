@@ -1,0 +1,181 @@
+{
+  "id": "routingtales",
+  "name": "La ruta del norte",
+  "theme": "outdoors",
+  "width": 13,
+  "height": 11,
+  "spawn": {
+    "x": 6,
+    "y": 8
+  },
+  "entities": [
+    {
+      "id": "info",
+      "label": "Punto de información",
+      "kind": "board",
+      "position": {
+        "x": 0,
+        "y": 4
+      },
+      "size": {
+        "x": 3,
+        "y": 1
+      },
+      "interaction": {
+        "label": "Ver lugares y progreso",
+        "action": "space.open",
+        "resourceId": "route"
+      },
+      "visualId": "pixel.board"
+    },
+    {
+      "id": "goal-1",
+      "label": "El punto de partida",
+      "kind": "goal",
+      "position": {
+        "x": 3,
+        "y": 6
+      },
+      "color": 7512511,
+      "interaction": {
+        "label": "Abrir objetivo",
+        "action": "goal.open",
+        "resourceId": "start"
+      },
+      "visualId": "pixel.goal"
+    },
+    {
+      "id": "goal-2",
+      "label": "El bosque",
+      "kind": "goal",
+      "position": {
+        "x": 6,
+        "y": 2
+      },
+      "color": 14394469,
+      "interaction": {
+        "label": "Abrir objetivo",
+        "action": "goal.open",
+        "resourceId": "forest"
+      },
+      "visualId": "pixel.goal"
+    },
+    {
+      "id": "goal-3",
+      "label": "La cima",
+      "kind": "goal",
+      "position": {
+        "x": 10,
+        "y": 5
+      },
+      "color": 10783414,
+      "interaction": {
+        "label": "Abrir objetivo",
+        "action": "goal.open",
+        "resourceId": "summit"
+      },
+      "visualId": "pixel.goal"
+    },
+    {
+      "id": "tree-0",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-1",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-2",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 10,
+        "y": 1
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-3",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 12,
+        "y": 2
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-4",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 0,
+        "y": 8
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-5",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 2,
+        "y": 10
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-6",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 10,
+        "y": 9
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-7",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 12,
+        "y": 8
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-8",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 8,
+        "y": 0
+      },
+      "visualId": "pixel.tree"
+    },
+    {
+      "id": "tree-9",
+      "label": "Árbol",
+      "kind": "tree",
+      "position": {
+        "x": 4,
+        "y": 0
+      },
+      "visualId": "pixel.tree"
+    }
+  ],
+  "schemaVersion": 1
+}

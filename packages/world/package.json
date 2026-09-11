@@ -1,0 +1,27 @@
+{
+  "name": "@isometrico/world",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "UNLICENSED",
+  "files": [
+    "dist"
+  ],
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "dependencies": {
+    "pixi.js": "^8.13.0"
+  },
+  "scripts": {
+    "package": "svelte-package -i src -o dist --tsconfig tsconfig.json"
+  }
+}

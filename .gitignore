@@ -1,0 +1,14 @@
+node_modules/
+.svelte-kit/
+build/
+packages/world/dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+.sites-runtime/
+
+# Generated package archives and Python cache
+*.tgz
+__pycache__/
+*.pyc

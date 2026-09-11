@@ -1,0 +1,198 @@
+{
+  "id": "checkpoint",
+  "name": "Estudio central",
+  "theme": "office",
+  "width": 13,
+  "height": 11,
+  "spawn": {
+    "x": 7,
+    "y": 8
+  },
+  "entities": [
+    {
+      "id": "my-desk",
+      "label": "Mi escritorio",
+      "kind": "desk",
+      "position": {
+        "x": 3,
+        "y": 5
+      },
+      "size": {
+        "x": 2,
+        "y": 1
+      },
+      "interaction": {
+        "label": "Ver mis tareas",
+        "action": "tasks.open",
+        "resourceId": "me"
+      },
+      "visualId": "pixel.desk",
+      "seat": {
+        "cell": {
+          "x": 3,
+          "y": 6
+        },
+        "facing": "ne"
+      },
+      "interactionPoints": [
+        {
+          "x": 3,
+          "y": 6
+        }
+      ]
+    },
+    {
+      "id": "desk-2",
+      "label": "Escritorio",
+      "kind": "desk",
+      "position": {
+        "x": 7,
+        "y": 3
+      },
+      "size": {
+        "x": 2,
+        "y": 1
+      },
+      "visualId": "pixel.desk"
+    },
+    {
+      "id": "desk-3",
+      "label": "Escritorio",
+      "kind": "desk",
+      "position": {
+        "x": 3,
+        "y": 2
+      },
+      "size": {
+        "x": 2,
+        "y": 1
+      },
+      "visualId": "pixel.desk"
+    },
+    {
+      "id": "project-board",
+      "label": "Proyecto Atlas",
+      "kind": "board",
+      "position": {
+        "x": 7,
+        "y": 0
+      },
+      "size": {
+        "x": 3,
+        "y": 1
+      },
+      "interaction": {
+        "label": "Ver el proyecto",
+        "action": "project.open",
+        "resourceId": "atlas"
+      },
+      "visualId": "pixel.board"
+    },
+    {
+      "id": "lucia",
+      "label": "Lucía",
+      "kind": "person",
+      "position": {
+        "x": 8,
+        "y": 5
+      },
+      "color": 13538154,
+      "interaction": {
+        "label": "Hablar con Lucía",
+        "action": "chat.open",
+        "resourceId": "lucia"
+      },
+      "visualId": "pixel.person"
+    },
+    {
+      "id": "marcos",
+      "label": "Marcos",
+      "kind": "person",
+      "position": {
+        "x": 2,
+        "y": 8
+      },
+      "color": 8492418,
+      "interaction": {
+        "label": "Hablar con Marcos",
+        "action": "chat.open",
+        "resourceId": "marcos"
+      },
+      "visualId": "pixel.person"
+    },
+    {
+      "id": "sofa",
+      "label": "Sofá",
+      "kind": "sofa",
+      "position": {
+        "x": 0,
+        "y": 6
+      },
+      "size": {
+        "x": 1,
+        "y": 3
+      },
+      "visualId": "pixel.sofa"
+    },
+    {
+      "id": "coffee",
+      "label": "Punto de encuentro",
+      "kind": "table",
+      "position": {
+        "x": 5,
+        "y": 9
+      },
+      "size": {
+        "x": 2,
+        "y": 1
+      },
+      "interaction": {
+        "label": "Ver lugares y progreso",
+        "action": "space.open",
+        "resourceId": "office"
+      },
+      "visualId": "pixel.table"
+    },
+    {
+      "id": "plant1",
+      "label": "Planta",
+      "kind": "plant",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "visualId": "pixel.plant"
+    },
+    {
+      "id": "plant2",
+      "label": "Planta",
+      "kind": "plant",
+      "position": {
+        "x": 12,
+        "y": 0
+      },
+      "visualId": "pixel.plant"
+    },
+    {
+      "id": "plant3",
+      "label": "Planta",
+      "kind": "plant",
+      "position": {
+        "x": 12,
+        "y": 9
+      },
+      "visualId": "pixel.plant"
+    },
+    {
+      "id": "plant4",
+      "label": "Planta",
+      "kind": "plant",
+      "position": {
+        "x": 0,
+        "y": 4
+      },
+      "visualId": "pixel.plant"
+    }
+  ],
+  "schemaVersion": 1
+}

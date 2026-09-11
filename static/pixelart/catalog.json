@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "character": {
+    "image": "/pixelart/characters/explorer/idle.png",
+    "frameWidth": 64,
+    "frameHeight": 96,
+    "anchor": [
+      32,
+      80
+    ],
+    "directions": [
+      "ne",
+      "se",
+      "sw",
+      "nw"
+    ],
+    "animations": {
+      "idle": {
+        "image": "/pixelart/characters/explorer/idle.png",
+        "variants": {
+          "ce936a": "/pixelart/characters/lucia/idle.png",
+          "819582": "/pixelart/characters/marcos/idle.png"
+        },
+        "row": 0,
+        "frames": 4,
+        "fps": 3
+      },
+      "walk": {
+        "image": "/pixelart/characters/explorer/walk.png",
+        "variants": {
+          "ce936a": "/pixelart/characters/lucia/walk.png",
+          "819582": "/pixelart/characters/marcos/walk.png"
+        },
+        "row": 0,
+        "frames": 8,
+        "fps": 10
+      },
+      "work": {
+        "image": "/pixelart/characters/explorer/work.png",
+        "variants": {
+          "ce936a": "/pixelart/characters/lucia/work.png",
+          "819582": "/pixelart/characters/marcos/work.png"
+        },
+        "row": 0,
+        "frames": 4,
+        "fps": 8
+      },
+      "talk": {
+        "image": "/pixelart/characters/explorer/talk.png",
+        "variants": {
+          "ce936a": "/pixelart/characters/lucia/talk.png",
+          "819582": "/pixelart/characters/marcos/talk.png"
+        },
+        "row": 0,
+        "frames": 4,
+        "fps": 5
+      },
+      "celebrate": {
+        "image": "/pixelart/characters/explorer/celebrate.png",
+        "variants": {
+          "ce936a": "/pixelart/characters/lucia/celebrate.png",
+          "819582": "/pixelart/characters/marcos/celebrate.png"
+        },
+        "row": 0,
+        "frames": 6,
+        "fps": 8
+      },
+      "sit": {
+        "image": "/pixelart/characters/explorer/work.png",
+        "variants": {
+          "ce936a": "/pixelart/characters/lucia/work.png",
+          "819582": "/pixelart/characters/marcos/work.png"
+        },
+        "row": 0,
+        "frames": 1,
+        "fps": 8
+      }
+    }
+  },
+  "objects": {
+    "pixel.desk": {
+      "image": "/pixelart/desk-v2.png",
+      "width": 112,
+      "height": 112,
+      "origin": [
+        37,
+        59
+      ]
+    },
+    "pixel.tree": {
+      "image": "/pixelart/tree.png",
+      "width": 72,
+      "height": 108,
+      "origin": [
+        36,
+        81
+      ]
+    },
+    "pixel.table": {
+      "image": "/pixelart/table.png",
+      "width": 128,
+      "height": 112,
+      "origin": [
+        32,
+        64
+      ]
+    },
+    "pixel.sofa": {
+      "image": "/pixelart/sofa.png",
+      "width": 144,
+      "height": 128,
+      "origin": [
+        100,
+        48
+      ]
+    },
+    "pixel.plant": {
+      "image": "/pixelart/plant.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        64
+      ]
+    },
+    "pixel.board": {
+      "image": "/pixelart/board.png",
+      "width": 128,
+      "height": 160,
+      "origin": [
+        24,
+        112
+      ]
+    },
+    "pixel.goal": {
+      "image": "/pixelart/goal.png",
+      "width": 80,
+      "height": 128,
+      "origin": [
+        32,
+        80
+      ]
+    },
+    "pixel.goal-completed": {
+      "image": "/pixelart/goal-completed.png",
+      "width": 80,
+      "height": 128,
+      "origin": [
+        32,
+        80
+      ]
+    },
+    "pixel.chair": {
+      "image": "/pixelart/chair.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-base": {
+      "image": "/pixelart/chair-base.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-back-ne": {
+      "image": "/pixelart/chair-back-ne.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-ne": {
+      "image": "/pixelart/chair-ne.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-back-sw": {
+      "image": "/pixelart/chair-back-sw.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-sw": {
+      "image": "/pixelart/chair-sw.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-back-se": {
+      "image": "/pixelart/chair-back-se.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-se": {
+      "image": "/pixelart/chair-se.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-back-nw": {
+      "image": "/pixelart/chair-back-nw.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    },
+    "pixel.chair-nw": {
+      "image": "/pixelart/chair-nw.png",
+      "width": 64,
+      "height": 96,
+      "origin": [
+        32,
+        48
+      ]
+    }
+  },
+  "tiles": {
+    "office": "/pixelart/floor.png",
+    "grass": "/pixelart/grass.png",
+    "path": "/pixelart/path.png"
+  }
+}
