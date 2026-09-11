@@ -18,3 +18,13 @@ it('preserves painted terrain when saving and loading the playable map',()=>{
  saveMap(storage,paintTiles(office,[{x:7,y:8}],'path'));
  expect(readMaps(storage).maps.checkpoint?.tiles).toEqual({'7,8':'path'});
 });
+it('paints and restores every available finish while preserving paths',async()=>{
+ const {tileKinds}=await import('../packages/world/src/types');
+ const {default:catalog}=await import('../static/pixelart/catalog.json');
+ for(const kind of tileKinds){
+  expect(catalog.tiles[kind]).toMatch(/\.png$/);
+  const painted=paintTiles(office,[{x:7,y:8}],kind);
+  expect(tileAt(parseScene(JSON.parse(JSON.stringify(painted))),{x:7,y:8})).toBe(kind);
+  expect(tileAt(paintTiles(painted,[{x:7,y:8}],'erase'),{x:7,y:8})).toBe('office');
+ }
+});

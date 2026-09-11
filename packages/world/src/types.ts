@@ -1,8 +1,12 @@
-export type TileKind = 'office' | 'grass' | 'path';
+export const tileKinds = ['office','grass','path','parquet','asphalt','sidewalk','cobble','sand','dirt'] as const;
+export type TileKind = typeof tileKinds[number];
+export type WallMaterial = 'white'|'glass'|'stone'|'cobble';
+export type Wall = {x:number;y:number;axis:'x'|'y';kind:'wall'|'door';exitId?:string;material?:WallMaterial};
+export type MapBrush = TileKind | 'void' | 'erase';
 export type Cell = { x: number; y: number };
 export type Facing = 'ne' | 'se' | 'sw' | 'nw';
 export type ActorPose = 'idle' | 'walk' | 'sit' | 'work' | 'talk' | 'celebrate';
-export type EntityKind = 'desk' | 'board' | 'person' | 'plant' | 'sofa' | 'table' | 'goal' | 'tree';
+export type EntityKind = 'desk' | 'board' | 'person' | 'plant' | 'sofa' | 'table' | 'goal' | 'tree' | 'cabinet' | 'bookshelf' | 'printer' | 'chair' | 'bench' | 'bin' | 'bollard' | 'lamp' | 'rock' | 'bush' | 'flowers' | 'pine';
 export interface WorldEntity {
   id: string;
   label: string;
@@ -29,7 +33,8 @@ export interface WorldScene {
   spawn: Cell;
   entities: WorldEntity[];
   blocked?: Cell[];
-  tiles?: Record<string,TileKind>;
+  tiles?: Record<string,TileKind|'void'>;
+  walls?: Wall[];
 }
 export interface WorldInteraction {
   sceneId: string;
@@ -63,8 +68,11 @@ export interface WorldEditor {
   selectedId: string;
   /** Optional tile picker used when choosing a destination in another map. */
   onpick?: (cell: Cell) => void;
-  brush?: TileKind | 'erase';
-  onpaint?: (cells:Cell[],tile:TileKind | 'erase')=>void;
+  brush?: MapBrush;
+  wallTool?: 'wall'|'door'|'remove';
+  onwall?: (wall:Wall)=>void;
+  wallOpacity?:number;
+  onpaint?: (cells:Cell[],tile:MapBrush)=>void;
   onselect: (id: string) => void;
   onmove: (id: string, position: Cell) => boolean;
 }

@@ -1,3 +1,8 @@
+import {exitFacing} from './exits';
+import {alphaHitArea} from './alpha-hit';
+import {depthOrder,type DepthItem} from './depth';
+import {sceneWalls,wallCells,hasTile,wallEndExposed} from './walls';
+import type {Wall} from './types';
 import { cameraGestures } from './camera-gestures';
 import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle } from 'pixi.js';
 import { loadPixelArt, pixelObject, type LoadedPixelArt, type PixelArtPack } from './pixelart';
@@ -15,12 +20,13 @@ function box(g: Graphics, x: number, y: number, w: number, d: number, h: number,
   poly(g,[p.x-b,p.y+b/2-z,p.x+a-b,p.y+(a+b)/2-z,p.x+a-b,p.y+(a+b)/2+h-z,p.x-b,p.y+b/2+h-z],color.left);
   poly(g,[p.x+a,p.y+a/2-z,p.x+a-b,p.y+(a+b)/2-z,p.x+a-b,p.y+(a+b)/2+h-z,p.x+a,p.y+a/2+h-z],color.right);
 }
-function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt|undefined, scene:WorldScene) {
+function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt, scene:WorldScene) {
   const c = new Container(), drawing=new Container(); const g = new Graphics(); drawing.addChild(g);c.addChild(drawing);
   drawing.scale.x=e.flipX?-1:1;
   const footprintSize=e.size??{x:1,y:1};
   const size=e.flipX?{x:footprintSize.y,y:footprintSize.x}:footprintSize;
   if(e.interaction?.action==='adventure.exit') {
+    if(scene.walls?.some(w=>w.exitId===e.id))return c;
     // Exit markers live on the ground, including those in already-saved maps.
     const corners=[{x:.04,y:.04},{x:size.x-.04,y:.04},{x:size.x-.04,y:size.y-.04},{x:.04,y:size.y-.04}].flatMap(p=>{const at=project(p);return [at.x,at.y];});
     g.poly(corners).fill({color:outdoor?0xd7ddc3:0xd3dfd5,alpha:.8}).stroke({color:0x849a83,width:1,alpha:.65});
@@ -33,90 +39,109 @@ function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt|undefine
     c.hitArea=new Polygon(corners);
     return c;
   }
-  const custom=art?pixelObject(art,e.visualId==='pixel.goal'&&e.completed&&art.pack.objects['pixel.goal-completed']?'pixel.goal-completed':e.visualId??''):null;
-  if(custom){drawing.addChild(custom);}
-  else if(e.kind === 'desk' || e.kind === 'table') {
-    const wood = {top:0xd6b18a,left:0xad8462,right:0x967052};
-    for (const [x,y] of [[.1,.1],[size.x-.15,.1],[.1,size.y-.15],[size.x-.15,size.y-.15]]) box(g,x,y,.09,.09,23,{top:0x51635f,left:0x52615d,right:0x374b47},23);
-    box(g,0,0,size.x,size.y,5,wood,27);
-    if(e.kind === 'desk') {
-      box(g,.6,.28,.65,.12,23,{top:0x4d666b,left:0x293f49,right:0x1c323c},52);
-      const p = project({x:.6,y:.4});
-      poly(g,[p.x+3,p.y-49,p.x+19,p.y-41,p.x+19,p.y-25,p.x+3,p.y-33],0x91cbd0);
-      box(g,.5,.7,.6,.25,1,{top:0xe4e9df,left:0x7f9690,right:0x7f9690},29);
-      box(g,1.6,.3,.15,.15,7,{top:0xffffff,left:0xe7e4d8,right:0xd7dacc},34);
-    } else box(g,.5,.4,.5,.4,2,{top:0xecefe4,left:0xbfc4b4,right:0xa9b5a6},30);
-  } else if (e.kind === 'plant' || e.kind === 'tree') {
-    const p = project({x:.5,y:.5});
-    if(e.kind === 'tree') {
-      box(g,.35,.35,.22,.22,35,{top:0x876b4a,left:0x796344,right:0x5e5138},35);
-      for(const [x,y,r] of [[0,-58,25],[-15,-42,21],[17,-43,22],[0,-30,20]]) g.circle(p.x+x,p.y+y,r).fill(x<0?0x66886b:0x7b9e6c);
-    } else {
-      box(g,.2,.2,.6,.6,15,{top:0xe6ddd0,left:0xc6b4a0,right:0xa89580},15);
-      g.moveTo(p.x,p.y-12).lineTo(p.x,p.y-48).stroke({color:0x427057,width:3});
-      for(let i=0;i<5;i++) g.ellipse(p.x+(i%2?8:-8),p.y-22-i*5,10,5).fill(i%2?0x5f8b68:0x83a97b);
-    }
-  } else if(e.kind==='person') {
-    // Animated occupants are added by the scene controller.
-  } else if(e.kind==='board') {
-    box(g,.1,.35,.08,.15,50,palette,50); box(g,2.6,.35,.08,.15,50,palette,50);
-    box(g,0,.3,2.9,.13,43,{top:0x77938b,left:0xf4f5ee,right:0xa6b9b1},80);
-    for(let i=0;i<3;i++) for(let j=0;j<2;j++) box(g,.3+i*.8,.44,.48,.01,9,{top:0xffffff,left:[0xbbd3ed,0xf1d99b,0xbcd7a6][i],right:0xb0c2b1},69-j*15);
-  } else if(e.kind==='sofa') {
-    const colors={top:0x759a8b,left:0x618678,right:0x446f61};
-    box(g,0,0,size.x,size.y,15,colors,18);
-    box(g,0,0,size.x,.25,22,colors,38);
-    box(g,0,0,.25,size.y,15,colors,30);box(g,size.x-.25,0,.25,size.y,15,colors,30);
-  } else if(e.kind==='goal') {
-    const p=project({x:.5,y:.5});
-    box(g,0,0,1,1,10,{top:e.completed?0xa6c877:0xd8d9c5,left:0x879e78,right:0x6c8769},3);
-    g.moveTo(p.x,p.y-6).lineTo(p.x,p.y-65).stroke({color:0x5d7768,width:4});
-    g.poly([p.x+2,p.y-65,p.x+29,p.y-58,p.x+2,p.y-48]).fill(e.completed?0xaada66:e.color??0xebad64);
-    if(e.completed) g.moveTo(p.x+6,p.y-58).lineTo(p.x+10,p.y-53).lineTo(p.x+18,p.y-59).stroke({color:0x32583a,width:2});
+  if(e.kind!=='person'){
+    const id=e.visualId?.startsWith('pixel.')?e.visualId:`pixel.${e.kind}`;
+    const custom=pixelObject(art,id==='pixel.goal'&&e.completed?'pixel.goal-completed':id);
+    if(!custom)throw new Error(`Falta el gráfico de píxel: ${id}.`);
+    drawing.addChild(custom);
+    const item=art.pack.objects[id==='pixel.goal'&&e.completed?'pixel.goal-completed':id];
+    const mask=art.masks.get(item.image);
+    if(mask)c.hitArea=alphaHitArea(mask,item,e.flipX);
   }
   return c;
 }
-export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor?: WorldEditor, graphics?:PixelArtPack) {
-  const art=graphics?await loadPixelArt(graphics):undefined;
+export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack) {
+  const art=await loadPixelArt(graphics);
   const app = new Application();
-  await app.init({backgroundAlpha:0,antialias:!art,resolution:Math.min(window.devicePixelRatio||1,2),autoDensity:true,width:host.clientWidth,height:host.clientHeight});
+  await app.init({backgroundAlpha:0,antialias:false,resolution:Math.min(window.devicePixelRatio||1,2),autoDensity:true,width:host.clientWidth,height:host.clientHeight});
   host.appendChild(app.canvas);
   const world=new Container(); const floor=new Container(); const objects=new Container(); objects.sortableChildren=true;
-  world.addChild(floor,objects); app.stage.addChild(world);
+  const labelLayer=new Container();labelLayer.eventMode='none';
+  world.addChild(floor,objects,labelLayer); app.stage.addChild(world);
   let editor=initialEditor;
   const outdoor=scene.theme==='outdoors';
   const foundation = new Graphics();
-  box(foundation,0,0,scene.width,scene.height,18,outdoor?{top:0xb5cba4,left:0x8d9e78,right:0x768b69}:palette);
+  for(let x=0;x<scene.width;x++)for(let y=0;y<scene.height;y++)if(hasTile(scene,{x,y}))box(foundation,x,y,1,1,18,outdoor?{top:0xb5cba4,left:0x8d9e78,right:0x768b69}:palette);
   floor.addChild(foundation);
-  const tileDrawers=new Map<string,(kind:import('./types').TileKind)=>void>();
+  const tileDrawers=new Map<string,(kind:import('./types').TileKind|'void')=>void>();
   for(let x=0;x<scene.width;x++) for(let y=0;y<scene.height;y++) {
     const p=project({x,y}); const tile=new Graphics();
     let textureTile:Sprite|undefined;
-    const drawTile=(kind:import('./types').TileKind)=>{
+    const drawTile=(kind:import('./types').TileKind|'void')=>{
       tile.clear();
-      if(art){
+      if(textureTile)textureTile.visible=kind!=='void';
+      if(kind==='void'){if(editor)tile.poly([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]).stroke({color:0x829d7a,alpha:.25,width:1});return;}
+      {
         const texture=art.textures.get(art.pack.tiles[kind])!;
         if(!textureTile){textureTile=new Sprite(texture);textureTile.position.set(p.x-32,p.y);textureTile.width=64;textureTile.height=32;textureTile.eventMode='none';textureTile.roundPixels=true;tile.addChild(textureTile);}
         else textureTile.texture=texture;
-      }else poly(tile,[p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16],kind==='office'?0xdee6df:kind==='grass'?0xb7cda6:0xdacfb0);
+      }
       tile.hitArea=new Polygon([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]);
     };
     drawTile(tileAt(scene,{x,y}));tileDrawers.set(`${x},${y}`,drawTile);
     if(walkable(scene,{x,y})) {
       tile.eventMode='static';tile.cursor='pointer';
-      tile.on('pointertap',()=>{host.focus({preventScroll:true});if(!gestures.blocked()){if(editor?.onpick)editor.onpick({x,y});else if(!editor)moveTo({x,y});else if(!editor.brush)editor.onselect('');}});
+      tile.on('pointertap',()=>{host.focus({preventScroll:true});if(!gestures.blocked()){if(editor?.onpick)editor.onpick({x,y});else if(!editor)moveTo({x,y});else if(!editor.brush&&!editor.wallTool)editor.onselect('');}});
       tile.on('pointerover',()=>{tile.tint=0xd0e8b6;});tile.on('pointerout',()=>{tile.tint=0xffffff;});
     }
     floor.addChild(tile);
   }
-  if(!outdoor) {
-    const walls=new Graphics();
-    box(walls,0,0,scene.width,.12,65,{top:0xf1f2e7,left:0xc1d2cd,right:0xb3c6c0},65);
-    box(walls,0,0,.12,scene.height,65,{top:0xf1f2e7,left:0xd4ded5,right:0xb2c8c1},65);
-    // Windows are functional scene geometry, rendered with the room.
-    for(let i=2;i<scene.width-1;i+=3) box(walls,i,.14,1.8,.02,36,{top:0xf5f9ee,left:0xa0c7cf,right:0x739da7},53);
-    floor.addChild(walls);
+  const depthItems:{view:Container;bounds:()=>DepthItem}[]=[];
+  const allWalls=sceneWalls(scene);
+  const wallViews:{wall:Wall;view:Graphics;group:string}[]=[];
+  function wallArt(w:Wall){
+    const g=new Graphics(),dx=w.axis==='x'?1:0,dy=1-dx;
+    const thickness=w.kind==='door'?.20:.16;
+    const neighbor=(end:0|1)=>!wallEndExposed(w,end,allWalls);
+    const material=w.material??'white';
+    const colors=w.kind==='door'?{front:0x997450,top:0xc6a37a,side:0x74583e,under:0x604a36}:{front:w.axis==='x'?0xd4ded5:0xb8cdc5,top:0xe9eee5,side:0x8ca69b,under:0x7e978c};
+    if(w.kind==='wall'){if(material==='glass')Object.assign(colors,{front:0xaed4dc,top:0xe3f8fa,side:0x779ea9});else if(material==='stone')Object.assign(colors,{front:0x9ba297,top:0xc9cec0,side:0x747f73});else if(material==='cobble')Object.assign(colors,{front:0x747b70,top:0xbdb9a7,side:0x656f61});}
+    function point(t:number,offset:number,z:number){const p=project({x:w.x+dx*t+dy*offset,y:w.y+dy*t+dx*offset});return [p.x,p.y-z];}
+    function face(points:number[][],color:number,alpha=1){g.poly(points.flat()).fill({color,alpha});}
+    function slab(start:number,end:number,low:number,high:number,capStart:boolean,capEnd:boolean){
+      const back=-thickness/2,front=thickness/2;
+      // Continuous upper surface; no outlines at the joins between tiles.
+      face([point(start,back,high),point(end,back,high),point(end,front,high),point(start,front,high)],colors.top);
+      if(low>0)face([point(start,back,low),point(end,back,low),point(end,front,low),point(start,front,low)],colors.under);
+      if(capStart)face([point(start,back,low),point(start,front,low),point(start,front,high),point(start,back,high)],colors.side);
+      if(capEnd)face([point(end,back,low),point(end,front,low),point(end,front,high),point(end,back,high)],colors.side);
+      face([point(start,front,low),point(end,front,low),point(end,front,high),point(start,front,high)],colors.front);
+    }
+    if(w.kind==='door'){
+      slab(0,.16,0,49,!neighbor(0),true);
+      slab(.84,1,0,49,true,!neighbor(1));
+      slab(0,1,49,62,!neighbor(0),!neighbor(1));
+    }else {
+      slab(0,1,0,62,!neighbor(0),!neighbor(1));
+      const offset=thickness/2,origin=w.axis==='x'?w.x:w.y;
+      if(material==='stone'||material==='cobble'){
+        const step=material==='stone'?.65:.38,rowHeight=material==='stone'?12:10;
+        for(let row=0;row*rowHeight<62;row++){
+          const shift=(row%2)*step/2;
+          for(let col=Math.floor((origin-shift)/step);col*step+shift<origin+1;col++){
+            const left=Math.max(0,col*step+shift-origin+.018),right=Math.min(1,(col+1)*step+shift-origin-.018);
+            const low=row*rowHeight+1,high=Math.min(61,(row+1)*rowHeight-1);
+            if(right<=left||high<=low)continue;
+            const shade=Math.abs((col*37+row*17)%4);
+            if(material==='stone')face([point(left,offset,low),point(right,offset,low),point(right,offset,high),point(left,offset,high)],[0xaeb3a7,0x989e93,0xb9bdaf,0xa2a99b][shade]);
+            else {const cut=Math.min(.06,(right-left)/4),mid=(low+high)/2;face([point(left+cut,offset,low),point(right-cut,offset,low+.5),point(right,offset,mid),point(right-cut,offset,high),point(left+cut,offset,high-.5),point(left,offset,mid)],[0xa5a38f,0xb7ae98,0x969e8b,0xc0b7a2][shade]);}
+          }
+        }
+      }else if(material==='glass'){
+        // Subtle reflection bands on the original translucent glass.
+        for(const [low,high] of [[17,20],[43,48]])g.poly([point(0,offset,low),point(1,offset,low+7),point(1,offset,high+7),point(0,offset,high)].flat()).fill({color:0xf0ffff,alpha:.35});
+      }
+    }
+    return g;
   }
+  for(const w of allWalls){
+    const view=wallArt(w);view.zIndex=(w.x+w.y+.5)*100+3;objects.addChild(view);let gx=w.x,gy=w.y;
+    if(w.kind==='wall')while(allWalls.some(n=>n.kind==='wall'&&n.axis===w.axis&&n.x===gx-(w.axis==='x'?1:0)&&n.y===gy-(w.axis==='y'?1:0))){gx-=w.axis==='x'?1:0;gy-=w.axis==='y'?1:0;}
+    wallViews.push({wall:w,view,group:`${w.kind}:${w.axis}:${gx},${gy}`});depthItems.push({view,bounds:()=>({x:w.x,y:w.y,width:w.axis==='x'?1:0,height:w.axis==='y'?1:0,tie:3})});
+    view.eventMode='static';view.cursor='pointer';
+    view.on('pointertap',()=>{if(gestures.blocked())return;if(editor&&!editor.brush&&!editor.wallTool)editor.onwall?.(w);else if(!editor&&w.exitId)goTo(w.exitId);});
+  }
+  const wallPreview=new Graphics();wallPreview.eventMode='none';objects.addChild(wallPreview);wallPreview.zIndex=1e9;
   const entityViews=new Map<string,Container>();
   const labels=new Map<string,Container>();
   const hovered=new Set<string>();
@@ -125,26 +150,23 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   const occupants=new Map<string,ReturnType<typeof createActor>>();
   for(const e of scene.entities) {
     const view=entityArt(e,outdoor,art,scene);const p=project(e.position);view.position.set(p.x,p.y);view.zIndex=(e.position.x+e.position.y+(e.size?.x??1)/2+(e.size?.y??1)/2)*100;
+    depthItems.push({view,bounds:()=>({...(drag?.id===e.id?drag.position:e.position),width:e.size?.x??1,height:e.size?.y??1})});
     {view.eventMode='static';view.cursor='pointer';view.on('pointertap',()=>{host.focus({preventScroll:true});if(!editor&&!gestures.blocked())goTo(e.id);});view.on('pointerover',event=>{if(event.pointerType==='touch')return;view.alpha=.8;hovered.add(e.id);refreshLabels();});view.on('pointerout',()=>{view.alpha=1;hovered.delete(e.id);refreshLabels();});}
-    if(e.kind==='person'){const actor=createActor(e.color??0xd79875,false,e.visualId==='pixel.person'?art:undefined);const at=project({x:.5,y:.5});actor.view.position.set(at.x,at.y);actor.view.scale.x=e.flipX?-1:1;view.addChildAt(actor.view,0);occupants.set(e.id,actor);}
+    if(e.kind==='person'){const actor=createActor(e.color??0xd79875,false,art);const at=project({x:.5,y:.5});actor.view.position.set(at.x,at.y);actor.view.scale.x=e.flipX?-1:1;view.addChildAt(actor.view,0);occupants.set(e.id,actor);}
     if(e.seat){
       const placement=seatPlacement(e.seat),p=project(placement);
-      const base=art?pixelObject(art,'pixel.chair-base'):null;
-      const back=art?pixelObject(art,`pixel.chair-back-${e.seat.facing}`):null;
+      const base=pixelObject(art,'pixel.chair-base');
+      const back=pixelObject(art,`pixel.chair-back-${e.seat.facing}`);
       if(base&&back){
         for(const [sprite,z] of [[base,0],[back,placement.backInFront?2:0]] as const){
           const layer=new Container();layer.position.set(p.x,p.y);layer.addChild(sprite);
-          layer.zIndex=(placement.x+placement.y+1)*100+z;objects.addChild(layer);
+          layer.zIndex=(placement.x+placement.y+1)*100+z;objects.addChild(layer);depthItems.push({view:layer,bounds:()=>({x:placement.x,y:placement.y,width:1,height:1,tie:z})});
         }
-      }else{
-        const chair=new Graphics();const x=placement.x,y=placement.y;
-        box(chair,x+.15,y+.15,.7,.7,6,{top:0x86a39a,left:0x577a6b,right:0x456b60},19);
-        box(chair,x+.15,y+(e.seat.facing==='ne'?.75:.15),.65,.1,17,{top:0x86a39a,left:0x577a6b,right:0x456b60},37);
-        objects.addChild(chair);chair.zIndex=(x+y+1)*100;
+      }else{throw new Error('Faltan los gráficos de píxel del asiento.');
       }
     }
     view.on('pointerdown',event=>{
-      if(!editor || editor.onpick || event.button!==0 || drag)return;
+      if(!editor || editor.onpick || editor.wallTool || event.button!==0 || drag)return;
       host.focus({preventScroll:true});editor.onselect(e.id);
       const start=world.toLocal(event.global);
       drag={id:e.id,pointerId:event.pointerId,start,original:{...e.position},position:{...e.position}};
@@ -158,7 +180,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     const text=new Text({text:e.label,style:{fontFamily:'system-ui',fontSize:12,fontWeight:'600',fill:outdoor?0x385648:0x344a4e}});
     text.anchor.set(.5,0);text.position.set(at.x,at.y+15);
     const back=new Graphics().roundRect(at.x-text.width/2-8,at.y+12,text.width+16,23,7).fill({color:0xffffff,alpha:.92});
-    label.addChild(back,text);view.addChild(label);labels.set(e.id,label);
+    label.addChild(back,text);label.position.copyFrom(view.position);labelLayer.addChild(label);labels.set(e.id,label);
     objects.addChild(view);entityViews.set(e.id,view);
   }
   const selection=new Graphics();selection.eventMode='none';floor.addChild(selection);
@@ -264,6 +286,23 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     for(const [key,cell] of finished.cells)tileDrawers.get(key)?.(tileAt(scene,cell));
     if(event.type!=='pointercancel'&&finished.cells.size)editor?.onpaint?.([...finished.cells.values()],finished.brush);
   }
+  function edgeAt(event:PointerEvent):Wall{
+    const rect=app.canvas.getBoundingClientRect(),p=world.toLocal({x:(event.clientX-rect.left)*app.screen.width/rect.width,y:(event.clientY-rect.top)*app.screen.height/rect.height});
+    const x=p.x/64+p.y/32,y=p.y/32-p.x/64;
+    return Math.abs(x-Math.round(x))<Math.abs(y-Math.round(y))?{x:Math.round(x),y:Math.floor(y),axis:'y',kind:'wall'}:{x:Math.floor(x),y:Math.round(y),axis:'x',kind:'wall'};
+  }
+  function edgeHover(event:PointerEvent){
+    wallPreview.clear();if(!editor?.wallTool)return;
+    const w=edgeAt(event);if(!wallCells(w).some(p=>hasTile(scene,p)))return;
+    const a=project(w),b=project({x:w.x+(w.axis==='x'?1:0),y:w.y+(w.axis==='y'?1:0)});
+    wallPreview.moveTo(a.x,a.y).lineTo(b.x,b.y).stroke({color:editor.wallTool==='remove'?0xc86c58:0x719747,width:5});
+  }
+  function edgeDown(event:PointerEvent){
+    if(!editor?.wallTool||event.button!==0||spaceHeld||panMode)return;
+    event.preventDefault();event.stopImmediatePropagation();editor.onwall?.(edgeAt(event));
+  }
+  app.canvas.addEventListener('pointermove',edgeHover);
+  app.canvas.addEventListener('pointerdown',edgeDown,true);
   app.canvas.addEventListener('pointerdown',paintDown,true);
   window.addEventListener('pointermove',paintMove,{capture:true,passive:false});
   window.addEventListener('pointerup',paintEnd,true);window.addEventListener('pointercancel',paintEnd,true);
@@ -271,8 +310,10 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   if(editor)app.canvas.style.touchAction='none';
   highlight(editor?.selectedId??'');
   const player=createActor(0x728da5,true,art);const avatar=player.view;objects.addChild(avatar);
-  const badge=new Text({text:'Tú',style:{fontFamily:'system-ui',fontSize:12,fontWeight:'600',fill:0x345249}});badge.anchor.set(.5,0);badge.y=14;badge.visible=false;badge.eventMode='none';avatar.addChild(badge);
+  const badge=new Text({text:'Tú',style:{fontFamily:'system-ui',fontSize:12,fontWeight:'600',fill:0x345249}});badge.anchor.set(.5,0);badge.y=14;badge.visible=false;badge.eventMode='none';labelLayer.addChild(badge);
   let playerHovered=false;avatar.eventMode='static';avatar.on('pointerover',event=>{if(event.pointerType!=='touch')playerHovered=true;});avatar.on('pointerout',()=>{playerHovered=false;});
+  depthItems.push({view:avatar,bounds:()=>{const p=seatedAt?.seat?seatPlacement(seatedAt.seat):{x:px,y:py};return {x:p.x+.35,y:p.y+.35,width:.3,height:.3,tie:1};}});
+  let lastDepth='';
   const routeView=new Graphics();floor.addChild(routeView);
   let cell={...scene.spawn};let px=cell.x,py=cell.y;let route:Cell[]=[];let destination:WorldEntity|null=null;let zoomLevel=1;let cameraScale=1;let cameraBaseScale:number|undefined;let destroyed=false;
   let time=0,celebrationUntil=0,standingUntil=0;let facing:Facing='se';let working=false;let seatedAt:WorldEntity|null=null;let conversation:string|null=null;let purpose:'interact'|'work'='interact';
@@ -280,17 +321,20 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   function fit() {if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;app.renderer.resize(w,h);const scale=(cameraBaseScale??Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135)))*zoomLevel;world.scale.set(Math.max(.2,scale));cameraScale=world.scale.x;world.position.set(w/2-(scene.width-scene.height)*16*scale,h/2-(scene.width+scene.height)*8*scale+35*scale+panY);world.x+=panX;host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);}
   const observer=new ResizeObserver(fit);observer.observe(host);fit();
   function drawRoute() {routeView.clear();for(const c of route){const p=project({x:c.x+.5,y:c.y+.5});routeView.ellipse(p.x,p.y,4,2).fill({color:0x779d51,alpha:.65});}}
+  let pendingArrival:WorldEntity|null=null;
   function arrive() {
     const target=destination;destination=null;
     if(target){
       if(target.seat && working && cell.x===target.seat.cell.x && cell.y===target.seat.cell.y){seatedAt=target;facing=target.seat.facing;}
-      else if(target.interaction?.action!=='adventure.exit')facing=facingFor(target.position.x-cell.x,target.position.y-cell.y,facing);
+      else if(target.interaction?.action==='adventure.exit')facing=exitFacing(scene,target);
+      else facing=facingFor(target.position.x-cell.x,target.position.y-cell.y,facing);
       if(target.kind==='person')conversation=target.id;
     }
     onStatus(seatedAt?'En tu puesto de trabajo':'Has llegado');
-    if(target&&purpose==='interact')onArrive(target);
+    if(target&&purpose==='interact')pendingArrival=target;
   }
   function schedule(targets:Cell[],e:WorldEntity|null,reason:'interact'|'work'='interact') {
+    pendingArrival=null;
     // Replan from the last reached tile, so rapid clicks cannot cut through obstacles.
     const nextTile=route[0];
     const path=findPath(scene,nextTile??cell,targets);if(path===null){onStatus('No hay un camino libre hasta ese lugar');return;}
@@ -314,11 +358,29 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(next){facing=facingFor(next.x-px,next.y-py,facing);const distance=Math.hypot(next.x-px,next.y-py);const step=Math.min(tick.deltaMS,50)*.0045;if(distance<=step||reduceMotion){px=next.x;py=next.y;cell={...next};route.shift();drawRoute();if(!route.length)arrive();}else{px+=(next.x-px)/distance*step;py+=(next.y-py)/distance*step;}}
     const seated=seatedAt?.seat?seatPlacement(seatedAt.seat):null;
     badge.visible=playerHovered&&!seated;
+    const actorPoint=project({x:px+.5,y:py+.5});
+    const fadedGroups=new Set<string>();
+    for(const {wall:w,group} of wallViews){
+      const a=project(w),b=project({x:w.x+(w.axis==='x'?1:0),y:w.y+(w.axis==='y'?1:0)});
+      const t=(actorPoint.x-a.x)/(b.x-a.x),base=a.y+(b.y-a.y)*t;
+      const occludes=t>=-.2&&t<=1.2&&actorPoint.y<base&&actorPoint.y>base-85;
+      if(occludes)fadedGroups.add(group);
+    }
+    for(const {wall,view,group} of wallViews){
+      const opacity=editor?(editor.wallOpacity??.7):fadedGroups.has(group)?.22:1;
+      const target=wall.kind==='wall'&&wall.material==='glass'?Math.min(opacity,.38):opacity;
+      view.alpha+=(target-view.alpha)*Math.min(1,dt*10);
+    }
     const drawX=seated?.x??px,drawY=seated?.y??py;
-    const p=project({x:drawX+.5,y:drawY+.5});avatar.position.set(art?Math.round(p.x):p.x,art?Math.round(p.y):p.y);avatar.zIndex=(drawX+drawY+1)*100+1;
+    const p=project({x:drawX+.5,y:drawY+.5});avatar.position.set(Math.round(p.x),Math.round(p.y));
+    const bounds=depthItems.map(i=>i.bounds()),key=JSON.stringify(bounds);
+    if(key!==lastDepth){depthOrder(bounds).forEach((index,z)=>depthItems[index].view.zIndex=z);lastDepth=key;}
+    for(const [id,label] of labels){const view=entityViews.get(id);if(view)label.position.copyFrom(view.position);}
+    badge.position.set(avatar.x,avatar.y+14);
     const pose:ActorPose=time<celebrationUntil?'celebrate':next?'walk':seatedAt?(working?'work':'sit'):conversation?'talk':'idle';
     player.update(time,dt,pose,facing,reduceMotion);
     for(const [id,actor] of occupants){const entity=scene.entities.find(e=>e.id===id)!;actor.update(time,dt,conversation===id?'talk':'idle',conversation===id?facingFor(px-entity.position.x,py-entity.position.y):'se',reduceMotion);}
+    if(pendingArrival){const target=pendingArrival;pendingArrival=null;app.renderer.render(app.stage);onArrive(target);}
     host.dataset.pose=pose;host.dataset.facing=facing;host.dataset.cell=`${cell.x},${cell.y}`;
 
   });
@@ -331,7 +393,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         const view=entityViews.get(e.id);if(!view)continue;
         const updated=entityArt({...e,completed:completed.has(e.id)},outdoor,art,scene);
         for(const child of view.removeChildren())child.destroy({children:true});
-        view.addChild(...updated.removeChildren());updated.destroy();displayedCompletion.set(e.id,completed.has(e.id));
+        view.hitArea=updated.hitArea;view.addChild(...updated.removeChildren());updated.destroy();displayedCompletion.set(e.id,completed.has(e.id));
       }
     },
     setEditor(value:WorldEditor|undefined){editor=value;panCursor();highlight(editor?.selectedId??'');},
@@ -351,6 +413,6 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     },
     celebrate(){celebrationUntil=time+1.5;seatedAt=null;conversation=null;route=[];destination=null;px=cell.x;py=cell.y;drawRoute();},
     setConversation(id:string|null){conversation=id;if(id){const e=scene.entities.find(e=>e.id===id);if(e)facing=facingFor(e.position.x-px,e.position.y-py,facing);}},
-    destroy(){gestures.destroy();app.canvas.removeEventListener('pointerdown',panDown,true);window.removeEventListener('pointermove',panMove,true);window.removeEventListener('pointerup',panEnd,true);window.removeEventListener('pointercancel',panEnd,true);host.removeEventListener('keydown',spaceDown);window.removeEventListener('keyup',spaceUp);window.removeEventListener('blur',clearPan);host.removeEventListener('blur',clearPan);app.canvas.removeEventListener('pointerdown',paintDown,true);window.removeEventListener('pointermove',paintMove,true);window.removeEventListener('pointerup',paintEnd,true);window.removeEventListener('pointercancel',paintEnd,true);window.removeEventListener('pointermove',dragMove);window.removeEventListener('pointerup',endDrag);window.removeEventListener('pointercancel',endDrag);destroyed=true;observer.disconnect();host.removeEventListener('keydown',keyboard);app.destroy(true,{children:true});}
+    destroy(){app.canvas.removeEventListener('pointermove',edgeHover);app.canvas.removeEventListener('pointerdown',edgeDown,true);gestures.destroy();app.canvas.removeEventListener('pointerdown',panDown,true);window.removeEventListener('pointermove',panMove,true);window.removeEventListener('pointerup',panEnd,true);window.removeEventListener('pointercancel',panEnd,true);host.removeEventListener('keydown',spaceDown);window.removeEventListener('keyup',spaceUp);window.removeEventListener('blur',clearPan);host.removeEventListener('blur',clearPan);app.canvas.removeEventListener('pointerdown',paintDown,true);window.removeEventListener('pointermove',paintMove,true);window.removeEventListener('pointerup',paintEnd,true);window.removeEventListener('pointercancel',paintEnd,true);window.removeEventListener('pointermove',dragMove);window.removeEventListener('pointerup',endDrag);window.removeEventListener('pointercancel',endDrag);destroyed=true;observer.disconnect();host.removeEventListener('keydown',keyboard);app.destroy(true,{children:true});}
   };
 }

@@ -126,7 +126,7 @@ Los mapas fuente están en `src/lib/demo/maps/checkpoint.json` y `routingtales.j
 
 Al iniciar una tarea el anfitrión cierra el panel, y `working=true` conduce al avatar al primer puesto con asiento. Al llegar se sienta; al moverse se levanta, conservando la tarea. Para volver a sentarse, interactúa con su escritorio. Al pausar, se levanta. `celebration` es un contador reactivo del componente: incrementarlo reproduce una celebración de 1,5 segundos. `controller.setConversation(entityId | null)` orienta al personaje y activa gestos; el anfitrión debe finalizarla al cerrar el chat. Los accesos directos al chat orientan al avatar desde su posición actual; la interacción física camina primero hasta el compañero.
 
-El catálogo `visualCatalog` incluye IDs `builtin.*` y `pixel.*`. `pixelart.ts` carga PNG y recorta los fotogramas definidos en el catálogo de gráficos. Para sustituir el arte, la interfaz de actualización del actor es `update(time, dt, pose, facing, reducedMotion)`, independiente de la navegación.
+El catálogo `visualCatalog` solo incluye IDs `pixel.*`. Los mapas guardados o importados con IDs clásicos `builtin.*`, o sin ID visual, se convierten automáticamente al equivalente en píxel sin cambiar sus posiciones, colisiones ni interacciones. El componente `World` requiere el catálogo `graphics`; se han retirado los renderizadores clásicos de objetos y personajes. `pixelart.ts` carga PNG y recorta los fotogramas definidos en el catálogo de gráficos. Para sustituir el arte, la interfaz de actualización del actor es `update(time, dt, pose, facing, reducedMotion)`, independiente de la navegación.
 
 ### Editor inicial
 
@@ -155,3 +155,17 @@ Este guardado es local al navegador y al origen (host/puerto); no sincroniza dis
 En el mundo y en el editor, activa **Mover vista** (mano) y arrastra con ratón o dedo. También puedes mantener Espacio y arrastrar con el botón izquierdo, o usar el botón central. Enter conserva la interacción con objetos; Espacio se reserva ahora para la cámara. El modo mano tiene prioridad sobre pintar y mover objetos. Ajustar/Centrar restablece el desplazamiento y el zoom. En el editor el encuadre se conserva al modificar el mapa, pero no se guarda en el JSON.
 
 En **Mapa → Entorno**, elige Interior o Exterior. Cambia paredes, ventanas y el suelo predeterminado; conserva las baldosas pintadas y los objetos. El entorno es independiente del mundo anfitrión: una oficina Checkpoint puede ser exterior sin reemplazar el mapa de RoutingTales. Los JSON importados se aplican al mundo seleccionado en el editor.
+
+### Construir la forma del mapa
+
+En **Mapa → Baldosas**, pinta suelo o usa **Vacío** para eliminar casillas. Pintar sobre un hueco lo recupera. Cada trazo se puede deshacer; no se permite borrar objetos, asientos, entradas o llegadas.
+
+En **Mapa → Paredes**, pulsa junto a un borde del suelo para colocar un tramo o borrarlo. **Puertas** transforma una pared existente en un paso. **Seleccionar borde** permite seleccionar una puerta y conectarla a otro mapa, editar su destino o desvincularla. Las paredes y los huecos afectan a los recorridos. La opacidad es ajustable en el editor; durante el juego las paredes que ocultan al personaje se atenúan automáticamente.
+
+El JSON guarda huecos como `tiles["x,y"] = "void"` y bordes en `walls` (`x`, `y`, `axis`, `kind`, y `exitId` opcional para puertas conectadas). Sin `walls`, los mapas interiores conservan sus paredes perimetrales predeterminadas; `walls: []` crea un interior sin paredes.
+
+### Biblioteca base de objetos
+
+**Añadir** organiza 22 elementos en Oficina, Naturaleza, Urbano y Personajes, con búsqueda por categoría y tamaño en casillas. Incluye archivador, estantería, impresora, silla, banco, papelera, bolardo, farola, roca, arbusto, flores y pino, además de los objetos anteriores y las variantes animadas Explorador, Lucía y Marcos. Los tamaños del catálogo se aplican al colocarlos; no se añaden interacciones automáticamente. `scripts/build-library.py` genera únicamente las nuevas piezas y conserva los sprites existentes.
+
+Al viajar, el personaje alcanza la propia baldosa de salida y mira hacia fuera antes del fundido. Aparece sobre la salida de vuelta vinculada mirando hacia el interior (según el borde o la puerta). Sin una entrada vinculada se usan las coordenadas de llegada configuradas y se conserva la orientación de salida. Las salidas antiguas se normalizan como transitables; aparecer sobre una entrada no dispara otro viaje automáticamente.

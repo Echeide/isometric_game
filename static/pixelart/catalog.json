@@ -239,11 +239,116 @@
         32,
         48
       ]
+    },
+    "pixel.cabinet": {
+      "image": "/pixelart/cabinet.png",
+      "width": 80,
+      "height": 128,
+      "origin": [
+        40,
+        88
+      ]
+    },
+    "pixel.bookshelf": {
+      "image": "/pixelart/bookshelf.png",
+      "width": 80,
+      "height": 128,
+      "origin": [
+        40,
+        88
+      ]
+    },
+    "pixel.printer": {
+      "image": "/pixelart/printer.png",
+      "width": 80,
+      "height": 104,
+      "origin": [
+        40,
+        68
+      ]
+    },
+    "pixel.bench": {
+      "image": "/pixelart/bench.png",
+      "width": 128,
+      "height": 112,
+      "origin": [
+        40,
+        64
+      ]
+    },
+    "pixel.bin": {
+      "image": "/pixelart/bin.png",
+      "width": 80,
+      "height": 160,
+      "origin": [
+        40,
+        120
+      ]
+    },
+    "pixel.bollard": {
+      "image": "/pixelart/bollard.png",
+      "width": 80,
+      "height": 160,
+      "origin": [
+        40,
+        120
+      ]
+    },
+    "pixel.lamp": {
+      "image": "/pixelart/lamp.png",
+      "width": 80,
+      "height": 160,
+      "origin": [
+        40,
+        120
+      ]
+    },
+    "pixel.rock": {
+      "image": "/pixelart/rock.png",
+      "width": 96,
+      "height": 144,
+      "origin": [
+        48,
+        104
+      ]
+    },
+    "pixel.bush": {
+      "image": "/pixelart/bush.png",
+      "width": 96,
+      "height": 144,
+      "origin": [
+        48,
+        104
+      ]
+    },
+    "pixel.flowers": {
+      "image": "/pixelart/flowers.png",
+      "width": 96,
+      "height": 144,
+      "origin": [
+        48,
+        104
+      ]
+    },
+    "pixel.pine": {
+      "image": "/pixelart/pine.png",
+      "width": 96,
+      "height": 144,
+      "origin": [
+        48,
+        104
+      ]
     }
   },
   "tiles": {
     "office": "/pixelart/floor.png",
     "grass": "/pixelart/grass.png",
-    "path": "/pixelart/path.png"
+    "path": "/pixelart/path.png",
+    "parquet": "/pixelart/parquet.png",
+    "asphalt": "/pixelart/asphalt.png",
+    "sidewalk": "/pixelart/sidewalk.png",
+    "cobble": "/pixelart/cobble.png",
+    "sand": "/pixelart/sand.png",
+    "dirt": "/pixelart/dirt.png"
   }
 }

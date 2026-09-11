@@ -5,10 +5,10 @@ Componente isométrico para Svelte 5 con PixiJS 8. El anfitrión aporta un `Worl
 ```svelte
 <script>
   import { World } from '@isometrico/world';
-  let { adapter, working = false } = $props();
+  let { adapter, graphics, working = false } = $props();
 </script>
 <div style="position:relative;height:600px">
-  <World {adapter} {working} />
+  <World {adapter} {graphics} {working} />
 </div>
 ```
 
@@ -18,4 +18,4 @@ El mapa requiere casillas enteras, aparición libre y un contenedor con altura. 
 
 Versión inicial: gráficos provisionales, un avatar local, sin transporte multijugador. Consulta el README del repositorio para el ejemplo completo de integración SvelteKit y Prisma.
 
-Pasa opcionalmente `graphics: PixelArtPack` a `World` para cargar tus PNG/atlas, con celdas, anclaje y animaciones por dirección. Las rutas del catálogo deben ser accesibles desde el proyecto anfitrión; el paquete no incluye los PNG de la demo. El editor admite IDs `pixel.desk`, `pixel.tree` y `pixel.person`, además de `builtin.*`.
+Pasa `graphics: PixelArtPack` a `World` para cargar tus PNG/atlas, con celdas, anclaje y animaciones por dirección. Las rutas del catálogo deben ser accesibles desde el proyecto anfitrión; el paquete no incluye los PNG de la demo. El editor solo ofrece gráficos `pixel.*`. Los mapas antiguos con IDs `builtin.*` o sin ID visual se convierten al equivalente en píxel al validarlos. El renderizado requiere el catálogo completo; no existe un modo clásico alternativo.

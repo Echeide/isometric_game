@@ -11,3 +11,7 @@ export { characterImage, characterVariants } from './character';
 export type { CharacterPack, CharacterClip } from './character';
 
 export type { TileKind } from './types';
+
+export type {Wall,MapBrush} from './types';
+
+export type {WallMaterial} from './types';

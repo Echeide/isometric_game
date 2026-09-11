@@ -4,9 +4,9 @@ export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: s
  const base=parseScene(draft);
  const asset=visualCatalog.find(a=>a.kind===kind&&(!visualId||a.id===visualId));
  if(!asset)throw new Error('Este objeto no está en el catálogo.');
- const size={x:kind==='desk'||kind==='table'?2:kind==='board'?3:1,y:kind==='sofa'?3:1};
+ const size={...asset.size};
  if(position){
-  return parseScene({...base,entities:[...base.entities,{id,label:asset.label,kind,visualId:asset.id,position,size}]});
+  return parseScene({...base,entities:[...base.entities,{id,label:asset.label,kind,visualId:asset.id,color:asset.color,position,size}]});
  }
  // Prefer the front of the room so new objects are easy to see.
  for(let y=base.height-1;y>=0;y--)for(let x=0;x<=base.width-size.x;x++){
@@ -42,7 +42,7 @@ export function flipEntity(draft:WorldScene,id:string):WorldScene {
 }
 
 /** Apply one stroke as a single undoable edit; painting never changes collisions. */
-export function paintTiles(draft:WorldScene,cells:import('@isometrico/world').Cell[],tile:import('@isometrico/world').TileKind|'erase'):WorldScene{
+export function paintTiles(draft:WorldScene,cells:import('@isometrico/world').Cell[],tile:import('@isometrico/world').MapBrush):WorldScene{
  const tiles={...draft.tiles};
  for(const {x,y} of cells){if(tile==='erase')delete tiles[`${x},${y}`];else tiles[`${x},${y}`]=tile;}
  return parseScene({...draft,tiles});

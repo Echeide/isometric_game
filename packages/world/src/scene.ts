@@ -1,16 +1,33 @@
+import {tileKinds} from './types';
+import {hasTile,wallCells,wallKey,sceneWalls} from './walls';
 import type { Cell, WorldScene } from './types';
 import { footprint, walkable, findPath, interactionCells, cellKey } from './navigation';
-export const visualCatalog = [
- {id:'pixel.plant',kind:'plant',label:'Planta · Pixel'}, {id:'pixel.sofa',kind:'sofa',label:'Sofá · Pixel'},
- {id:'pixel.table',kind:'table',label:'Mesa · Pixel'}, {id:'pixel.board',kind:'board',label:'Panel · Pixel'},
- {id:'pixel.goal',kind:'goal',label:'Bandera · Pixel'},
- {id:'pixel.desk',kind:'desk',label:'Escritorio · Pixel'}, {id:'pixel.tree',kind:'tree',label:'Árbol · Roble · Pixel'},
- {id:'pixel.person',kind:'person',label:'Personaje · Pixel'},
- {id:'builtin.desk',kind:'desk',label:'Escritorio · Clásico'}, {id:'builtin.board',kind:'board',label:'Panel · Clásico'},
- {id:'builtin.person',kind:'person',label:'Personaje · Clásico'}, {id:'builtin.plant',kind:'plant',label:'Planta · Clásico'},
- {id:'builtin.sofa',kind:'sofa',label:'Sofá · Clásico'}, {id:'builtin.table',kind:'table',label:'Mesa · Clásico'},
- {id:'builtin.goal',kind:'goal',label:'Bandera · Clásico'}, {id:'builtin.tree',kind:'tree',label:'Árbol · Clásico'}
-] as const;
+export type ObjectCategory='office'|'nature'|'urban'|'people';
+export interface VisualAsset {id:string;kind:import('./types').EntityKind;label:string;category:ObjectCategory;size:Cell;color?:number}
+export const visualCatalog:readonly VisualAsset[] = [
+ {id:'pixel.plant',kind:'plant',label:'Planta · Pixel',category:'nature',size:{x:1,y:1}},
+ {id:'pixel.sofa',kind:'sofa',label:'Sofá · Pixel',category:'office',size:{x:1,y:3}},
+ {id:'pixel.table',kind:'table',label:'Mesa · Pixel',category:'office',size:{x:2,y:1}},
+ {id:'pixel.board',kind:'board',label:'Panel · Pixel',category:'office',size:{x:3,y:1}},
+ {id:'pixel.goal',kind:'goal',label:'Bandera · Pixel',category:'urban',size:{x:1,y:1}},
+ {id:'pixel.desk',kind:'desk',label:'Escritorio · Pixel',category:'office',size:{x:2,y:1}},
+ {id:'pixel.tree',kind:'tree',label:'Árbol · Roble · Pixel',category:'nature',size:{x:1,y:1}},
+ {id:'pixel.person',kind:'person',label:'Explorador · Pixel',category:'people',size:{x:1,y:1},color:0x728da5},
+ {id:'pixel.cabinet',kind:'cabinet',label:'Archivador · Pixel',category:'office',size:{x:1,y:1}},
+ {id:'pixel.bookshelf',kind:'bookshelf',label:'Estantería · Pixel',category:'office',size:{x:1,y:1}},
+ {id:'pixel.printer',kind:'printer',label:'Impresora · Pixel',category:'office',size:{x:1,y:1}},
+ {id:'pixel.chair',kind:'chair',label:'Silla · Pixel',category:'office',size:{x:1,y:1}},
+ {id:'pixel.bench',kind:'bench',label:'Banco · Pixel',category:'urban',size:{x:2,y:1}},
+ {id:'pixel.bin',kind:'bin',label:'Papelera · Pixel',category:'urban',size:{x:1,y:1}},
+ {id:'pixel.bollard',kind:'bollard',label:'Bolardo · Pixel',category:'urban',size:{x:1,y:1}},
+ {id:'pixel.lamp',kind:'lamp',label:'Farola · Pixel',category:'urban',size:{x:1,y:1}},
+ {id:'pixel.rock',kind:'rock',label:'Roca · Pixel',category:'nature',size:{x:1,y:1}},
+ {id:'pixel.bush',kind:'bush',label:'Arbusto · Pixel',category:'nature',size:{x:1,y:1}},
+ {id:'pixel.flowers',kind:'flowers',label:'Flores · Pixel',category:'nature',size:{x:1,y:1}},
+ {id:'pixel.pine',kind:'pine',label:'Pino · Pixel',category:'nature',size:{x:1,y:1}},
+ {id:'pixel.person-lucia',kind:'person',label:'Lucía · Pixel',category:'people',size:{x:1,y:1},color:0xce936a},
+ {id:'pixel.person-marcos',kind:'person',label:'Marcos · Pixel',category:'people',size:{x:1,y:1},color:0x819582},
+];
 /** Validate external data before allocating a renderer or changing the active map. */
 export function parseScene(value: unknown): WorldScene {
  const fail=(message:string):never=>{throw new Error(message);};
@@ -29,7 +46,7 @@ export function parseScene(value: unknown): WorldScene {
   if(!v.tiles||typeof v.tiles!=='object'||Array.isArray(v.tiles))return fail('Suelo no válido.');
   for(const [key,tile] of Object.entries(v.tiles)){
    const [x,y]=key.split(',').map(Number);
-   if(key!==`${x},${y}`||!point({x,y})||!['office','grass','path'].includes(tile as string))return fail(`Baldosa no válida: ${key}.`);
+   if(key!==`${x},${y}`||!point({x,y})||![...tileKinds,'void'].includes(tile as string))return fail(`Baldosa no válida: ${key}.`);
   }
  }
  const ids=new Set<string>();
@@ -39,7 +56,7 @@ export function parseScene(value: unknown): WorldScene {
   if(typeof e.id!=='string'||!e.id.trim()||ids.has(e.id))return fail('Los objetos necesitan identificadores únicos.');ids.add(e.id);
   if(typeof e.label!=='string'||!e.label.trim())return fail(`Falta el nombre de ${e.id}.`);
   if(!visualCatalog.some(a=>a.kind===e.kind))return fail(`Tipo de objeto desconocido: ${e.id}.`);
-  if(e.visualId!==undefined&&!visualCatalog.some(a=>a.id===e.visualId&&a.kind===e.kind))return fail(`Recurso visual no compatible: ${e.id}.`);
+  if(e.visualId!==undefined&&e.visualId!==`builtin.${e.kind}`&&!visualCatalog.some(a=>a.id===e.visualId&&a.kind===e.kind))return fail(`Recurso visual no compatible: ${e.id}.`);
   if(!point(e.position))return fail(`Posición no válida: ${e.id}.`);
   if(e.size!==undefined&&(!e.size||typeof e.size!=='object'||!dimension((e.size as Cell).x)||!dimension((e.size as Cell).y)))return fail(`Tamaño no válido: ${e.id}.`);
   for(const flag of ['solid','completed','flipX'])if(e[flag]!==undefined&&typeof e[flag]!=='boolean')return fail(`Valor ${flag} no válido: ${e.id}.`);
@@ -49,8 +66,27 @@ export function parseScene(value: unknown): WorldScene {
   if(e.seat!==undefined){const seat=e.seat as Record<string,unknown>;if(!seat||typeof seat!=='object'||!point(seat.cell)||!['ne','se','sw','nw'].includes(seat.facing as string))return fail(`Asiento no válido: ${e.id}.`);}
  }
  const scene=JSON.parse(JSON.stringify(v)) as WorldScene;
+ for(const e of scene.entities)if(e.visualId===undefined||e.visualId===`builtin.${e.kind}`)e.visualId=`pixel.${e.kind}`;
+ if(scene.walls!==undefined){
+  if(!Array.isArray(scene.walls)||scene.walls.length>8320)return fail('Paredes no válidas.');
+  const seen=new Set<string>();
+  for(const w of scene.walls){
+   if(!w||!['x','y'].includes(w.axis)||!['wall','door'].includes(w.kind)||!Number.isInteger(w.x)||!Number.isInteger(w.y)||w.x<0||w.y<0||w.x>scene.width-(w.axis==='x'?1:0)||w.y>scene.height-(w.axis==='y'?1:0))return fail('Pared fuera del mapa.');
+   if(w.material!==undefined&&!['white','glass','stone','cobble'].includes(w.material))return fail('Acabado de pared no válido.');
+   if(seen.has(wallKey(w)))return fail('Pared duplicada.');seen.add(wallKey(w));
+   if(!wallCells(w).some(p=>hasTile(scene,p)))return fail('La pared necesita una baldosa de apoyo.');
+   if(w.exitId!==undefined&&(w.kind!=='door'||!scene.entities.some(e=>e.id===w.exitId&&e.interaction?.action==='adventure.exit')))return fail('Destino de puerta no válido.');
+   if(w.exitId){const e=scene.entities.find(e=>e.id===w.exitId)!;if(!wallCells(w).some(p=>p.x===e.position.x&&p.y===e.position.y))return fail('La salida debe permanecer junto a su puerta.');}
+  }
+ }
+ for(const e of scene.entities)if(e.interaction?.action==='adventure.exit')e.solid=false;
  const occupied=new Set((scene.blocked??[]).map(cellKey));
- for(const e of scene.entities){for(const p of footprint(e)){if(!point(p))return fail(`El objeto ${e.label} sale del mapa.`);if(e.solid!==false){if(occupied.has(cellKey(p)))return fail(`El objeto ${e.label} se solapa con un obstáculo.`);occupied.add(cellKey(p));}}}
+ for(const e of scene.entities){for(const p of footprint(e)){if(!hasTile(scene,p))return fail(`Mueve ${e.label} antes de eliminar su baldosa.`);if(!point(p))return fail(`El objeto ${e.label} sale del mapa.`);if(e.solid!==false){if(occupied.has(cellKey(p)))return fail(`El objeto ${e.label} se solapa con un obstáculo.`);occupied.add(cellKey(p));}}}
+ for(const e of scene.entities){
+  for(const p of [...(e.interactionPoints??[]),...(e.seat?[e.seat.cell]:[])])if(!hasTile(scene,p))return fail(`Mueve el acceso de ${e.label} antes de eliminar su baldosa.`);
+  const cells=footprint(e);
+  if(sceneWalls(scene).some(w=>wallCells(w).every(p=>cells.some(c=>c.x===p.x&&c.y===p.y))))return fail(`La pared atraviesa ${e.label}.`);
+ }
  if(!walkable(scene,scene.spawn))return fail('La entrada está bloqueada.');
  for(const e of scene.entities){
   if(e.interaction&&findPath(scene,scene.spawn,interactionCells(scene,e))===null)return fail(`No se puede llegar a ${e.label}.`);

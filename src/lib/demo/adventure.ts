@@ -1,3 +1,4 @@
+import {entranceFacing} from '../../../packages/world/src/exits';
 import { parseScene, type Cell, type Facing, type WorldScene } from '@isometrico/world';
 import { findPath, interactionCells, walkable } from '../../../packages/world/src/navigation';
 import { insertEntity } from './editor';
@@ -53,13 +54,10 @@ export function travel(value:Adventure,fromMap:string,entityId:string,facing:Fac
  const entrance=target.entities.find(e=>e.id===destinationId);
  let spawn={...exit.arrival};
  if(entrance){
-  const direction={se:{x:1,y:0},nw:{x:-1,y:0},sw:{x:0,y:1},ne:{x:0,y:-1}}[facing];
-  const center={x:entrance.position.x+((entrance.size?.x??1)-1)/2,y:entrance.position.y+((entrance.size?.y??1)-1)/2};
-  const candidates=interactionCells(target,entrance).filter(p=>findPath(target,p,[target.spawn])!==null);
-  // Prefer emerging on the side toward which the character was walking.
-  candidates.sort((a,b)=>((b.x-center.x)*direction.x+(b.y-center.y)*direction.y)-((a.x-center.x)*direction.x+(a.y-center.y)*direction.y)||Math.hypot(a.x-spawn.x,a.y-spawn.y)-Math.hypot(b.x-spawn.x,b.y-spawn.y));
-  if(!candidates.length)throw new Error('No hay una casilla libre junto a la entrada de destino.');
-  spawn={...candidates[0]};
+  spawn={...entrance.position};
+  if(!walkable(target,spawn))throw new Error('La baldosa de entrada está bloqueada.');
+  facing=entranceFacing(target,entrance);
  }
+
  return {exit,facing,scene:{...target,spawn}};
 }

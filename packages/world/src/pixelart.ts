@@ -1,19 +1,29 @@
 import { Assets, Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
-import type { ActorPose, Facing } from './types';
+import type { ActorPose, Facing, TileKind } from './types';
 import {characterImage,characterVariants,type CharacterPack} from './character';
 export interface PixelArtPack {
  version:1;
  character:CharacterPack;
  objects:Record<string,{image:string;width:number;height:number;origin:[number,number];frame?:[number,number,number,number]}>;
- tiles:{office:string;grass:string;path:string};
+ tiles:Record<TileKind,string>;
 }
-export interface LoadedPixelArt {pack:PixelArtPack;textures:Map<string,Texture>;frames:Map<string,Texture[]>}
+export interface LoadedPixelArt {pack:PixelArtPack;textures:Map<string,Texture>;frames:Map<string,Texture[]>;masks:Map<string,{width:number;height:number;alpha:Uint8Array}>}
 export async function loadPixelArt(pack:PixelArtPack):Promise<LoadedPixelArt>{
  if(pack.version!==1)throw new Error('Versión de catálogo gráfico no compatible.');
  const variants=characterVariants(pack.character);
  const urls=[...variants.flatMap(variant=>(Object.keys(pack.character.animations) as ActorPose[]).map(pose=>characterImage(pack.character,pose,variant))),...Object.values(pack.objects).map(a=>a.image),...Object.values(pack.tiles)];
  const textures=new Map<string,Texture>();
  await Promise.all([...new Set(urls)].map(async url=>{const texture=await Assets.load<Texture>(url);texture.source.scaleMode='nearest';textures.set(url,texture);}));
+ const masks=new Map<string,{width:number;height:number;alpha:Uint8Array}>();
+ for(const url of new Set(Object.values(pack.objects).map(item=>item.image))){
+  const texture=textures.get(url)!,width=texture.source.width,height=texture.source.height;
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  const context=canvas.getContext('2d',{willReadFrequently:true})!;
+  context.drawImage(texture.source.resource as CanvasImageSource,0,0);
+  const pixels=context.getImageData(0,0,width,height).data,alpha=new Uint8Array(width*height);
+  for(let i=0;i<alpha.length;i++)alpha[i]=pixels[i*4+3];
+  masks.set(url,{width,height,alpha});
+ }
  const frames=new Map<string,Texture[]>();
  const {frameWidth:w,frameHeight:h}=pack.character;
  if(!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1)throw new Error('Tamaño de fotograma no válido.');
@@ -26,7 +36,7 @@ export async function loadPixelArt(pack:PixelArtPack):Promise<LoadedPixelArt>{
    }
   }
  }
- return {pack,textures,frames};
+ return {pack,textures,frames,masks};
 }
 export function pixelObject(art:LoadedPixelArt,id:string){
  const item=art.pack.objects[id];if(!item)return null;
