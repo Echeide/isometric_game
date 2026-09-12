@@ -26,7 +26,7 @@ export function depthOrder(items:DepthItem[]):number[]{
  return result;
 }
 /** Reuse the static scene order while the avatar moves; avoid sorting thousands of tiles every frame. */
-export function insertMovingDepth(items:DepthItem[],order:number[],moving:DepthItem):number[]{
+export function movingDepthIndex(items:DepthItem[],order:number[],moving:DepthItem):number{
  let after=0,before=order.length;
  const rank=(a:DepthItem)=>a.x+a.y+(a.width+a.height)/2+(a.tie??0)*.001;
  for(let i=0;i<order.length;i++){
@@ -38,6 +38,11 @@ export function insertMovingDepth(items:DepthItem[],order:number[],moving:DepthI
   else if(ba&&!ab)before=Math.min(before,i);
   else if(overlap){if(rank(a)<=rank(b))after=Math.max(after,i+1);else before=Math.min(before,i);}
  }
- const index=after<=before?after:before;
+ return after<=before?after:before;
+}
+
+/** Compatibility helper for consumers that need a complete order. */
+export function insertMovingDepth(items:DepthItem[],order:number[],moving:DepthItem):number[]{
+ const index=movingDepthIndex(items,order,moving);
  return [...order.slice(0,index),items.length,...order.slice(index)];
 }

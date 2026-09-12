@@ -1,10 +1,11 @@
+import type {InventoryItem} from './inventory';
 import {entranceFacing} from '../../../packages/world/src/exits';
 import { parseScene, type Cell, type Facing, type WorldScene } from '@isometrico/world';
 import { findPath, interactionCells, walkable } from '../../../packages/world/src/navigation';
 import { insertEntity } from './editor';
 
-export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; destinationEntityId?:string }
-export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[] }
+export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; destinationEntityId?:string; requirement?:{itemId:string;quantity:number;consume:boolean} }
+export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1 }
 export const ADVENTURE_KEY='isometrico.adventure.v1';
 export function createAdventure(maps:WorldScene[]):Adventure {
  return parseAdventure({kind:'isometric-adventure',version:1,id:'my-adventure',name:'Mi aventura',startMap:maps[0]?.id,maps,exits:[]});
@@ -17,6 +18,11 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
  const maps=a.maps.map(m=>parseScene(m,options)), byId=new Map(maps.map(m=>[m.id,m]));
  if(byId.size!==maps.length)throw new Error('Hay mapas con identificadores repetidos.');
  if(!byId.has(a.startMap))throw new Error('El mapa inicial no existe.');
+ const items=a.items??[];
+ if(!Array.isArray(items)||items.some(i=>!i||typeof i.id!=='string'||!i.id.trim()||typeof i.name!=='string'||!i.name.trim()||typeof i.description!=='string'||typeof i.stackable!=='boolean')||new Set(items.map(i=>i.id)).size!==items.length)throw new Error('Artículos de inventario no válidos.');
+ const checkItem=(r:{itemId:string;quantity:number})=>{if(!items.some(i=>i.id===r.itemId)||!Number.isSafeInteger(r.quantity)||r.quantity<1)throw new Error('Referencia o cantidad de inventario no válida.');};
+ for(const map of maps)for(const e of map.entities)if(e.pickup){checkItem(e.pickup);if(e.solid!==false||e.interaction?.action!=='inventory.collect')throw new Error('Un recogible debe permitir el paso y tener acción de recogida.');}
+ for(const exit of a.exits)if(exit.requirement){checkItem(exit.requirement);if(typeof exit.requirement.consume!=='boolean')throw new Error('Consumo no válido.');}
  const ids=new Set<string>(),sources=new Set<string>();
  for(const exit of a.exits){
   if(!exit||typeof exit.id!=='string'||!exit.id.trim()||ids.has(exit.id))throw new Error('Las salidas necesitan identificadores únicos.');

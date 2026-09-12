@@ -2,13 +2,13 @@
   import type { PixelArtPack } from './pixelart';
   import { onMount, untrack } from 'svelte';
   import type { WorldAdapter, WorldController, WorldEntity, WorldEditor } from './types';
-  let { revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus }: {revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void} = $props();
+  let { paused=false, exitIndicators={}, hiddenIds=[], revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus }: {paused?:boolean;exitIndicators?:Record<string,import('./types').ExitIndicator>;hiddenIds?:string[];revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void} = $props();
   let host: HTMLDivElement;
   let engine: Awaited<ReturnType<typeof import('./renderer').createWorld>> | undefined = $state();
   let error = $state('');
   let ready = $state(false);
   async function interact(entity:WorldEntity) {
-    if(!entity.interaction)return;
+    if(!entity.interaction){if(entity.description)await adapter.interact({sceneId:adapter.scene.id,entityId:entity.id,action:'info.open',resourceId:entity.id});return;}
     try { await adapter.interact({sceneId:adapter.scene.id,entityId:entity.id,action:entity.interaction.action,resourceId:entity.interaction.resourceId}); }
     catch { onstatus?.('No se pudo abrir esta interacción. Inténtalo de nuevo.'); }
   }
@@ -25,8 +25,8 @@
         if(disposed||version!==requested){next.destroy(!!engine);continue;}
         engine?.destroy(true);
         engine=next;ready=true;error='';lastCelebration=celebration;
-        next.setEditor(editor);next.setPanMode(panMode);next.setWorking(working);
-        onready?.(next);next.renderFrame();
+        next.setPaused(paused);next.setExitIndicators(exitIndicators);next.setHidden(hiddenIds);next.setEditor(editor);next.setPanMode(panMode);next.setWorking(working);
+        next.renderFrame();onready?.(next);
         if(version===requested)break;
       }
     }catch(cause){console.error('World initialization failed',cause);if(!disposed)error='No se pudo actualizar el escenario. La vista anterior se conserva.';}
@@ -37,7 +37,10 @@
     return ()=>{disposed=true;if(!building)engine?.destroy();};
   });
   $effect(()=>{if(mounted){revision;untrack(()=>{requested++;void rebuild();});}});
+  $effect(()=>{engine?.setPaused(paused);});
   $effect(()=>{engine?.setWorking(working);});
+  $effect(()=>{engine?.setExitIndicators(exitIndicators);});
+  $effect(()=>{engine?.setHidden(hiddenIds);});
   $effect(()=>{engine?.setCompleted(adapter.scene.entities.filter(e=>e.completed).map(e=>e.id));});
   $effect(()=>{engine?.setEditor(editor);});
   $effect(()=>{engine?.setPanMode(panMode);});

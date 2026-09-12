@@ -14,3 +14,11 @@ it('preserves chair layers around a seated actor',()=>{
  const seat={x:2,y:2,width:1,height:1};
  expect(depthOrder([{...seat,tie:2},{...seat,tie:0},{x:2.35,y:2.35,width:.3,height:.3,tie:1}])).toEqual([1,2,0]);
 });
+
+import {movingDepthIndex} from '../packages/world/src/depth';
+it('keeps static z values fixed while placing the avatar before and after walls',()=>{
+ const items=[{x:3,y:2,width:0,height:1}],order=depthOrder(items);
+ expect(movingDepthIndex(items,order,{x:2.4,y:2.4,width:.2,height:.2})).toBe(0);
+ expect(movingDepthIndex(items,order,{x:3.4,y:2.4,width:.2,height:.2})).toBe(1);
+ expect(order).toEqual([0]);
+});

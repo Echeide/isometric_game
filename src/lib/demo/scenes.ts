@@ -7,6 +7,7 @@ export const outdoors = parseScene(outdoorsData);
 export function makeAdapter(scene:WorldScene, open:(event:WorldInteraction)=>void):WorldAdapter {
   return {scene, interact(event){
     const entity=scene.entities.find(e=>e.id===event.entityId);
+    if(event.sceneId===scene.id&&entity?.description&&!entity.interaction&&event.action==='info.open'&&event.resourceId===entity.id){open(event);return;}
     if(event.sceneId!==scene.id||entity?.interaction?.action!==event.action||entity.interaction.resourceId!==event.resourceId) throw new Error('Unknown world interaction');
     open(event);
   }};

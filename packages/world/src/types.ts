@@ -10,12 +10,14 @@ export type EntityKind = 'desk' | 'board' | 'person' | 'plant' | 'sofa' | 'table
 export interface WorldEntity {
   id: string;
   label: string;
+  description?: string;
   kind: EntityKind;
   position: Cell;
   size?: Cell;
   color?: number;
   interaction?: { label: string; action: string; resourceId: string };
   completed?: boolean;
+  pickup?: {itemId:string;quantity:number};
   visualId?: string;
   /** Horizontal reflection of the artwork; size and attachments describe the reflected footprint. */
   flipX?: boolean;
@@ -50,6 +52,8 @@ export interface WorldAdapter {
   interact: (event: WorldInteraction) => void | Promise<void>;
 }
 export interface WorldController {
+  getPlayerAnchor: () => {x:number;y:number};
+  getEntityAnchor: (id:string) => {x:number;y:number}|null;
   goTo: (entityId: string) => void;
   zoom: (delta: number) => void;
   recenter: () => void;
@@ -78,3 +82,5 @@ export interface WorldEditor {
   onselect: (id: string) => void;
   onmove: (id: string, position: Cell) => boolean;
 }
+
+export type ExitIndicator={state:'locked'|'ready';label:string};

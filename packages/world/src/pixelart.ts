@@ -61,7 +61,8 @@ export function pixelActor(art:LoadedPixelArt,color:number,me:boolean){
  function update(_time:number,dt:number,pose:ActorPose,facing:Facing,reduced=false){
   if(pose!==lastPose){elapsed=0;lastPose=pose;}elapsed+=dt;
   const clip=character.animations[pose],frames=art.frames.get(`${variant}:${pose}:${facing}`)!;
-  sprite.texture=frames[reduced?0:Math.floor(elapsed*clip.fps)%frames.length];
+  const texture=frames[reduced?0:Math.floor(elapsed*clip.fps)%frames.length];
+  if(sprite.texture!==texture)sprite.texture=texture;
  }
  return {view,update};
 }

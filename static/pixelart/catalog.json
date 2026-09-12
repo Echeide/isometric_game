@@ -338,6 +338,15 @@
         48,
         104
       ]
+    },
+    "pixel.key": {
+      "image": "/pixelart/objects/key.png",
+      "width": 64,
+      "height": 32,
+      "origin": [
+        32,
+        0
+      ]
     }
   },
   "tiles": {

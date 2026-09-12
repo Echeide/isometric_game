@@ -12,6 +12,7 @@ export const visualCatalog:readonly VisualAsset[] = [
  {id:'pixel.table',kind:'table',label:'Mesa · Pixel',category:'office',size:{x:2,y:1}},
  {id:'pixel.board',kind:'board',label:'Panel · Pixel',category:'office',size:{x:3,y:1}},
  {id:'pixel.goal',kind:'goal',label:'Bandera · Pixel',category:'urban',size:{x:1,y:1}},
+ {id:'pixel.key',kind:'goal',label:'Llave',category:'urban',size:{x:1,y:1}},
  {id:'pixel.desk',kind:'desk',label:'Escritorio · Pixel',category:'office',size:{x:2,y:1}},
  {id:'pixel.tree',kind:'tree',label:'Árbol · Roble · Pixel',category:'nature',size:{x:1,y:1}},
  {id:'pixel.person',kind:'person',label:'Explorador · Pixel',category:'people',size:{x:1,y:1},color:0x728da5},
@@ -71,7 +72,9 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
   if(!point(e.position))return fail(`Posición no válida: ${e.id}.`);
   if(e.size!==undefined&&(!e.size||typeof e.size!=='object'||!dimension((e.size as Cell).x)||!dimension((e.size as Cell).y)))return fail(`Tamaño no válido: ${e.id}.`);
   for(const flag of ['solid','completed','flipX'])if(e[flag]!==undefined&&typeof e[flag]!=='boolean')return fail(`Valor ${flag} no válido: ${e.id}.`);
+  if(e.description!==undefined&&typeof e.description!=='string')return fail('Descripción no válida.');
   if(e.color!==undefined&&(typeof e.color!=='number'||!Number.isInteger(e.color)||e.color<0||e.color>0xffffff))return fail(`Color no válido: ${e.id}.`);
+  if(e.pickup!==undefined){const p=e.pickup as {itemId:string;quantity:number};if(!p||typeof p.itemId!=='string'||!p.itemId.trim()||!Number.isSafeInteger(p.quantity)||p.quantity<1)return fail('Recogible no válido.');}
   if(e.interaction!==undefined){const a=e.interaction as Record<string,unknown>;if(!a||typeof a!=='object'||!['label','action','resourceId'].every(k=>typeof a[k]==='string'&&(a[k] as string).trim()))return fail(`Interacción no válida: ${e.id}.`);}
   if(e.interactionPoints!==undefined&&(!Array.isArray(e.interactionPoints)||!e.interactionPoints.length||!e.interactionPoints.every(point)))return fail(`Puntos de interacción no válidos: ${e.id}.`);
   if(e.seat!==undefined){const seat=e.seat as Record<string,unknown>;if(!seat||typeof seat!=='object'||!point(seat.cell)||!['ne','se','sw','nw'].includes(seat.facing as string))return fail(`Asiento no válido: ${e.id}.`);}
