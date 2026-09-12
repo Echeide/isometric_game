@@ -1,3 +1,4 @@
+import {levelAt,stairAt} from './elevation';
 import {hasTile,canCross} from './walls';
 import type { Cell, WorldEntity, WorldScene } from './types';
 export const cellKey = (p: Cell) => `${p.x},${p.y}`;
@@ -44,7 +45,7 @@ export function findPath(scene: WorldScene, start: Cell, targets: Cell[]): Cell[
 }
 export function interactionCells(scene: WorldScene, entity: WorldEntity): Cell[] {
   if(entity.interaction?.action==='adventure.exit')return walkable(scene,entity.position)?[{...entity.position}]:[];
-  if(entity.interactionPoints?.length) return entity.interactionPoints.filter(p => walkable(scene,p));
+  if(entity.interactionPoints?.length) return entity.interactionPoints.filter(p => walkable(scene,p)&&levelAt(scene,p)===levelAt(scene,entity.position)&&!stairAt(scene,p));
   return footprint(entity).flatMap(p=>neighbors(p).filter(n=>canCross(scene,p,n))).filter(p => walkable(scene, p));
 }
 export function project(p: Cell) { return { x: (p.x - p.y) * 32, y: (p.x + p.y) * 16 }; }

@@ -1,6 +1,7 @@
+import {topContains,levelAt,stairAt,stairDirections,STAIR_STEPS,LEVEL_HEIGHT,projectSurface,surfaceHeight,wallHeight} from './elevation';
 import {exitFacing} from './exits';
 import {alphaHitArea} from './alpha-hit';
-import {depthOrder,type DepthItem} from './depth';
+import {depthOrder,insertMovingDepth,type DepthItem} from './depth';
 import {sceneWalls,wallCells,hasTile,wallEndExposed} from './walls';
 import type {Wall} from './types';
 import { cameraGestures } from './camera-gestures';
@@ -60,23 +61,38 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   world.addChild(floor,objects,labelLayer); app.stage.addChild(world);
   let editor=initialEditor;
   const outdoor=scene.theme==='outdoors';
+  const groundPalette=outdoor?{top:0xb5cba4,left:0x8d9e78,right:0x768b69}:palette;
+  const minimumHeight=Math.min(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT;
+  const hasLevels=Object.values(scene.elevations??{}).some(z=>z!==0)||Object.keys(scene.stairs??{}).length>0;
   const foundation = new Graphics();
-  for(let x=0;x<scene.width;x++)for(let y=0;y<scene.height;y++)if(hasTile(scene,{x,y}))box(foundation,x,y,1,1,18,outdoor?{top:0xb5cba4,left:0x8d9e78,right:0x768b69}:palette);
+  for(let x=0;x<scene.width;x++)for(let y=0;y<scene.height;y++)if(hasTile(scene,{x,y}))box(foundation,x,y,1,1,18,groundPalette,minimumHeight);
   floor.addChild(foundation);
+  const depthItems:{view:Container;bounds:()=>DepthItem}[]=[];
   const tileDrawers=new Map<string,(kind:import('./types').TileKind|'void')=>void>();
   for(let x=0;x<scene.width;x++) for(let y=0;y<scene.height;y++) {
-    const p=project({x,y}); const tile=new Graphics();
+    const z=levelAt(scene,{x,y})*LEVEL_HEIGHT;const base=project({x,y});const p={x:base.x,y:base.y-z}; const tile=new Graphics();
     let textureTile:Sprite|undefined;
     const drawTile=(kind:import('./types').TileKind|'void')=>{
       tile.clear();
       if(textureTile)textureTile.visible=kind!=='void';
       if(kind==='void'){if(editor)tile.poly([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]).stroke({color:0x829d7a,alpha:.25,width:1});return;}
+      if(z>minimumHeight)box(tile,x,y,1,1,z-minimumHeight,groundPalette,z);
       {
         const texture=art.textures.get(art.pack.tiles[kind])!;
         if(!textureTile){textureTile=new Sprite(texture);textureTile.position.set(p.x-32,p.y);textureTile.width=64;textureTile.height=32;textureTile.eventMode='none';textureTile.roundPixels=true;tile.addChild(textureTile);}
         else textureTile.texture=texture;
       }
-      tile.hitArea=new Polygon([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]);
+      const stair=stairAt(scene,{x,y});
+      if(stair){
+        if(textureTile)textureTile.visible=false;
+        const d=stairDirections[stair];
+        for(let step=0;step<STAIR_STEPS;step++){
+          const along=(d.x+d.y)>0?step:STAIR_STEPS-1-step;
+          const sx=x+(d.x?step/STAIR_STEPS:0),sy=y+(d.y?step/STAIR_STEPS:0),h=z+(along+1)*LEVEL_HEIGHT/STAIR_STEPS;
+          box(tile,sx,sy,d.x?1/STAIR_STEPS:1,d.y?1/STAIR_STEPS:1,h-minimumHeight,{top:0xe0d9c1,left:0xa69d85,right:0x8f8876},h);
+        }
+      }
+      tile.hitArea={contains:(px:number,py:number)=>topContains(scene,{x,y},{x:px,y:py})};
     };
     drawTile(tileAt(scene,{x,y}));tileDrawers.set(`${x},${y}`,drawTile);
     if(walkable(scene,{x,y})) {
@@ -84,19 +100,18 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       tile.on('pointertap',()=>{host.focus({preventScroll:true});if(!gestures.blocked()){if(editor?.onpick)editor.onpick({x,y});else if(!editor)moveTo({x,y});else if(!editor.brush&&!editor.wallTool)editor.onselect('');}});
       tile.on('pointerover',()=>{tile.tint=0xd0e8b6;});tile.on('pointerout',()=>{tile.tint=0xffffff;});
     }
-    floor.addChild(tile);
+    if(hasLevels){objects.addChild(tile);depthItems.push({view:tile,bounds:()=>({x,y,width:1,height:1,tie:-1000,floor:true})});}else floor.addChild(tile);
   }
-  const depthItems:{view:Container;bounds:()=>DepthItem}[]=[];
   const allWalls=sceneWalls(scene);
   const wallViews:{wall:Wall;view:Graphics;group:string}[]=[];
   function wallArt(w:Wall){
     const g=new Graphics(),dx=w.axis==='x'?1:0,dy=1-dx;
     const thickness=w.kind==='door'?.20:.16;
-    const neighbor=(end:0|1)=>!wallEndExposed(w,end,allWalls);
+    const neighbor=(end:0|1)=>!wallEndExposed(w,end,allWalls.filter(n=>wallHeight(scene,n)===wallHeight(scene,w)));
     const material=w.material??'white';
     const colors=w.kind==='door'?{front:0x997450,top:0xc6a37a,side:0x74583e,under:0x604a36}:{front:w.axis==='x'?0xd4ded5:0xb8cdc5,top:0xe9eee5,side:0x8ca69b,under:0x7e978c};
     if(w.kind==='wall'){if(material==='glass')Object.assign(colors,{front:0xaed4dc,top:0xe3f8fa,side:0x779ea9});else if(material==='stone')Object.assign(colors,{front:0x9ba297,top:0xc9cec0,side:0x747f73});else if(material==='cobble')Object.assign(colors,{front:0x747b70,top:0xbdb9a7,side:0x656f61});}
-    function point(t:number,offset:number,z:number){const p=project({x:w.x+dx*t+dy*offset,y:w.y+dy*t+dx*offset});return [p.x,p.y-z];}
+    function point(t:number,offset:number,z:number){const p=project({x:w.x+dx*t+dy*offset,y:w.y+dy*t+dx*offset});return [p.x,p.y-z-wallHeight(scene,w)];}
     function face(points:number[][],color:number,alpha=1){g.poly(points.flat()).fill({color,alpha});}
     function slab(start:number,end:number,low:number,high:number,capStart:boolean,capEnd:boolean){
       const back=-thickness/2,front=thickness/2;
@@ -149,12 +164,12 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   function refreshLabels(){for(const [id,label] of labels)label.visible=id===selectedEntity||hovered.has(id);}
   const occupants=new Map<string,ReturnType<typeof createActor>>();
   for(const e of scene.entities) {
-    const view=entityArt(e,outdoor,art,scene);const p=project(e.position);view.position.set(p.x,p.y);view.zIndex=(e.position.x+e.position.y+(e.size?.x??1)/2+(e.size?.y??1)/2)*100;
+    const view=entityArt(e,outdoor,art,scene);const p=projectSurface(scene,e.position);view.position.set(p.x,p.y);view.zIndex=(e.position.x+e.position.y+(e.size?.x??1)/2+(e.size?.y??1)/2)*100;
     depthItems.push({view,bounds:()=>({...(drag?.id===e.id?drag.position:e.position),width:e.size?.x??1,height:e.size?.y??1})});
     {view.eventMode='static';view.cursor='pointer';view.on('pointertap',()=>{host.focus({preventScroll:true});if(!editor&&!gestures.blocked())goTo(e.id);});view.on('pointerover',event=>{if(event.pointerType==='touch')return;view.alpha=.8;hovered.add(e.id);refreshLabels();});view.on('pointerout',()=>{view.alpha=1;hovered.delete(e.id);refreshLabels();});}
     if(e.kind==='person'){const actor=createActor(e.color??0xd79875,false,art);const at=project({x:.5,y:.5});actor.view.position.set(at.x,at.y);actor.view.scale.x=e.flipX?-1:1;view.addChildAt(actor.view,0);occupants.set(e.id,actor);}
     if(e.seat){
-      const placement=seatPlacement(e.seat),p=project(placement);
+      const placement=seatPlacement(e.seat),p=projectSurface(scene,placement);
       const base=pixelObject(art,'pixel.chair-base');
       const back=pixelObject(art,`pixel.chair-back-${e.seat.facing}`);
       if(base&&back){
@@ -191,7 +206,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     for(const [key,view]of entityViews){view.tint=editor&&key===id?0xe3ffc8:0xffffff;view.cursor=editor?'grab':scene.entities.find(e=>e.id===key)?.interaction?'pointer':'default';}
     host.dataset.selected=editor?id:'';
     const e=scene.entities.find(e=>e.id===id);if(!e||!editor)return;
-    const p=project(position??e.position),w=(e.size?.x??1)*32,h=(e.size?.y??1)*32;
+    const p=projectSurface(scene,position??e.position),w=(e.size?.x??1)*32,h=(e.size?.y??1)*32;
     selection.poly([p.x,p.y,p.x+w,p.y+w/2,p.x+w-h,p.y+(w+h)/2,p.x-h,p.y+h/2]).fill({color:0x8dcb56,alpha:.3}).stroke({color:0x437e2e,width:3});
     host.dataset.selected=id;
   }
@@ -202,13 +217,13 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     const p=world.toLocal({x:(event.clientX-rect.left)*app.screen.width/rect.width,y:(event.clientY-rect.top)*app.screen.height/rect.height});
     const dx=p.x-drag.start.x,dy=p.y-drag.start.y;
     drag.position={x:drag.original.x+Math.round(dx/64+dy/32),y:drag.original.y+Math.round(dy/32-dx/64)};
-    const at=project(drag.position);entityViews.get(drag.id)?.position.set(at.x,at.y);highlight(drag.id,drag.position);
+    const at=projectSurface(scene,drag.position);entityViews.get(drag.id)?.position.set(at.x,at.y);highlight(drag.id,drag.position);
   }
   function endDrag(event:PointerEvent){
     if(!drag||event.pointerId!==drag.pointerId)return;
     const finished=drag;drag=null;
     if(app.canvas.hasPointerCapture(event.pointerId))app.canvas.releasePointerCapture(event.pointerId);
-    const at=project(finished.original);entityViews.get(finished.id)?.position.set(at.x,at.y);
+    const at=projectSurface(scene,finished.original);entityViews.get(finished.id)?.position.set(at.x,at.y);
     highlight(finished.id,finished.original);
     if(event.type!=='pointercancel'&&(finished.position.x!==finished.original.x||finished.position.y!==finished.original.y))editor?.onmove(finished.id,finished.position);
   }
@@ -258,12 +273,18 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   let stroke:{pointerId:number;brush:NonNullable<WorldEditor['brush']>;cells:Map<string,Cell>;last:Cell}|null=null;
   function paintCell(event:PointerEvent):Cell{
     const rect=app.canvas.getBoundingClientRect();const p=world.toLocal({x:(event.clientX-rect.left)*app.screen.width/rect.width,y:(event.clientY-rect.top)*app.screen.height/rect.height});
+    // Pick the visible top surface, front to back, instead of the flat ground plane.
+    for(let sum=scene.width+scene.height-2;sum>=0;sum--)for(let x=Math.max(0,sum-scene.height+1);x<=Math.min(scene.width-1,sum);x++){
+      const y=sum-x;if(!hasTile(scene,{x,y}))continue;
+      if(topContains(scene,{x,y},p))return {x,y};
+    }
     return {x:Math.floor(p.x/64+p.y/32),y:Math.floor(p.y/32-p.x/64)};
   }
   function addPaint(cell:Cell){
     if(!stroke||cell.x<0||cell.y<0||cell.x>=scene.width||cell.y>=scene.height)return;
     const key=`${cell.x},${cell.y}`;stroke.cells.set(key,cell);
-    tileDrawers.get(key)?.(stroke.brush==='erase'?defaultTile(scene,cell):stroke.brush);
+    if(!stroke.brush.includes(':'))tileDrawers.get(key)?.(stroke.brush==='erase'?defaultTile(scene,cell):stroke.brush as import('./types').TileKind|'void');
+    else {const p=projectSurface(scene,cell);selection.poly([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]).fill({color:0x79b550,alpha:.4});}
   }
   function paintDown(event:PointerEvent){
     if(editor?.onpick||!editor?.brush||!editor.onpaint||event.button!==0||stroke)return;
@@ -280,7 +301,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   }
   function paintEnd(event:PointerEvent){
     if(!stroke||stroke.pointerId!==event.pointerId)return;
-    event.preventDefault();event.stopImmediatePropagation();const finished=stroke;stroke=null;
+    event.preventDefault();event.stopImmediatePropagation();const finished=stroke;stroke=null;selection.clear();
     if(app.canvas.hasPointerCapture(event.pointerId))app.canvas.releasePointerCapture(event.pointerId);
     // Restore before committing, so a rejected stroke also leaves the preview unchanged.
     for(const [key,cell] of finished.cells)tileDrawers.get(key)?.(tileAt(scene,cell));
@@ -288,13 +309,13 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   }
   function edgeAt(event:PointerEvent):Wall{
     const rect=app.canvas.getBoundingClientRect(),p=world.toLocal({x:(event.clientX-rect.left)*app.screen.width/rect.width,y:(event.clientY-rect.top)*app.screen.height/rect.height});
-    const x=p.x/64+p.y/32,y=p.y/32-p.x/64;
+    const cell=paintCell(event),z=levelAt(scene,cell)*LEVEL_HEIGHT;const x=p.x/64+(p.y+z)/32,y=(p.y+z)/32-p.x/64;
     return Math.abs(x-Math.round(x))<Math.abs(y-Math.round(y))?{x:Math.round(x),y:Math.floor(y),axis:'y',kind:'wall'}:{x:Math.floor(x),y:Math.round(y),axis:'x',kind:'wall'};
   }
   function edgeHover(event:PointerEvent){
     wallPreview.clear();if(!editor?.wallTool)return;
     const w=edgeAt(event);if(!wallCells(w).some(p=>hasTile(scene,p)))return;
-    const a=project(w),b=project({x:w.x+(w.axis==='x'?1:0),y:w.y+(w.axis==='y'?1:0)});
+    const a=project(w),b=project({x:w.x+(w.axis==='x'?1:0),y:w.y+(w.axis==='y'?1:0)});a.y-=wallHeight(scene,w);b.y-=wallHeight(scene,w);
     wallPreview.moveTo(a.x,a.y).lineTo(b.x,b.y).stroke({color:editor.wallTool==='remove'?0xc86c58:0x719747,width:5});
   }
   function edgeDown(event:PointerEvent){
@@ -313,14 +334,14 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   const badge=new Text({text:'Tú',style:{fontFamily:'system-ui',fontSize:12,fontWeight:'600',fill:0x345249}});badge.anchor.set(.5,0);badge.y=14;badge.visible=false;badge.eventMode='none';labelLayer.addChild(badge);
   let playerHovered=false;avatar.eventMode='static';avatar.on('pointerover',event=>{if(event.pointerType!=='touch')playerHovered=true;});avatar.on('pointerout',()=>{playerHovered=false;});
   depthItems.push({view:avatar,bounds:()=>{const p=seatedAt?.seat?seatPlacement(seatedAt.seat):{x:px,y:py};return {x:p.x+.35,y:p.y+.35,width:.3,height:.3,tie:1};}});
-  let lastDepth='';
+  let lastDepth='',lastStaticDepth='';let staticOrder:number[]=[];
   const routeView=new Graphics();floor.addChild(routeView);
   let cell={...scene.spawn};let px=cell.x,py=cell.y;let route:Cell[]=[];let destination:WorldEntity|null=null;let zoomLevel=1;let cameraScale=1;let cameraBaseScale:number|undefined;let destroyed=false;
   let time=0,celebrationUntil=0,standingUntil=0;let facing:Facing='se';let working=false;let seatedAt:WorldEntity|null=null;let conversation:string|null=null;let purpose:'interact'|'work'='interact';
   const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function fit() {if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;app.renderer.resize(w,h);const scale=(cameraBaseScale??Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135)))*zoomLevel;world.scale.set(Math.max(.2,scale));cameraScale=world.scale.x;world.position.set(w/2-(scene.width-scene.height)*16*scale,h/2-(scene.width+scene.height)*8*scale+35*scale+panY);world.x+=panX;host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);}
+  function fit() {if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;app.renderer.resize(w,h);const scale=(cameraBaseScale??Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135+Math.max(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT-minimumHeight)))*zoomLevel;world.scale.set(Math.max(.2,scale));cameraScale=world.scale.x;world.position.set(w/2-(scene.width-scene.height)*16*scale,h/2-(scene.width+scene.height)*8*scale+35*scale+panY);world.x+=panX;host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);}
   const observer=new ResizeObserver(fit);observer.observe(host);fit();
-  function drawRoute() {routeView.clear();for(const c of route){const p=project({x:c.x+.5,y:c.y+.5});routeView.ellipse(p.x,p.y,4,2).fill({color:0x779d51,alpha:.65});}}
+  function drawRoute() {routeView.clear();for(const c of route){const p=projectSurface(scene,{x:c.x+.5,y:c.y+.5});routeView.ellipse(p.x,p.y,4,2).fill({color:0x779d51,alpha:.65});}}
   let pendingArrival:WorldEntity|null=null;
   function arrive() {
     const target=destination;destination=null;
@@ -358,10 +379,10 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(next){facing=facingFor(next.x-px,next.y-py,facing);const distance=Math.hypot(next.x-px,next.y-py);const step=Math.min(tick.deltaMS,50)*.0045;if(distance<=step||reduceMotion){px=next.x;py=next.y;cell={...next};route.shift();drawRoute();if(!route.length)arrive();}else{px+=(next.x-px)/distance*step;py+=(next.y-py)/distance*step;}}
     const seated=seatedAt?.seat?seatPlacement(seatedAt.seat):null;
     badge.visible=playerHovered&&!seated;
-    const actorPoint=project({x:px+.5,y:py+.5});
+    const actorPoint=projectSurface(scene,{x:px+.5,y:py+.5});
     const fadedGroups=new Set<string>();
     for(const {wall:w,group} of wallViews){
-      const a=project(w),b=project({x:w.x+(w.axis==='x'?1:0),y:w.y+(w.axis==='y'?1:0)});
+      const a=project(w),b=project({x:w.x+(w.axis==='x'?1:0),y:w.y+(w.axis==='y'?1:0)});a.y-=wallHeight(scene,w);b.y-=wallHeight(scene,w);
       const t=(actorPoint.x-a.x)/(b.x-a.x),base=a.y+(b.y-a.y)*t;
       const occludes=t>=-.2&&t<=1.2&&actorPoint.y<base&&actorPoint.y>base-85;
       if(occludes)fadedGroups.add(group);
@@ -372,9 +393,9 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       view.alpha+=(target-view.alpha)*Math.min(1,dt*10);
     }
     const drawX=seated?.x??px,drawY=seated?.y??py;
-    const p=project({x:drawX+.5,y:drawY+.5});avatar.position.set(Math.round(p.x),Math.round(p.y));
+    const p=projectSurface(scene,{x:drawX+.5,y:drawY+.5});avatar.position.set(Math.round(p.x),Math.round(p.y));
     const bounds=depthItems.map(i=>i.bounds()),key=JSON.stringify(bounds);
-    if(key!==lastDepth){depthOrder(bounds).forEach((index,z)=>depthItems[index].view.zIndex=z);lastDepth=key;}
+    if(key!==lastDepth){const fixed=bounds.slice(0,-1),staticKey=JSON.stringify(fixed);if(staticKey!==lastStaticDepth){staticOrder=depthOrder(fixed);lastStaticDepth=staticKey;}insertMovingDepth(fixed,staticOrder,bounds.at(-1)!).forEach((index,z)=>depthItems[index].view.zIndex=z);lastDepth=key;}
     for(const [id,label] of labels){const view=entityViews.get(id);if(view)label.position.copyFrom(view.position);}
     badge.position.set(avatar.x,avatar.y+14);
     const pose:ActorPose=time<celebrationUntil?'celebrate':next?'walk':seatedAt?(working?'work':'sit'):conversation?'talk':'idle';

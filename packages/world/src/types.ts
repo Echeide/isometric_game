@@ -2,7 +2,7 @@ export const tileKinds = ['office','grass','path','parquet','asphalt','sidewalk'
 export type TileKind = typeof tileKinds[number];
 export type WallMaterial = 'white'|'glass'|'stone'|'cobble';
 export type Wall = {x:number;y:number;axis:'x'|'y';kind:'wall'|'door';exitId?:string;material?:WallMaterial};
-export type MapBrush = TileKind | 'void' | 'erase';
+export type MapBrush = TileKind | 'void' | 'erase' | `height:${number}` | `stairs:${Facing}` | 'stairs:erase';
 export type Cell = { x: number; y: number };
 export type Facing = 'ne' | 'se' | 'sw' | 'nw';
 export type ActorPose = 'idle' | 'walk' | 'sit' | 'work' | 'talk' | 'celebrate';
@@ -35,6 +35,8 @@ export interface WorldScene {
   blocked?: Cell[];
   tiles?: Record<string,TileKind|'void'>;
   walls?: Wall[];
+  elevations?: Record<string,number>;
+  stairs?: Record<string,Facing>;
 }
 export interface WorldInteraction {
   sceneId: string;

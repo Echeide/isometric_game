@@ -1,3 +1,4 @@
+import {levelAt,stairAt} from './elevation';
 import {tileKinds} from './types';
 import {hasTile,wallCells,wallKey,sceneWalls} from './walls';
 import type { Cell, WorldScene } from './types';
@@ -49,6 +50,15 @@ export function parseScene(value: unknown): WorldScene {
    if(key!==`${x},${y}`||!point({x,y})||![...tileKinds,'void'].includes(tile as string))return fail(`Baldosa no válida: ${key}.`);
   }
  }
+ for(const field of ['elevations','stairs'] as const){
+  const data=v[field];if(data===undefined)continue;
+  if(!data||typeof data!=='object'||Array.isArray(data))return fail('Alturas o escaleras no válidas.');
+  for(const [key,value] of Object.entries(data)){
+   const [x,y]=key.split(',').map(Number);
+   if(key!==`${x},${y}`||!point({x,y})||(v.tiles as Record<string,string>|undefined)?.[key]==='void')return fail('La altura o escalera necesita una baldosa.');
+   if(field==='elevations'?typeof value!=='number'||!Number.isInteger(value)||value< -2||value>2:!['ne','se','sw','nw'].includes(value))return fail('Usa alturas de −2 a 2 y una orientación válida.');
+  }
+ }
  const ids=new Set<string>();
  for(const raw of v.entities){
   if(!raw||typeof raw!=='object')return fail('Objeto no válido.');
@@ -80,11 +90,14 @@ export function parseScene(value: unknown): WorldScene {
   }
  }
  for(const e of scene.entities)if(e.interaction?.action==='adventure.exit')e.solid=false;
+ for(const key of Object.keys(scene.stairs??{}))if((scene.elevations?.[key]??0)>=2)return fail('La escalera debe comenzar por debajo del nivel 2.');
  const occupied=new Set((scene.blocked??[]).map(cellKey));
  for(const e of scene.entities){for(const p of footprint(e)){if(!hasTile(scene,p))return fail(`Mueve ${e.label} antes de eliminar su baldosa.`);if(!point(p))return fail(`El objeto ${e.label} sale del mapa.`);if(e.solid!==false){if(occupied.has(cellKey(p)))return fail(`El objeto ${e.label} se solapa con un obstáculo.`);occupied.add(cellKey(p));}}}
  for(const e of scene.entities){
   for(const p of [...(e.interactionPoints??[]),...(e.seat?[e.seat.cell]:[])])if(!hasTile(scene,p))return fail(`Mueve el acceso de ${e.label} antes de eliminar su baldosa.`);
+  if(e.seat&&(levelAt(scene,e.seat.cell)!==levelAt(scene,e.position)||stairAt(scene,e.seat.cell)))return fail(`El asiento de ${e.label} necesita suelo plano a la altura del objeto.`);
   const cells=footprint(e);
+  if(cells.some(p=>levelAt(scene,p)!==levelAt(scene,e.position)||stairAt(scene,p)))return fail(`El objeto ${e.label} necesita suelo plano a una misma altura.`);
   if(sceneWalls(scene).some(w=>wallCells(w).every(p=>cells.some(c=>c.x===p.x&&c.y===p.y))))return fail(`La pared atraviesa ${e.label}.`);
  }
  if(!walkable(scene,scene.spawn))return fail('La entrada está bloqueada.');

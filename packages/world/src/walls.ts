@@ -1,3 +1,4 @@
+import {canChangeLevel} from './elevation';
 import type {Cell,Wall,WorldScene} from './types';
 export const wallKey=(w:Pick<Wall,'x'|'y'|'axis'>)=>`${w.axis}:${w.x},${w.y}`;
 export function wallCells(w:Pick<Wall,'x'|'y'|'axis'>):Cell[]{return w.axis==='x'?[{x:w.x,y:w.y-1},{x:w.x,y:w.y}]:[{x:w.x-1,y:w.y},{x:w.x,y:w.y}];}
@@ -10,7 +11,7 @@ export function sceneWalls(scene:WorldScene):Wall[]{
 }
 export function canCross(scene:WorldScene,a:Cell,b:Cell){
  const key=wallKey(a.x===b.x?{axis:'x',x:a.x,y:Math.max(a.y,b.y)}:{axis:'y',x:Math.max(a.x,b.x),y:a.y});
- return !sceneWalls(scene).some(w=>wallKey(w)===key&&w.kind==='wall');
+ return canChangeLevel(scene,a,b)&&!sceneWalls(scene).some(w=>wallKey(w)===key&&w.kind==='wall');
 }
 /** Opaque wall ends remain visible through an adjoining glass segment. */
 export function wallEndExposed(w:Wall,end:0|1,walls:Wall[]):boolean{

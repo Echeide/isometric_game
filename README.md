@@ -169,3 +169,9 @@ El JSON guarda huecos como `tiles["x,y"] = "void"` y bordes en `walls` (`x`, `y`
 **Añadir** organiza 22 elementos en Oficina, Naturaleza, Urbano y Personajes, con búsqueda por categoría y tamaño en casillas. Incluye archivador, estantería, impresora, silla, banco, papelera, bolardo, farola, roca, arbusto, flores y pino, además de los objetos anteriores y las variantes animadas Explorador, Lucía y Marcos. Los tamaños del catálogo se aplican al colocarlos; no se añaden interacciones automáticamente. `scripts/build-library.py` genera únicamente las nuevas piezas y conserva los sprites existentes.
 
 Al viajar, el personaje alcanza la propia baldosa de salida y mira hacia fuera antes del fundido. Aparece sobre la salida de vuelta vinculada mirando hacia el interior (según el borde o la puerta). Sin una entrada vinculada se usan las coordenadas de llegada configuradas y se conserva la orientación de salida. Las salidas antiguas se normalizan como transitables; aparecer sobre una entrada no dispara otro viaje automáticamente.
+
+### Alturas y escaleras
+
+En **Mapa → Altura** elige −2, −1, 0, 1 o 2 y pinta una zona. El nivel 0 es la referencia; cada nivel equivale a 24 píxeles. **Escaleras** coloca tres peldaños en la baldosa inferior, orientados hacia una baldosa un nivel más alta. Se atraviesan por sus extremos, nunca por los laterales. Para elevar zonas con objetivos, prepara primero el acceso con una escalera; se conserva la validación de recorridos. Los objetos y asientos necesitan apoyo plano.
+
+El JSON guarda `elevations["x,y"]` (entero de −2 a 2, ausente equivale a 0) y `stairs["x,y"]` (`ne`, `se`, `sw`, `nw`, dirección de subida). El suelo, objetos, paredes y personaje se dibujan a su altura. Son desniveles de un único suelo por casilla; no hay plantas superpuestas ni pasos bajo puentes. El guardado, la exportación y deshacer conservan estos campos.

@@ -43,7 +43,15 @@ export function flipEntity(draft:WorldScene,id:string):WorldScene {
 
 /** Apply one stroke as a single undoable edit; painting never changes collisions. */
 export function paintTiles(draft:WorldScene,cells:import('@isometrico/world').Cell[],tile:import('@isometrico/world').MapBrush):WorldScene{
+ const elevations={...draft.elevations},stairs={...draft.stairs};
+ if(tile.startsWith('height:')||tile.startsWith('stairs:')){
+  for(const {x,y} of cells){const key=`${x},${y}`;
+   if(tile.startsWith('height:')){const n=Number(tile.split(':')[1]);if(n===0)delete elevations[key];else elevations[key]=n;}
+   else if(tile==='stairs:erase')delete stairs[key];else stairs[key]=tile.split(':')[1] as import('@isometrico/world').Facing;
+  }
+  return parseScene({...draft,elevations,stairs});
+ }
  const tiles={...draft.tiles};
- for(const {x,y} of cells){if(tile==='erase')delete tiles[`${x},${y}`];else tiles[`${x},${y}`]=tile;}
- return parseScene({...draft,tiles});
+ for(const {x,y} of cells){if(tile==='erase')delete tiles[`${x},${y}`];else tiles[`${x},${y}`]=tile as import('@isometrico/world').TileKind|'void';if(tile==='void'){delete elevations[`${x},${y}`];delete stairs[`${x},${y}`];}}
+ return parseScene({...draft,tiles,elevations,stairs});
 }
