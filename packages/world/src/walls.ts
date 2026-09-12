@@ -1,12 +1,13 @@
+import {environments} from './environments';
 import {canChangeLevel} from './elevation';
 import type {Cell,Wall,WorldScene} from './types';
 export const wallKey=(w:Pick<Wall,'x'|'y'|'axis'>)=>`${w.axis}:${w.x},${w.y}`;
 export function wallCells(w:Pick<Wall,'x'|'y'|'axis'>):Cell[]{return w.axis==='x'?[{x:w.x,y:w.y-1},{x:w.x,y:w.y}]:[{x:w.x-1,y:w.y},{x:w.x,y:w.y}];}
 export function hasTile(scene:WorldScene,p:Cell){return p.x>=0&&p.y>=0&&p.x<scene.width&&p.y<scene.height&&scene.tiles?.[`${p.x},${p.y}`]!=='void';}
 export function sceneWalls(scene:WorldScene):Wall[]{
- return scene.walls??(scene.theme==='office'?[
- ...Array.from({length:scene.width},(_,x)=>({x,y:0,axis:'x' as const,kind:'wall' as const})),
- ...Array.from({length:scene.height},(_,y)=>({x:0,y,axis:'y' as const,kind:'wall' as const}))
+ return scene.walls??(!environments[scene.theme].outdoor?[
+ ...Array.from({length:scene.width},(_,x)=>({x,y:0,axis:'x' as const,kind:'wall' as const,material:environments[scene.theme].wall})),
+ ...Array.from({length:scene.height},(_,y)=>({x:0,y,axis:'y' as const,kind:'wall' as const,material:environments[scene.theme].wall}))
  ].filter(w=>wallCells(w).some(p=>hasTile(scene,p))):[]);
 }
 export function canCross(scene:WorldScene,a:Cell,b:Cell){

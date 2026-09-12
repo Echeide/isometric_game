@@ -175,3 +175,9 @@ Al viajar, el personaje alcanza la propia baldosa de salida y mira hacia fuera a
 En **Mapa → Altura** elige −2, −1, 0, 1 o 2 y pinta una zona. El nivel 0 es la referencia; cada nivel equivale a 24 píxeles. **Escaleras** coloca tres peldaños en la baldosa inferior, orientados hacia una baldosa un nivel más alta. Se atraviesan por sus extremos, nunca por los laterales. Para elevar zonas con objetivos, prepara primero el acceso con una escalera; se conserva la validación de recorridos. Los objetos y asientos necesitan apoyo plano.
 
 El JSON guarda `elevations["x,y"]` (entero de −2 a 2, ausente equivale a 0) y `stairs["x,y"]` (`ne`, `se`, `sw`, `nw`, dirección de subida). El suelo, objetos, paredes y personaje se dibujan a su altura. Son desniveles de un único suelo por casilla; no hay plantas superpuestas ni pasos bajo puentes. El guardado, la exportación y deshacer conservan estos campos.
+
+### Rendimiento del visor
+
+El juego y el editor reutilizan la aplicación Pixi y el canvas al cambiar de escena. El catálogo gráfico comparte texturas, fotogramas y máscaras de transparencia. Los viajes del juego usan una copia validada de la aventura preparada al cargarla o seleccionarla; los datos externos siguen pasando por la validación completa.
+
+`createNavigator(scene)` prepara índices de obstáculos y paredes para una escena fija. La validación calcula una sola región accesible desde la entrada para comprobar los objetivos. Las consultas independientes con `findPath` construyen un índice nuevo, de modo que los borradores modificados no reutilizan colisiones antiguas. El orden de los objetos estáticos se conserva durante el movimiento del personaje.

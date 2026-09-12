@@ -54,3 +54,15 @@ it('keeps distinct paired doors between the same maps and uses configured arriva
  expect(travel(a,'a','out','se').scene.spawn).toEqual({x:3,y:3});
  expect(travel(a,'a','out2','se').scene.spawn).toEqual({x:5,y:5});
 });
+
+import {createTraveler} from '../src/lib/demo/adventure';
+it('prepared travel matches strict travel and isolates its validated snapshot',()=>{
+ const a=connectMaps(createAdventure([map('a'),map('b')]),'a','b','out');
+ const traveler=createTraveler(a),expected=travel(a,'a','out','nw');
+ expect(traveler('a','out','nw')).toEqual(expected);
+ a.maps[1].spawn={x:-1,y:0};a.maps[1].name='Mutated';
+ const result=traveler('a','out','nw');result.scene.name='Changed result';result.exit.toMap='missing';
+ expect(traveler('a','out','nw')).toEqual(expected);
+ expect(()=>traveler('a','missing')).toThrow();
+ expect(()=>createTraveler({...a,startMap:'missing'})).toThrow();
+});

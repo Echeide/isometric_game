@@ -32,3 +32,15 @@ export function topContains(scene:WorldScene,cell:Cell,point:Cell){
  }
  return false;
 }
+
+/** Inverse of the isometric level-zero grid, independent of terrain height. */
+export function baseGridCell(p:Cell):Cell{return {x:Math.floor(p.x/64+p.y/32),y:Math.floor(p.y/32-p.x/64)};}
+
+/** Elevated surface picking for placement; height painting can explicitly target the base grid. */
+export function terrainCellAt(scene:WorldScene,p:Cell,baseOnly=false):Cell{
+ if(!baseOnly)for(let sum=scene.width+scene.height-2;sum>=0;sum--)for(let x=Math.max(0,sum-scene.height+1);x<=Math.min(scene.width-1,sum);x++){
+  const y=sum-x;if(scene.tiles?.[`${x},${y}`]==='void')continue;
+  if(topContains(scene,{x,y},p))return {x,y};
+ }
+ return baseGridCell(p);
+}

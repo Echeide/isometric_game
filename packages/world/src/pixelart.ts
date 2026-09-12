@@ -8,7 +8,13 @@ export interface PixelArtPack {
  tiles:Record<TileKind,string>;
 }
 export interface LoadedPixelArt {pack:PixelArtPack;textures:Map<string,Texture>;frames:Map<string,Texture[]>;masks:Map<string,{width:number;height:number;alpha:Uint8Array}>}
-export async function loadPixelArt(pack:PixelArtPack):Promise<LoadedPixelArt>{
+const loadedPacks=new WeakMap<PixelArtPack,Promise<LoadedPixelArt>>();
+export function loadPixelArt(pack:PixelArtPack):Promise<LoadedPixelArt>{
+ const cached=loadedPacks.get(pack);if(cached)return cached;
+ const loading=preparePixelArt(pack).catch(error=>{loadedPacks.delete(pack);throw error;});
+ loadedPacks.set(pack,loading);return loading;
+}
+async function preparePixelArt(pack:PixelArtPack):Promise<LoadedPixelArt>{
  if(pack.version!==1)throw new Error('Versión de catálogo gráfico no compatible.');
  const variants=characterVariants(pack.character);
  const urls=[...variants.flatMap(variant=>(Object.keys(pack.character.animations) as ActorPose[]).map(pose=>characterImage(pack.character,pose,variant))),...Object.values(pack.objects).map(a=>a.image),...Object.values(pack.tiles)];

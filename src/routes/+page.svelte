@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {environments} from '@isometrico/world';
  let panMode=$state(false);
  import { graphics } from '$lib/demo/pixelart';
  import { tick,onMount } from 'svelte';
@@ -6,11 +7,12 @@
  import {objectiveKey} from '$lib/demo/playable-adventure';
  import {loadAdventureLibrary,selectAdventure} from '$lib/demo/adventure-library';
  let adventures=$state<Adventure[]>([]);
- import {travel,type Adventure} from '$lib/demo/adventure';
+ import {createTraveler,type Adventure} from '$lib/demo/adventure';
  import {parseScene,type WorldScene,type Facing} from '@isometrico/world';
  import { World, type WorldController, type WorldInteraction } from '@isometrico/world';
  import { office,outdoors,makeAdapter,initialTasks,initialGoals,type Task } from '$lib/demo/scenes';
  import { Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Send, Flag, Armchair, CircleHelp, CheckCheck, Hand } from 'lucide-svelte';
+ let traveler:ReturnType<typeof createTraveler>|undefined;
  let adventure=$state<Adventure|null>(null),mapsReady=$state(false);
  let currentScene=$state<WorldScene>(office);
  let mode=$state('checkpoint');
@@ -27,7 +29,7 @@
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
   const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
   const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
-  currentScene=parseScene(initial);mode=currentScene.id;
+  traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
  }catch(e){loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}});
  function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;transitionReady=true;}
  function changeScene(next:WorldScene,facing:Facing){
@@ -61,7 +63,7 @@
    if(transitionImage)return;
    if(event.action==='adventure.exit'){
     if(!adventure)return;
-    try{const next=travel(adventure,event.sceneId,event.entityId,controller?.getFacing());changeScene(next.scene,next.facing);}
+    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());changeScene(next.scene,next.facing);}
     catch(e){status=(e as Error).message;}
     return;
    }
@@ -82,7 +84,7 @@
    const next=selectAdventure(localStorage,value);
    adventureProgress.set(adventure.id,{tasks:structuredClone($state.snapshot(tasks)),completed:[...completed],messages:structuredClone($state.snapshot(messages))});
    const progress=adventureProgress.get(value);tasks=progress?.tasks??structuredClone(initialTasks);completed=progress?.completed??[];messages=progress?.messages??{};
-   adventure=next;changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
+   traveler=createTraveler(next);adventure=next;changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
    const url=new URL(location.href);url.search='';url.searchParams.set('adventure',value);history.replaceState(null,'',url);
   }catch(e){status=(e as Error).message;}
  }
@@ -104,9 +106,9 @@
   <div class="topbar-right"><a class="editor-link" href="/sprites">Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>Editar mapa</a><span class="demo-badge">DEMO LOCAL</span><button class="header-action" onclick={()=>showPanel('space')} aria-label="Abrir lugares y progreso" title="Lugares y progreso"><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label="Ayuda" title="Ayuda"><CircleHelp size={19}/></button><span class="avatar-mini">E</span></div>
  </header>
  <main class="immersive-world" aria-label="Espacio virtual">
-  <div class:outdoors={scene.theme==='outdoors'} class="map-stage">
-   {#if loadError}<p class="load-error" role="alert">{loadError}</p>{:else if mapsReady}{#key worldKey}<World {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} onstatus={s=>status=s}/>{/key}{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/>
-   <div class="scene-heading"><div class="eyebrow">{adventure?.name??'MI AVENTURA'}</div><h1>{scene.name}</h1><span>{scene.theme==='office'?'Interior · Tu espacio virtual':'Exterior · Explora a tu ritmo'}</span></div>
+  <div class:outdoors={environments[scene.theme].outdoor} class="map-stage">
+   {#if loadError}<p class="load-error" role="alert">{loadError}</p>{:else if mapsReady}<World revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/>
+   <div class="scene-heading"><div class="eyebrow">{adventure?.name??'MI AVENTURA'}</div><h1>{scene.name}</h1><span>{environments[scene.theme].label}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <div class="map-controls"><button aria-label="Mover vista" aria-pressed={panMode} title="Mover vista: arrastra con ratón o dedo" onclick={()=>panMode=!panMode}><Hand size={18}/></button><button onclick={()=>controller?.zoom(-.15)} aria-label="Alejar mapa" title="Alejar"><Minus size={17}/></button><button onclick={()=>controller?.recenter()} aria-label="Centrar mapa" title="Centrar"><Scan size={17}/></button><button onclick={()=>controller?.zoom(.15)} aria-label="Acercar mapa" title="Acercar"><Plus size={17}/></button></div>
    <div class="player-hud"><div class="my-avatar">E</div><div><strong>Explorador <span>Tú</span></strong><small>{hasTasks&&active?'En foco · '+active.title:'Disponible para explorar'}</small></div></div>

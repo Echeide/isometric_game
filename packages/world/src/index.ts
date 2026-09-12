@@ -15,3 +15,5 @@ export type { TileKind } from './types';
 export type {Wall,MapBrush} from './types';
 
 export type {WallMaterial} from './types';
+
+export {environments} from './environments';

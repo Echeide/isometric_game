@@ -1,3 +1,4 @@
+import {environments} from '@isometrico/world';
 import {parseScene,type WorldScene} from '@isometrico/world';
 export type WorldSlot='checkpoint'|'routingtales';
 export const MAP_STORAGE_KEY='isometrico.maps.v1';
@@ -14,7 +15,7 @@ export function readMaps(storage:Pick<Storage,'getItem'>):{active:WorldSlot;maps
  return result;
 }
 export function saveMap(storage:StorageAccess,value:unknown,target?:WorldSlot):WorldSlot{
- const scene=parseScene(value),slot:WorldSlot=target??(scene.theme==='office'?'checkpoint':'routingtales');
+ const scene=parseScene(value),slot:WorldSlot=target??(environments[scene.theme].outdoor?'routingtales':'checkpoint');
  const saved=readMaps(storage);
  storage.setItem(MAP_STORAGE_KEY,JSON.stringify({version:1,active:slot,maps:{...saved.maps,[slot]:scene}}));
  return slot;

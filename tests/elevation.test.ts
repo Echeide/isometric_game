@@ -2,7 +2,7 @@ import {expect,it} from 'vitest';
 import {parseScene} from '../packages/world/src/scene';
 import {findPath} from '../packages/world/src/navigation';
 import {canCross} from '../packages/world/src/walls';
-import {surfaceHeight,projectSurface,topContains,wallHeight,stairDirections} from '../packages/world/src/elevation';
+import {terrainCellAt,baseGridCell,surfaceHeight,projectSurface,topContains,wallHeight,stairDirections} from '../packages/world/src/elevation';
 import {depthOrder,insertMovingDepth} from '../packages/world/src/depth';
 import {paintTiles} from '../src/lib/demo/editor';
 import type {WorldScene,Facing} from '../packages/world/src/types';
@@ -67,4 +67,34 @@ it('supports both underground levels and stairs through zero',()=>{
 it('keeps a moving actor above its floor and behind a foreground platform',()=>{
  const floors=[{x:2,y:2,width:1,height:1,floor:true},{x:3,y:2,width:1,height:1,floor:true}];
  expect(insertMovingDepth(floors,depthOrder(floors),{x:2.35,y:2.35,width:.3,height:.3})).toEqual([0,2,1]);
+});
+
+it('allows an intermediate raised exit while editing and validates routes before playing',()=>{
+ const scene:WorldScene={...base,entities:[{id:'exit',kind:'goal',label:'Salida',position:{x:3,y:2},solid:false,interaction:{action:'adventure.exit',label:'Salir',resourceId:'exit'}}]};
+ expect(()=>paintTiles(scene,[{x:3,y:2}],'height:1')).toThrow('No se puede llegar');
+ const raised=paintTiles(scene,[{x:3,y:2}],'height:1',{allowUnreachable:true});
+ expect(parseScene(raised,{allowUnreachable:true}).elevations?.['3,2']).toBe(1);
+ expect(()=>parseScene(raised)).toThrow('No se puede llegar');
+ const connected=paintTiles(raised,[{x:2,y:2}],'stairs:se',{allowUnreachable:true});
+ expect(()=>parseScene(connected)).not.toThrow();
+ expect(()=>paintTiles(connected,[{x:3,y:2}],'height:3',{allowUnreachable:true})).toThrow();
+});
+
+it('selects the same zero-grid cell regardless of its terrain elevation',()=>{
+ for(const level of [-2,-1,0,1,2]){
+  const scene={...base,elevations:{'2,3':level}};
+  const zeroPoint={x:(2.5-3.5)*32,y:(2.5+3.5)*16};
+  expect(baseGridCell(zeroPoint)).toEqual({x:2,y:3});
+  expect(surfaceHeight(scene,{x:2.5,y:3.5})).toBe(level*24);
+ }
+});
+
+it('places stairs on the visible level-one tile, not a level-two tile behind its base projection',()=>{
+ const scene:WorldScene={...base,elevations:{'3,3':1,'2,2':2}};
+ const pointer=projectSurface(scene,{x:3.5,y:3.5});
+ expect(terrainCellAt(scene,pointer,true)).toEqual({x:2,y:2});
+ const selected=terrainCellAt(scene,pointer);
+ expect(selected).toEqual({x:3,y:3});
+ const painted=paintTiles(scene,[selected],'stairs:nw',{allowUnreachable:true});
+ expect(painted.stairs?.['3,3']).toBe('nw');expect(painted.stairs?.['2,2']).toBeUndefined();
 });

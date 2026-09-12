@@ -1,5 +1,5 @@
-import {levelAt,stairAt} from './elevation';
-import {hasTile,canCross} from './walls';
+import {canChangeLevel,levelAt,stairAt} from './elevation';
+import {hasTile,canCross,sceneWalls,wallKey} from './walls';
 import type { Cell, WorldEntity, WorldScene } from './types';
 export const cellKey = (p: Cell) => `${p.x},${p.y}`;
 export const sameCell = (a: Cell, b: Cell) => a.x === b.x && a.y === b.y;
@@ -17,32 +17,34 @@ export function walkable(scene: WorldScene, p: Cell): boolean {
 export function neighbors(p: Cell): Cell[] {
   return [{x:p.x+1,y:p.y},{x:p.x,y:p.y+1},{x:p.x-1,y:p.y},{x:p.x,y:p.y-1}];
 }
-/** Breadth-first search: shortest four-direction route, never crosses furniture. */
-export function findPath(scene: WorldScene, start: Cell, targets: Cell[]): Cell[] | null {
-  if (!walkable(scene, start)) return null;
-  const goal = new Set(targets.filter(p => walkable(scene, p)).map(cellKey));
-  const queue: Cell[] = [start];
-  const parents = new Map<string, Cell | null>([[cellKey(start), null]]);
-  for (let i = 0; i < queue.length; i++) {
-    const current = queue[i];
-    if (goal.has(cellKey(current))) {
-      const path: Cell[] = [];
-      let cursor: Cell | null = current;
-      while (cursor && !sameCell(cursor, start)) {
-        path.unshift(cursor);
-        cursor = parents.get(cellKey(cursor)) ?? null;
-      }
-      return path;
-    }
-    for (const next of neighbors(current)) {
-      if (canCross(scene,current,next) && walkable(scene, next) && !parents.has(cellKey(next))) {
-        parents.set(cellKey(next), current);
-        queue.push(next);
-      }
-    }
+/** Build collision indexes once for a fixed scene; no cache shared with mutable editor drafts. */
+export function createNavigator(scene:WorldScene){
+ const blocked=new Set((scene.blocked??[]).map(cellKey));
+ for(const entity of scene.entities)if(entity.solid!==false)for(const cell of footprint(entity))blocked.add(cellKey(cell));
+ const walls=new Set(sceneWalls(scene).filter(w=>w.kind==='wall').map(wallKey));
+ const free=(p:Cell)=>Number.isInteger(p.x)&&Number.isInteger(p.y)&&hasTile(scene,p)&&!blocked.has(cellKey(p));
+ const cross=(a:Cell,b:Cell)=>canChangeLevel(scene,a,b)&&!walls.has(wallKey(a.x===b.x?{axis:'x',x:a.x,y:Math.max(a.y,b.y)}:{axis:'y',x:Math.max(a.x,b.x),y:a.y}));
+ function search(start:Cell,goals?:Set<string>){
+  const parents=new Map<string,Cell|null>();if(!free(start))return {parents,found:null as Cell|null};
+  const queue=[start];parents.set(cellKey(start),null);
+  for(let i=0;i<queue.length;i++){
+   const current=queue[i];if(goals?.has(cellKey(current)))return {parents,found:current};
+   for(const next of neighbors(current)){const key=cellKey(next);if(!parents.has(key)&&free(next)&&cross(current,next)){parents.set(key,current);queue.push(next);}}
   }
-  return null;
+  return {parents,found:null as Cell|null};
+ }
+ return {
+  reachableFrom(start:Cell){return new Set(search(start).parents.keys());},
+  findPath(start:Cell,targets:Cell[]):Cell[]|null{
+   const goals=new Set(targets.filter(free).map(cellKey));if(!goals.size)return null;
+   const {parents,found}=search(start,goals);if(!found)return null;
+   const path:Cell[]=[];let cursor:Cell|null=found;
+   while(cursor&&!sameCell(cursor,start)){path.push(cursor);cursor=parents.get(cellKey(cursor))??null;}
+   return path.reverse();
+  }
+ };
 }
+export function findPath(scene:WorldScene,start:Cell,targets:Cell[]):Cell[]|null{return createNavigator(scene).findPath(start,targets);}
 export function interactionCells(scene: WorldScene, entity: WorldEntity): Cell[] {
   if(entity.interaction?.action==='adventure.exit')return walkable(scene,entity.position)?[{...entity.position}]:[];
   if(entity.interactionPoints?.length) return entity.interactionPoints.filter(p => walkable(scene,p)&&levelAt(scene,p)===levelAt(scene,entity.position)&&!stairAt(scene,p));

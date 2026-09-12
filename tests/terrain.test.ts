@@ -28,3 +28,17 @@ it('paints and restores every available finish while preserving paths',async()=>
   expect(tileAt(paintTiles(painted,[{x:7,y:8}],'erase'),{x:7,y:8})).toBe('office');
  }
 });
+it('round-trips all environments and preserves custom terrain and walls',async()=>{
+ const {environments}=await import('../packages/world/src/environments');
+ const {sceneWalls}=await import('../packages/world/src/walls');
+ for(const theme of Object.keys(environments) as Array<keyof typeof environments>){
+  const scene=parseScene(JSON.parse(JSON.stringify({...office,theme})));
+  expect(tileAt(scene,{x:2,y:2})).toBe(environments[theme].tile);
+  expect(sceneWalls(scene).length>0).toBe(!environments[theme].outdoor);
+  if(theme==='castle')expect(sceneWalls(scene).every(w=>w.material==='stone')).toBe(true);
+  const custom=parseScene({...scene,tiles:{'2,2':'parquet'},walls:[]});
+  expect(tileAt(custom,{x:2,y:2})).toBe('parquet');
+  expect(sceneWalls(custom)).toEqual([]);
+ }
+ expect(()=>parseScene({...office,theme:'toString'})).toThrow('Entorno no válido');
+});

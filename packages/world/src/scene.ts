@@ -1,8 +1,9 @@
+import {environments} from './environments';
 import {levelAt,stairAt} from './elevation';
 import {tileKinds} from './types';
 import {hasTile,wallCells,wallKey,sceneWalls} from './walls';
 import type { Cell, WorldScene } from './types';
-import { footprint, walkable, findPath, interactionCells, cellKey } from './navigation';
+import { footprint, walkable, createNavigator, interactionCells, cellKey } from './navigation';
 export type ObjectCategory='office'|'nature'|'urban'|'people';
 export interface VisualAsset {id:string;kind:import('./types').EntityKind;label:string;category:ObjectCategory;size:Cell;color?:number}
 export const visualCatalog:readonly VisualAsset[] = [
@@ -30,13 +31,13 @@ export const visualCatalog:readonly VisualAsset[] = [
  {id:'pixel.person-marcos',kind:'person',label:'Marcos · Pixel',category:'people',size:{x:1,y:1},color:0x819582},
 ];
 /** Validate external data before allocating a renderer or changing the active map. */
-export function parseScene(value: unknown): WorldScene {
+export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={}): WorldScene {
  const fail=(message:string):never=>{throw new Error(message);};
  if(!value||typeof value!=='object'||Array.isArray(value))return fail('El mapa debe ser un objeto JSON.');
  const v=value as Record<string,unknown>;
  if(v.schemaVersion!==1)return fail('Versión de mapa no compatible. Se requiere schemaVersion: 1.');
  if(typeof v.id!=='string'||!v.id.trim()||typeof v.name!=='string'||!v.name.trim())return fail('El mapa necesita id y nombre.');
- if(v.theme!=='office'&&v.theme!=='outdoors')return fail('El tema debe ser office u outdoors.');
+ if(typeof v.theme!=='string'||!Object.hasOwn(environments,v.theme))return fail('Entorno no válido.');
  const dimension=(n:unknown)=>typeof n==='number'&&Number.isInteger(n)&&n>=1&&n<=64;
  if(!dimension(v.width)||!dimension(v.height))return fail('Las dimensiones deben estar entre 1 y 64 casillas.');
  const point=(p:unknown):p is Cell=>!!p&&typeof p==='object'&&Number.isInteger((p as Cell).x)&&Number.isInteger((p as Cell).y)&&(p as Cell).x>=0&&(p as Cell).y>=0&&(p as Cell).x<(v.width as number)&&(p as Cell).y<(v.height as number);
@@ -101,9 +102,10 @@ export function parseScene(value: unknown): WorldScene {
   if(sceneWalls(scene).some(w=>wallCells(w).every(p=>cells.some(c=>c.x===p.x&&c.y===p.y))))return fail(`La pared atraviesa ${e.label}.`);
  }
  if(!walkable(scene,scene.spawn))return fail('La entrada está bloqueada.');
+ const reachable=options.allowUnreachable?null:createNavigator(scene).reachableFrom(scene.spawn);
  for(const e of scene.entities){
-  if(e.interaction&&findPath(scene,scene.spawn,interactionCells(scene,e))===null)return fail(`No se puede llegar a ${e.label}.`);
-  if(e.seat&&findPath(scene,scene.spawn,[e.seat.cell])===null)return fail(`No se puede llegar al asiento de ${e.label}.`);
+  if(reachable&&e.interaction&&!interactionCells(scene,e).some(p=>reachable.has(cellKey(p))))return fail(`No se puede llegar a ${e.label}.`);
+  if(reachable&&e.seat&&!reachable.has(cellKey(e.seat.cell)))return fail(`No se puede llegar al asiento de ${e.label}.`);
  }
  return scene;
 }

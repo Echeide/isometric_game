@@ -6,7 +6,7 @@ export interface AdventureLibrary {version:1;activeId:string;adventures:Adventur
 export function parseLibrary(value:unknown):AdventureLibrary{
  const v=value as AdventureLibrary;
  if(!v||v.version!==1||!Array.isArray(v.adventures)||!v.adventures.length)throw new Error('Biblioteca de aventuras no válida.');
- const adventures=v.adventures.map(parseAdventure);
+ const adventures=v.adventures.map(a=>parseAdventure(a));
  if(new Set(adventures.map(a=>a.id)).size!==adventures.length||!adventures.some(a=>a.id===v.activeId))throw new Error('Selección o identificadores de aventuras no válidos.');
  return {version:1,activeId:v.activeId,adventures};
 }

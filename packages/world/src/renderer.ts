@@ -1,4 +1,5 @@
-import {topContains,levelAt,stairAt,stairDirections,STAIR_STEPS,LEVEL_HEIGHT,projectSurface,surfaceHeight,wallHeight} from './elevation';
+import {environments} from './environments';
+import {terrainCellAt,topContains,levelAt,stairAt,stairDirections,STAIR_STEPS,LEVEL_HEIGHT,projectSurface,surfaceHeight,wallHeight} from './elevation';
 import {exitFacing} from './exits';
 import {alphaHitArea} from './alpha-hit';
 import {depthOrder,insertMovingDepth,type DepthItem} from './depth';
@@ -11,7 +12,7 @@ import { createActor, facingFor } from './actor';
 import {tileAt,defaultTile} from './terrain';
 import { seatPlacement } from './seating';
 import type { WorldEditor, ActorPose, Facing, Cell, WorldEntity, WorldScene } from './types';
-import { findPath, interactionCells, project, walkable } from './navigation';
+import { createNavigator, interactionCells, project, walkable } from './navigation';
 
 const palette = { top: 0xdce6e4, left: 0xb1c5c2, right: 0x91aaa7 };
 function poly(g: Graphics, points: number[], fill: number, alpha = 1) { g.poly(points).fill({ color: fill, alpha }); }
@@ -51,17 +52,21 @@ function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt, scene:W
   }
   return c;
 }
-export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack) {
+export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack,existingApp?:Application) {
   const art=await loadPixelArt(graphics);
-  const app = new Application();
+  const navigation=createNavigator(scene);
+  const app = existingApp??new Application();
+  if(!existingApp){
   await app.init({backgroundAlpha:0,antialias:false,resolution:Math.min(window.devicePixelRatio||1,2),autoDensity:true,width:host.clientWidth,height:host.clientHeight});
   host.appendChild(app.canvas);
+  }
   const world=new Container(); const floor=new Container(); const objects=new Container(); objects.sortableChildren=true;
   const labelLayer=new Container();labelLayer.eventMode='none';
   world.addChild(floor,objects,labelLayer); app.stage.addChild(world);
   let editor=initialEditor;
-  const outdoor=scene.theme==='outdoors';
-  const groundPalette=outdoor?{top:0xb5cba4,left:0x8d9e78,right:0x768b69}:palette;
+  const environment=environments[scene.theme];
+  const outdoor=environment.outdoor;
+  const groundPalette=environment.ground;
   const minimumHeight=Math.min(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT;
   const hasLevels=Object.values(scene.elevations??{}).some(z=>z!==0)||Object.keys(scene.stairs??{}).length>0;
   const foundation = new Graphics();
@@ -72,6 +77,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   for(let x=0;x<scene.width;x++) for(let y=0;y<scene.height;y++) {
     const z=levelAt(scene,{x,y})*LEVEL_HEIGHT;const base=project({x,y});const p={x:base.x,y:base.y-z}; const tile=new Graphics();
     let textureTile:Sprite|undefined;
+    let grassLight:Graphics|undefined;
     const drawTile=(kind:import('./types').TileKind|'void')=>{
       tile.clear();
       if(textureTile)textureTile.visible=kind!=='void';
@@ -81,6 +87,9 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         const texture=art.textures.get(art.pack.tiles[kind])!;
         if(!textureTile){textureTile=new Sprite(texture);textureTile.position.set(p.x-32,p.y);textureTile.width=64;textureTile.height=32;textureTile.eventMode='none';textureTile.roundPixels=true;tile.addChild(textureTile);}
         else textureTile.texture=texture;
+        // Lighten the grass top without lifting the darker vertical faces.
+        if(!grassLight){grassLight=new Graphics().poly([32,0,64,16,32,32,0,16]).fill({color:0xfff9df,alpha:.30});grassLight.eventMode='none';textureTile.addChild(grassLight);}
+        grassLight.visible=kind==='grass';
       }
       const stair=stairAt(scene,{x,y});
       if(stair){
@@ -270,21 +279,33 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   app.canvas.addEventListener('pointerdown',panDown,true);
   window.addEventListener('pointermove',panMove,{capture:true,passive:false});window.addEventListener('pointerup',panEnd,true);window.addEventListener('pointercancel',panEnd,true);
   host.addEventListener('keydown',spaceDown);window.addEventListener('keyup',spaceUp);window.addEventListener('blur',clearPan);host.addEventListener('blur',clearPan);
+  const levelBrush=()=>!!editor?.brush&&(editor.brush.startsWith('height:')||editor.brush.startsWith('stairs:'));
+  const baseBrush=()=>!!editor?.brush?.startsWith('height:');
+  const zeroGrid=new Graphics();zeroGrid.eventMode='none';world.addChild(zeroGrid);
+  for(let x=0;x<=scene.width;x++){const a=project({x,y:0}),b=project({x,y:scene.height});zeroGrid.moveTo(a.x,a.y).lineTo(b.x,b.y);}
+  for(let y=0;y<=scene.height;y++){const a=project({x:0,y}),b=project({x:scene.width,y});zeroGrid.moveTo(a.x,a.y).lineTo(b.x,b.y);}
+  zeroGrid.stroke({color:0x47663c,alpha:.22,width:1});zeroGrid.visible=baseBrush();
+  const paintHover=new Graphics();paintHover.eventMode='none';world.addChild(paintHover);
+  const levelHint=new Text({text:'',style:{fontFamily:'system-ui',fontSize:12,fontWeight:'600',fill:0x284333,stroke:{color:0xffffff,width:4}}});levelHint.anchor.set(.5,1);levelHint.eventMode='none';levelHint.visible=false;world.addChild(levelHint);
+  function showLevel(cell:Cell){levelHint.visible=levelBrush();if(!levelHint.visible)return;const p=baseBrush()?project(cell):projectSurface(scene,cell),level=levelAt(scene,cell);levelHint.text=hasTile(scene,cell)?`Nivel ${level>0?'+':''}${level}`:'Vacío';levelHint.position.set(p.x,p.y-6);}
+  function hoverTerrain(event:PointerEvent){
+    if(stroke)return;paintHover.clear();levelHint.visible=false;if(!editor?.brush||panMode||spaceHeld)return;
+    const cell=paintCell(event);if(cell.x<0||cell.y<0||cell.x>=scene.width||cell.y>=scene.height)return;
+    const p=baseBrush()?project(cell):projectSurface(scene,cell);showLevel(cell);
+    paintHover.poly([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]).fill({color:0xa9df6c,alpha:.3}).stroke({color:0x356225,width:2});
+  }
+  const leaveTerrain=()=>{paintHover.clear();levelHint.visible=false;};
+  app.canvas.addEventListener('pointermove',hoverTerrain);app.canvas.addEventListener('pointerleave',leaveTerrain);
   let stroke:{pointerId:number;brush:NonNullable<WorldEditor['brush']>;cells:Map<string,Cell>;last:Cell}|null=null;
   function paintCell(event:PointerEvent):Cell{
     const rect=app.canvas.getBoundingClientRect();const p=world.toLocal({x:(event.clientX-rect.left)*app.screen.width/rect.width,y:(event.clientY-rect.top)*app.screen.height/rect.height});
-    // Pick the visible top surface, front to back, instead of the flat ground plane.
-    for(let sum=scene.width+scene.height-2;sum>=0;sum--)for(let x=Math.max(0,sum-scene.height+1);x<=Math.min(scene.width-1,sum);x++){
-      const y=sum-x;if(!hasTile(scene,{x,y}))continue;
-      if(topContains(scene,{x,y},p))return {x,y};
-    }
-    return {x:Math.floor(p.x/64+p.y/32),y:Math.floor(p.y/32-p.x/64)};
+    return terrainCellAt(scene,p,baseBrush());
   }
   function addPaint(cell:Cell){
     if(!stroke||cell.x<0||cell.y<0||cell.x>=scene.width||cell.y>=scene.height)return;
     const key=`${cell.x},${cell.y}`;stroke.cells.set(key,cell);
     if(!stroke.brush.includes(':'))tileDrawers.get(key)?.(stroke.brush==='erase'?defaultTile(scene,cell):stroke.brush as import('./types').TileKind|'void');
-    else {const p=projectSurface(scene,cell);selection.poly([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]).fill({color:0x79b550,alpha:.4});}
+    else {const p=baseBrush()?project(cell):projectSurface(scene,cell);showLevel(cell);paintHover.poly([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]).fill({color:0x79b550,alpha:.4});}
   }
   function paintDown(event:PointerEvent){
     if(editor?.onpick||!editor?.brush||!editor.onpaint||event.button!==0||stroke)return;
@@ -301,7 +322,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   }
   function paintEnd(event:PointerEvent){
     if(!stroke||stroke.pointerId!==event.pointerId)return;
-    event.preventDefault();event.stopImmediatePropagation();const finished=stroke;stroke=null;selection.clear();
+    event.preventDefault();event.stopImmediatePropagation();const finished=stroke;stroke=null;selection.clear();paintHover.clear();levelHint.visible=false;
     if(app.canvas.hasPointerCapture(event.pointerId))app.canvas.releasePointerCapture(event.pointerId);
     // Restore before committing, so a rejected stroke also leaves the preview unchanged.
     for(const [key,cell] of finished.cells)tileDrawers.get(key)?.(tileAt(scene,cell));
@@ -330,11 +351,11 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   window.addEventListener('pointermove',dragMove,{passive:false});window.addEventListener('pointerup',endDrag);window.addEventListener('pointercancel',endDrag);
   if(editor)app.canvas.style.touchAction='none';
   highlight(editor?.selectedId??'');
-  const player=createActor(0x728da5,true,art);const avatar=player.view;objects.addChild(avatar);
+  const player=createActor(0x728da5,true,art);const avatar=player.view;objects.addChild(avatar);avatar.visible=!editor;
   const badge=new Text({text:'Tú',style:{fontFamily:'system-ui',fontSize:12,fontWeight:'600',fill:0x345249}});badge.anchor.set(.5,0);badge.y=14;badge.visible=false;badge.eventMode='none';labelLayer.addChild(badge);
-  let playerHovered=false;avatar.eventMode='static';avatar.on('pointerover',event=>{if(event.pointerType!=='touch')playerHovered=true;});avatar.on('pointerout',()=>{playerHovered=false;});
+  let playerHovered=false;avatar.eventMode=editor?'none':'static';avatar.on('pointerover',event=>{if(event.pointerType!=='touch')playerHovered=true;});avatar.on('pointerout',()=>{playerHovered=false;});
   depthItems.push({view:avatar,bounds:()=>{const p=seatedAt?.seat?seatPlacement(seatedAt.seat):{x:px,y:py};return {x:p.x+.35,y:p.y+.35,width:.3,height:.3,tie:1};}});
-  let lastDepth='',lastStaticDepth='';let staticOrder:number[]=[];
+  let lastDepth='',lastDragDepth='';let fixedDepth:DepthItem[]=[];let staticOrder:number[]=[];
   const routeView=new Graphics();floor.addChild(routeView);
   let cell={...scene.spawn};let px=cell.x,py=cell.y;let route:Cell[]=[];let destination:WorldEntity|null=null;let zoomLevel=1;let cameraScale=1;let cameraBaseScale:number|undefined;let destroyed=false;
   let time=0,celebrationUntil=0,standingUntil=0;let facing:Facing='se';let working=false;let seatedAt:WorldEntity|null=null;let conversation:string|null=null;let purpose:'interact'|'work'='interact';
@@ -358,7 +379,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     pendingArrival=null;
     // Replan from the last reached tile, so rapid clicks cannot cut through obstacles.
     const nextTile=route[0];
-    const path=findPath(scene,nextTile??cell,targets);if(path===null){onStatus('No hay un camino libre hasta ese lugar');return;}
+    const path=navigation.findPath(nextTile??cell,targets);if(path===null){onStatus('No hay un camino libre hasta ese lugar');return;}
     if(seatedAt)standingUntil=time+.3;seatedAt=null;conversation=null;purpose=reason;
     route=nextTile?[nextTile,...path]:path;destination=e;drawRoute();
     if(!route.length)arrive();else onStatus(e?`Caminando hacia ${e.label}…`:'Explorando el espacio…');
@@ -373,12 +394,12 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(event.key==='Enter'){event.preventDefault();const e=scene.entities.find(e=>e.interaction&&interactionCells(scene,e).some(p=>p.x===cell.x&&p.y===cell.y));if(e)if(!editor&&!gestures.blocked())goTo(e.id);}
   }
   host.addEventListener('keydown',keyboard);
-  app.ticker.add(tick=>{
+  const updateFrame=(tick:import('pixi.js').Ticker)=>{
     const dt=Math.min(tick.deltaMS,50)/1000;time+=dt;
     const next=time>=standingUntil?route[0]:undefined;
     if(next){facing=facingFor(next.x-px,next.y-py,facing);const distance=Math.hypot(next.x-px,next.y-py);const step=Math.min(tick.deltaMS,50)*.0045;if(distance<=step||reduceMotion){px=next.x;py=next.y;cell={...next};route.shift();drawRoute();if(!route.length)arrive();}else{px+=(next.x-px)/distance*step;py+=(next.y-py)/distance*step;}}
     const seated=seatedAt?.seat?seatPlacement(seatedAt.seat):null;
-    badge.visible=playerHovered&&!seated;
+    avatar.visible=!editor;avatar.eventMode=editor?'none':'static';badge.visible=!editor&&playerHovered&&!seated;
     const actorPoint=projectSurface(scene,{x:px+.5,y:py+.5});
     const fadedGroups=new Set<string>();
     for(const {wall:w,group} of wallViews){
@@ -394,8 +415,11 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     }
     const drawX=seated?.x??px,drawY=seated?.y??py;
     const p=projectSurface(scene,{x:drawX+.5,y:drawY+.5});avatar.position.set(Math.round(p.x),Math.round(p.y));
-    const bounds=depthItems.map(i=>i.bounds()),key=JSON.stringify(bounds);
-    if(key!==lastDepth){const fixed=bounds.slice(0,-1),staticKey=JSON.stringify(fixed);if(staticKey!==lastStaticDepth){staticOrder=depthOrder(fixed);lastStaticDepth=staticKey;}insertMovingDepth(fixed,staticOrder,bounds.at(-1)!).forEach((index,z)=>depthItems[index].view.zIndex=z);lastDepth=key;}
+    const dragKey=drag?`${drag.id}:${drag.position.x},${drag.position.y}`:'';
+    if(!fixedDepth.length||dragKey!==lastDragDepth){fixedDepth=depthItems.slice(0,-1).map(i=>i.bounds());staticOrder=depthOrder(fixedDepth);lastDragDepth=dragKey;lastDepth='';}
+    const moving=depthItems.at(-1)!.bounds(),key=`${moving.x},${moving.y}:${dragKey}`;
+    if(key!==lastDepth){insertMovingDepth(fixedDepth,staticOrder,moving).forEach((index,z)=>depthItems[index].view.zIndex=z);lastDepth=key;}
+
     for(const [id,label] of labels){const view=entityViews.get(id);if(view)label.position.copyFrom(view.position);}
     badge.position.set(avatar.x,avatar.y+14);
     const pose:ActorPose=time<celebrationUntil?'celebrate':next?'walk':seatedAt?(working?'work':'sit'):conversation?'talk':'idle';
@@ -404,9 +428,12 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(pendingArrival){const target=pendingArrival;pendingArrival=null;app.renderer.render(app.stage);onArrive(target);}
     host.dataset.pose=pose;host.dataset.facing=facing;host.dataset.cell=`${cell.x},${cell.y}`;
 
-  });
+  };
+  app.ticker.add(updateFrame);
   const displayedCompletion=new Map(scene.entities.map(e=>[e.id,!!e.completed]));
   return {
+    application:app,
+    renderFrame(){updateFrame(app.ticker);app.renderer.render(app.stage);},
     setCompleted(ids:string[]){
       const completed=new Set(ids);
       for(const e of scene.entities){
@@ -417,7 +444,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         view.hitArea=updated.hitArea;view.addChild(...updated.removeChildren());updated.destroy();displayedCompletion.set(e.id,completed.has(e.id));
       }
     },
-    setEditor(value:WorldEditor|undefined){editor=value;panCursor();highlight(editor?.selectedId??'');},
+    setEditor(value:WorldEditor|undefined){editor=value;paintHover.clear();levelHint.visible=false;zeroGrid.visible=baseBrush();avatar.visible=!editor;avatar.eventMode=editor?'none':'static';if(editor){badge.visible=false;playerHovered=false;}panCursor();highlight(editor?.selectedId??'');},
     goTo, zoom(delta:number){zoomLevel=Math.max(.65,Math.min(3,zoomLevel+delta));fit();},recenter(){cameraBaseScale=undefined;zoomLevel=1;panX=0;panY=0;fit();},
     setPanMode(enabled:boolean){panMode=enabled;panCursor();},
     panBy(x:number,y:number){panX+=x;panY+=y;fit();},
@@ -434,6 +461,6 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     },
     celebrate(){celebrationUntil=time+1.5;seatedAt=null;conversation=null;route=[];destination=null;px=cell.x;py=cell.y;drawRoute();},
     setConversation(id:string|null){conversation=id;if(id){const e=scene.entities.find(e=>e.id===id);if(e)facing=facingFor(e.position.x-px,e.position.y-py,facing);}},
-    destroy(){app.canvas.removeEventListener('pointermove',edgeHover);app.canvas.removeEventListener('pointerdown',edgeDown,true);gestures.destroy();app.canvas.removeEventListener('pointerdown',panDown,true);window.removeEventListener('pointermove',panMove,true);window.removeEventListener('pointerup',panEnd,true);window.removeEventListener('pointercancel',panEnd,true);host.removeEventListener('keydown',spaceDown);window.removeEventListener('keyup',spaceUp);window.removeEventListener('blur',clearPan);host.removeEventListener('blur',clearPan);app.canvas.removeEventListener('pointerdown',paintDown,true);window.removeEventListener('pointermove',paintMove,true);window.removeEventListener('pointerup',paintEnd,true);window.removeEventListener('pointercancel',paintEnd,true);window.removeEventListener('pointermove',dragMove);window.removeEventListener('pointerup',endDrag);window.removeEventListener('pointercancel',endDrag);destroyed=true;observer.disconnect();host.removeEventListener('keydown',keyboard);app.destroy(true,{children:true});}
+    destroy(keepApplication=false){app.canvas.removeEventListener('pointermove',hoverTerrain);app.canvas.removeEventListener('pointerleave',leaveTerrain);app.ticker.remove(updateFrame);app.canvas.removeEventListener('pointermove',edgeHover);app.canvas.removeEventListener('pointerdown',edgeDown,true);gestures.destroy();app.canvas.removeEventListener('pointerdown',panDown,true);window.removeEventListener('pointermove',panMove,true);window.removeEventListener('pointerup',panEnd,true);window.removeEventListener('pointercancel',panEnd,true);host.removeEventListener('keydown',spaceDown);window.removeEventListener('keyup',spaceUp);window.removeEventListener('blur',clearPan);host.removeEventListener('blur',clearPan);app.canvas.removeEventListener('pointerdown',paintDown,true);window.removeEventListener('pointermove',paintMove,true);window.removeEventListener('pointerup',paintEnd,true);window.removeEventListener('pointercancel',paintEnd,true);window.removeEventListener('pointermove',dragMove);window.removeEventListener('pointerup',endDrag);window.removeEventListener('pointercancel',endDrag);destroyed=true;observer.disconnect();host.removeEventListener('keydown',keyboard);if(keepApplication){world.removeFromParent();world.destroy({children:true});}else app.destroy(true,{children:true});}
   };
 }

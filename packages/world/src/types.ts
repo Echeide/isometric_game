@@ -27,7 +27,7 @@ export interface WorldScene {
   schemaVersion?: 1;
   id: string;
   name: string;
-  theme: 'office' | 'outdoors';
+  theme: 'office' | 'castle' | 'outdoors' | 'rock' | 'beach';
   width: number;
   height: number;
   spawn: Cell;
