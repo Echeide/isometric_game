@@ -1,0 +1,53 @@
+{
+  "image": "/pixelart/characters/grey-player-v1/idle.png",
+  "frameWidth": 64,
+  "frameHeight": 96,
+  "anchor": [
+    32,
+    80
+  ],
+  "directions": [
+    "ne",
+    "se",
+    "sw",
+    "nw"
+  ],
+  "animations": {
+    "idle": {
+      "image": "/pixelart/characters/grey-player-v1/idle.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 3
+    },
+    "walk": {
+      "image": "/pixelart/characters/grey-player-v1/walk.png",
+      "row": 0,
+      "frames": 8,
+      "fps": 10
+    },
+    "work": {
+      "image": "/pixelart/characters/grey-player-v1/work.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 8
+    },
+    "talk": {
+      "image": "/pixelart/characters/grey-player-v1/talk.png",
+      "row": 0,
+      "frames": 4,
+      "fps": 5
+    },
+    "celebrate": {
+      "image": "/pixelart/characters/grey-player-v1/celebrate.png",
+      "row": 0,
+      "frames": 6,
+      "fps": 8
+    },
+    "sit": {
+      "image": "/pixelart/characters/grey-player-v1/sit.png",
+      "row": 0,
+      "frames": 1,
+      "fps": 1
+    }
+  }
+}

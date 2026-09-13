@@ -7,10 +7,11 @@ it('resolves a separate action and its selected character variant',()=>{
  expect(characterImage(character,'walk','ce936a')).toBe('/pixelart/characters/lucia/walk.png');
  expect(characterImage(character,'celebrate','819582')).toBe('/pixelart/characters/marcos/celebrate.png');
  expect(characterImage(character,'walk','unknown')).toBe(characterImage(character,'walk'));
- expect(new Set(characterVariants(character))).toEqual(new Set(['default','ce936a','819582']));
+ expect(new Set(characterVariants(character))).toEqual(new Set(['default','ce936a','819582','728da5']));
+ for(const pose of Object.keys(character.animations) as (keyof typeof character.animations)[])expect(characterImage(character,pose,'728da5')).toBe(`/pixelart/characters/grey-player-v1/${pose}.png`);
 });
 it('uses the work sheet as a still seated pose',()=>{
- for(const variant of characterVariants(character))expect(characterImage(character,'sit',variant)).toBe(characterImage(character,'work',variant));
+ for(const variant of ['default','ce936a','819582'])expect(characterImage(character,'sit',variant)).toBe(characterImage(character,'work',variant));
  expect(character.animations.sit.frames).toBe(1);
  expect(character.animations.work.frames).toBeGreaterThan(1);
 });

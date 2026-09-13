@@ -1,0 +1,49 @@
+{
+  "chatNodes": [
+    {
+      "id": "welcome",
+      "messages": [
+        [
+          "¡Hola, {playerName}! ¿En qué puedo ayudarte?"
+        ]
+      ],
+      "options": [
+        {
+          "text": "¿Cómo continúo la aventura?",
+          "target": "hint"
+        },
+        {
+          "text": "Solo quería saludarte",
+          "target": "success"
+        }
+      ]
+    },
+    {
+      "id": "hint",
+      "messages": [
+        [
+          "Puedes explorar los mapas conectados. Las flechas del suelo indican por dónde continuar."
+        ]
+      ],
+      "options": [
+        {
+          "text": "Entendido, gracias",
+          "target": "success"
+        },
+        {
+          "text": "Volver",
+          "home": true
+        }
+      ]
+    },
+    {
+      "id": "success",
+      "messages": [
+        [
+          "¡Buen viaje! Nos vemos por aquí."
+        ]
+      ],
+      "options": []
+    }
+  ]
+}

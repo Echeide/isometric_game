@@ -1,3 +1,4 @@
+import {prepareWallOcclusion,wallOccludesActor} from './wall-occlusion';
 import 'pixi.js/prepare';
 import {advanceRoute} from './movement';
 import {environments} from './environments';
@@ -402,30 +403,27 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(event.key==='Enter'){event.preventDefault();const e=scene.entities.find(e=>!hiddenEntities.has(e.id)&&(e.interaction||e.description)&&interactionCells(scene,e).some(p=>p.x===cell.x&&p.y===cell.y));if(e)if(!editor&&!gestures.blocked())goTo(e.id);}
   }
   host.addEventListener('keydown',keyboard);
-  const wallOccluders=wallViews.map(({wall:w,group})=>{
-    const a=project(w),b=project({x:w.x+(w.axis==='x'?1:0),y:w.y+(w.axis==='y'?1:0)}),height=wallHeight(scene,w);
-    return {group,x:a.x,y:a.y-height,dx:b.x-a.x,dy:b.y-a.y};
-  });
+  const wallOccluders=wallViews.map(({wall,group})=>({...prepareWallOcclusion(scene,wall),group}));
   const fadedGroups=new Set<string>();
-  let occlusionX=NaN,occlusionY=NaN;
+  let occlusionX=NaN,occlusionY=NaN,occlusionCellX=NaN,occlusionCellY=NaN;
   const occupantActors=[...occupants].map(([id,actor])=>({id,actor,entity:scene.entities.find(e=>e.id===id)!}));
   const updateFrame=(tick:import('pixi.js').Ticker)=>{
     if(paused)return;
     const dt=Math.min(tick.deltaMS,50)/1000;time+=dt;
     const next=time>=standingUntil?route[0]:undefined;
     if(next){
-      const moved=advanceRoute({x:px,y:py},route,reduceMotion?Math.hypot(next.x-px,next.y-py):dt*4.5,facing);
+      const moved=advanceRoute({x:px,y:py},route,dt*4.5,facing);
       px=moved.x;py=moved.y;facing=moved.facing;
       if(moved.reached){cell={...moved.reached};drawRoute();if(!route.length)arrive();}
     }
     const seated=seatedAt?.seat?seatPlacement(seatedAt.seat):null;
     avatar.visible=!editor;avatar.eventMode=editor?'none':'static';badge.visible=!editor&&playerHovered&&!seated;
-    const actorPoint=projectSurface(scene,{x:px+.5,y:py+.5});
-    if(actorPoint.x!==occlusionX||actorPoint.y!==occlusionY){
-      fadedGroups.clear();occlusionX=actorPoint.x;occlusionY=actorPoint.y;
+    const actorCell={x:(seated?.x??px)+.5,y:(seated?.y??py)+.5};
+    const actorPoint=projectSurface(scene,actorCell);
+    if(actorPoint.x!==occlusionX||actorPoint.y!==occlusionY||actorCell.x!==occlusionCellX||actorCell.y!==occlusionCellY){
+      fadedGroups.clear();occlusionX=actorPoint.x;occlusionY=actorPoint.y;occlusionCellX=actorCell.x;occlusionCellY=actorCell.y;
       if(!editor)for(const w of wallOccluders){
-        const t=(actorPoint.x-w.x)/w.dx,base=w.y+w.dy*t;
-        if(t>=-.2&&t<=1.2&&actorPoint.y<base&&actorPoint.y>base-85)fadedGroups.add(w.group);
+        if(wallOccludesActor(w,actorCell,actorPoint))fadedGroups.add(w.group);
       }
     }
     for(const {wall,view,group} of wallViews){

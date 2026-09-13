@@ -19,7 +19,8 @@
         "image": "/pixelart/characters/explorer/idle.png",
         "variants": {
           "ce936a": "/pixelart/characters/lucia/idle.png",
-          "819582": "/pixelart/characters/marcos/idle.png"
+          "819582": "/pixelart/characters/marcos/idle.png",
+          "728da5": "/pixelart/characters/grey-player-v1/idle.png"
         },
         "row": 0,
         "frames": 4,
@@ -29,7 +30,8 @@
         "image": "/pixelart/characters/explorer/walk.png",
         "variants": {
           "ce936a": "/pixelart/characters/lucia/walk.png",
-          "819582": "/pixelart/characters/marcos/walk.png"
+          "819582": "/pixelart/characters/marcos/walk.png",
+          "728da5": "/pixelart/characters/grey-player-v1/walk.png"
         },
         "row": 0,
         "frames": 8,
@@ -39,7 +41,8 @@
         "image": "/pixelart/characters/explorer/work.png",
         "variants": {
           "ce936a": "/pixelart/characters/lucia/work.png",
-          "819582": "/pixelart/characters/marcos/work.png"
+          "819582": "/pixelart/characters/marcos/work.png",
+          "728da5": "/pixelart/characters/grey-player-v1/work.png"
         },
         "row": 0,
         "frames": 4,
@@ -49,7 +52,8 @@
         "image": "/pixelart/characters/explorer/talk.png",
         "variants": {
           "ce936a": "/pixelart/characters/lucia/talk.png",
-          "819582": "/pixelart/characters/marcos/talk.png"
+          "819582": "/pixelart/characters/marcos/talk.png",
+          "728da5": "/pixelart/characters/grey-player-v1/talk.png"
         },
         "row": 0,
         "frames": 4,
@@ -59,7 +63,8 @@
         "image": "/pixelart/characters/explorer/celebrate.png",
         "variants": {
           "ce936a": "/pixelart/characters/lucia/celebrate.png",
-          "819582": "/pixelart/characters/marcos/celebrate.png"
+          "819582": "/pixelart/characters/marcos/celebrate.png",
+          "728da5": "/pixelart/characters/grey-player-v1/celebrate.png"
         },
         "row": 0,
         "frames": 6,
@@ -69,7 +74,8 @@
         "image": "/pixelart/characters/explorer/work.png",
         "variants": {
           "ce936a": "/pixelart/characters/lucia/work.png",
-          "819582": "/pixelart/characters/marcos/work.png"
+          "819582": "/pixelart/characters/marcos/work.png",
+          "728da5": "/pixelart/characters/grey-player-v1/sit.png"
         },
         "row": 0,
         "frames": 1,

@@ -1,0 +1,1 @@
+Extract all 24 character sprites from this image onto a TRANSPARENT BACKGROUND. Export a transparent PNG with no background whatsoever, like isolated product cutouts. Remove the checkerboard pattern. Keep the same 6-column 4-row arrangement and every character pose. Output 1024x1024. Transparency is the main task.

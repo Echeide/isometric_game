@@ -1,6 +1,7 @@
 <script lang="ts">
  import { characterImage } from '@isometrico/world';
  import { graphics } from '$lib/demo/pixelart';
+ import SpriteSheetPreview from '$lib/components/SpriteSheetPreview.svelte';
  let pose=$state<keyof typeof graphics.character.animations>('walk');
  let direction=$state(1);
  let variant=$state('default');
@@ -12,6 +13,7 @@
  <nav><a href="/">← Volver al mundo</a><a href="/editor">Editor de mapas →</a></nav>
  <p class="eyebrow">RECURSOS GRÁFICOS · PIXEL ART</p><h1>Taller de sprites</h1>
  <p>Edita los PNG conservando su cuadrícula y punto de apoyo. El catálogo conecta los gráficos con el escenario.</p>
+ <SpriteSheetPreview />
  <section><div><h2>Personaje · 64 × 96 px por fotograma</h2><p>Una hoja por acción, con cuatro direcciones. Sentado reutiliza el primer fotograma de trabajar. El punto de apoyo está en (32, 80), medido desde la esquina superior izquierda de cada celda.</p>
  <label>Personaje <select bind:value={variant}><option value="default">Explorador</option><option value="ce936a">Lucía</option><option value="819582">Marcos</option></select></label>
  <label>Animación <select bind:value={pose}>{#each Object.keys(graphics.character.animations) as name}<option value={name}>{name}</option>{/each}</select></label>

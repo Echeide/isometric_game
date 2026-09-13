@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Personaje gris · Hojas de animación</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2f4ed;color:#304535;font:16px system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:40px 24px}a{color:#526e37}h1{font-size:32px;margin-bottom:8px}p{line-height:1.6}.actions{display:flex;gap:8px;flex-wrap:wrap;margin:28px 0}button,select{border:1px solid #b9c7ad;border-radius:8px;background:#fffdf5;color:inherit;padding:10px 16px;font:inherit;cursor:pointer}button[aria-pressed=true]{background:#526e37;color:white}.views{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.view{background:#fffdf5;border:1px solid #d5decc;border-radius:12px;overflow:hidden}.view h2{font-size:15px;margin:0;padding:14px}.stage{height:300px;display:grid;place-items:center;background:conic-gradient(#dce3d4 25%,#eef1e8 0 50%,#dce3d4 0 75%,#eef1e8 0);background-size:20px 20px}.sprite{width:64px;height:96px;image-rendering:pixelated;transform:scale(3);background-repeat:no-repeat}.controls{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin:24px 0}.info{font-size:14px}details{margin-top:24px}.sheet{overflow:auto;padding:20px;background:#fffdf5}.sheet img{image-rendering:pixelated;max-width:100%}small{line-height:1.6;display:block;margin-top:24px}@media(max-width:750px){.views{grid-template-columns:repeat(2,1fr)}}@media(max-width:420px){.views{grid-template-columns:1fr}}
+</style>
+<main>
+<a href="/sprites">← Taller de sprites</a>
+<h1>Tu personaje · Primera versión</h1>
+<p>Seis acciones basadas en tu diseño, con cuatro direcciones. Previsualización independiente del personaje activo del juego.</p>
+<div class="actions" aria-label="Animación"></div>
+<div class="views"></div>
+<div class="controls"><button id="play">Pausar</button><label>Fotograma <input id="frame" aria-label="Fotograma" type="range" min="0" value="0"></label><span id="counter"></span><a id="download" download>Descargar esta hoja PNG</a><a href="grey-player-v1.zip" download>Descargar paquete ZIP</a></div>
+<p class="info" id="info"></p>
+<details><summary>Ver hoja completa</summary><div class="sheet"><img id="sheet" alt="Hoja completa de la animación seleccionada"></div></details>
+<small>Formato: PNG con transparencia, celdas de 64×96, apoyo de referencia (32,80). Filas: NE, SE, SW y NW. La marcha y las transiciones conservan las variaciones del arte generado; conviene revisar el movimiento antes de sustituir al player.</small>
+</main>
+<script>
+const names={idle:'Reposo',walk:'Caminar',work:'Trabajar',talk:'Hablar',celebrate:'Celebrar',sit:'Sentarse'};
+const counts={idle:4,walk:8,work:4,talk:4,celebrate:6,sit:1},speeds={idle:3,walk:10,work:8,talk:5,celebrate:8,sit:1};
+let action='walk',frame=0,playing=!matchMedia('(prefers-reduced-motion: reduce)').matches,timer;
+const views=document.querySelector('.views'),actions=document.querySelector('.actions'),slider=document.querySelector('#frame');
+for(const facing of ['NE ↗','SE ↘','SW ↙','NW ↖']){const view=document.createElement('div');view.className='view';const heading=document.createElement('h2');heading.textContent=facing;const stage=document.createElement('div');stage.className='stage';const sprite=document.createElement('div');sprite.className='sprite';stage.append(sprite);view.append(heading,stage);views.append(view);}
+for(const [key,label] of Object.entries(names)){const button=document.createElement('button');button.textContent=label;button.dataset.action=key;button.onclick=()=>{action=key;frame=0;configure();};actions.append(button);}
+function draw(){document.querySelectorAll('.sprite').forEach((sprite,row)=>{sprite.style.backgroundImage=`url(${action}.png)`;sprite.style.backgroundPosition=`${-frame*64}px ${-row*96}px`;});slider.value=frame;document.querySelector('#counter').textContent=`${frame+1} / ${counts[action]}`;document.querySelector('#play').textContent=playing?'Pausar':'Reproducir';}
+function configure(){clearInterval(timer);slider.max=counts[action]-1;actions.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.action===action)));document.querySelector('#download').href=action+'.png';document.querySelector('#sheet').src=action+'.png';document.querySelector('#info').textContent=`${names[action]} · ${counts[action]} fotogramas por dirección · ${speeds[action]} fps · ${counts[action]*64}×384 px`;draw();timer=setInterval(()=>{if(playing){frame=(frame+1)%counts[action];draw();}},1000/speeds[action]);}
+document.querySelector('#play').onclick=()=>{playing=!playing;draw();};slider.oninput=()=>{playing=false;frame=Number(slider.value);draw();};configure();
+</script></html>

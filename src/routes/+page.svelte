@@ -1,4 +1,6 @@
 <script lang="ts">
+ import RoutingTalesChat from '$lib/components/RoutingTalesChat.svelte';
+ import {chatProgressKey} from '$lib/chat/routingtales';
  import InfoBubble from '$lib/components/InfoBubble.svelte';
  let information=$state<WorldInteraction|null>(null);
  let obtained=$state<{name:string;quantity:number}|null>(null);
@@ -18,7 +20,7 @@
  import {parseScene,type WorldScene,type Facing} from '@isometrico/world';
  import { World, type WorldController, type WorldInteraction } from '@isometrico/world';
  import { office,outdoors,makeAdapter,initialTasks,initialGoals,type Task } from '$lib/demo/scenes';
- import { LockKeyhole, Package, Backpack, Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Send, Flag, Armchair, CircleHelp, CheckCheck, Hand } from 'lucide-svelte';
+ import { LockKeyhole, Package, Backpack, Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Flag, Armchair, CircleHelp, CheckCheck, Hand } from 'lucide-svelte';
  let traveler:ReturnType<typeof createTraveler>|undefined;
  let adventure=$state<Adventure|null>(null),mapsReady=$state(false);
  let currentScene=$state<WorldScene>(office);
@@ -57,8 +59,6 @@
  let controller=$state<WorldController>();
  let celebration=$state(0);
  let status=$state('Tu espacio, a tu ritmo.');
- let draft=$state('');
- let messages=$state<Record<string,{text:string;me:boolean}[]>>({lucia:[{text:'¡Hola! He dejado el flujo de bienvenida listo para que lo revisemos.',me:false}],marcos:[{text:'Tengo preparados los componentes de Atlas. Los vemos cuando quieras.',me:false}]});
  const done=$derived(tasks.filter(t=>t.status==='done').length);
  const active=$derived(tasks.find(t=>t.status==='active'));
  const scene=$derived({...currentScene,entities:currentScene.entities.map(e=>({...e,completed:e.completed||completed.includes(objectiveKey(currentScene.id,e.id))}))});
@@ -101,7 +101,7 @@
     return;
    }
    opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
-   resource=event.resourceId;resourceEntityId=event.entityId;draft='';
+   resource=event.resourceId;resourceEntityId=event.entityId;
    if(event.action==='chat.open')controller?.setConversation(event.entityId);
    panel=event.action==='tasks.open'?'tasks':event.action==='project.open'?'project':event.action==='chat.open'?'chat':event.action==='space.open'?'space':event.action==='goal.open'||scene.entities.find(e=>e.id===event.entityId)?.kind==='goal'?'goal':'object';
  }
@@ -110,13 +110,13 @@
 
  async function closePanel(){information=null;panel=null;controller?.setConversation(null);await tick();if(opener?.isConnected)opener.focus();else document.querySelector<HTMLElement>('[role=application]')?.focus();}
  function shortcut(entityId:string){void closePanel().then(()=>controller?.goTo(entityId));}
- const adventureProgress=new globalThis.Map<string,{tasks:Task[];completed:string[];messages:typeof messages}>();
+ const adventureProgress=new globalThis.Map<string,{tasks:Task[];completed:string[]}>();
  function switchAdventure(value:string){
   if(!adventure||transitionImage||value===adventure.id)return;
   try{
    const next=selectAdventure(localStorage,value);
-   adventureProgress.set(adventure.id,{tasks:structuredClone($state.snapshot(tasks)),completed:[...completed],messages:structuredClone($state.snapshot(messages))});
-   const progress=adventureProgress.get(value);tasks=progress?.tasks??structuredClone(initialTasks);completed=progress?.completed??[];messages=progress?.messages??{};
+   adventureProgress.set(adventure.id,{tasks:structuredClone($state.snapshot(tasks)),completed:[...completed]});
+   const progress=adventureProgress.get(value);tasks=progress?.tasks??structuredClone(initialTasks);completed=progress?.completed??[];
    inventory=readInventory(localStorage,next.id);traveler=createTraveler(next);adventure=next;changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
    const url=new URL(location.href);url.search='';url.searchParams.set('adventure',value);history.replaceState(null,'',url);
   }catch(e){status=(e as Error).message;}
@@ -125,7 +125,6 @@
  function startTask(id:string){tasks=tasks.map(t=>({...t,status:t.id===id?'active':t.status==='active'?'todo':t.status}));status='En camino a tu puesto de trabajo.';void closePanel();}
  function finishTask(id:string){tasks=tasks.map(t=>t.id===id?{...t,status:'done'}:t);status='¡Un paso más! Tarea completada.';celebration++;void closePanel();}
  function pauseTask(){tasks=tasks.map(t=>t.status==='active'?{...t,status:'todo'}:t);status='Tarea en pausa.';void closePanel();}
- function send(){const text=draft.trim();if(!text)return;messages={...messages,[resource]:[...(messages[resource]??[]),{text,me:true}]};draft='';}
  function finishGoal(){if(!selectedEntity)return;const key=objectiveKey(scene.id,selectedEntity.id);if(!completed.includes(key))completed=[...completed,key];status='¡Objetivo completado! Tu ruta sigue avanzando.';celebration++;void closePanel();}
  function showPanel(value:'space'|'help'|'inventory'){information=null;opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel=value;}
 </script>
@@ -155,7 +154,7 @@
  <!-- Native dialog keeps focus inside the floating interaction. -->
  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
  <!-- svelte-ignore a11y_click_events_have_key_events -->
- <dialog class="drawer unified-modal" class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación de demostración':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
+ <dialog class="drawer unified-modal" class:chat-panel={panel==='chat'} class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
   <div class="drawer-top"><span>{panel==='obtained'?'INVENTARIO':panel==='locked'?'SALIDA CERRADA':panel==='inventory'?'INVENTARIO':panel==='chat'?'CONVERSACIÓN':panel==='goal'?'TU SIGUIENTE PASO':panel==='space'?'TU ESPACIO':panel==='help'?'CÓMO JUGAR':panel==='object'?'INTERACCIÓN':'CHECKPOINT / ATLAS'}</span><button onclick={closePanel} aria-label="Cerrar panel"><X size={20}/></button></div>
   {#if panel==='obtained'&&obtained}<div class="drawer-icon"><Backpack size={28}/></div><h2>Objeto obtenido</h2><p class="drawer-description">{obtained.name} × {obtained.quantity}</p><button class="primary-button" onclick={closePanel}>Continuar</button>
   {:else if panel==='locked'&&blockedExit}<div class="drawer-icon"><LockKeyhole size={28}/></div><h2>{blockedExit.name}</h2><p class="drawer-description">Necesitas este artículo para abrir la salida:</p><section class="progress-card">{#if blockedExit.image}<img src={blockedExit.image} alt="" style="width:64px;height:64px;object-fit:contain;image-rendering:pixelated"/>{:else}<Package size={24}/>{/if}<h3>{blockedExit.item} × {blockedExit.quantity}</h3></section><button class="primary-button" onclick={closePanel}>Seguir explorando</button>
@@ -175,8 +174,10 @@
    <div class="project-summary"><span>{done} de {tasks.length} completadas</span><strong>{Math.round(done/tasks.length*100)}%</strong></div><div class="progress-track"><span style={`width:${done/tasks.length*100}%`}></span></div>
    <div class="task-list">{#each tasks as task}<article class="task" class:task-done={task.status==='done'}><div class="task-meta"><span>{task.tag}</span><span>{task.status==='done'?'Completada':task.status==='active'?'En curso':'Pendiente'}</span></div><h3>{#if task.status==='done'}<CheckCheck size={18}/>{/if}{task.title}</h3><p>{task.description}</p>{#if task.status==='todo'}<button class="task-action" onclick={()=>startTask(task.id)}><Play size={14}/> Trabajar en esta tarea</button>{:else if task.status==='active'}<div class="task-buttons"><button class="task-action" onclick={()=>finishTask(task.id)}><Check size={15}/> Completar</button><button class="subtle-button" onclick={pauseTask}>Pausar</button></div>{/if}</article>{/each}</div>
   {:else if panel==='chat'}
-   <div class="chat-heading"><span class="person-avatar" class:lucia={resource==='lucia'} class:marcos={resource==='marcos'}>{chatName.slice(0,1)}</span><div><h2>{chatName}</h2><p>Conversación de ejemplo</p></div></div>
-   <div class="chat-notice">Este chat es local. Los mensajes no se envían a otras personas.</div><div class="chat-messages" aria-live="polite">{#each messages[resource]??[] as message}<div class="message" class:mine={message.me}><span>{message.me?'Tú':chatName}</span><p>{message.text}</p></div>{/each}</div><form class="chat-form" onsubmit={e=>{e.preventDefault();send();}}><label class="sr-only" for="message">Escribe un mensaje</label><input id="message" bind:value={draft} maxlength="2000" placeholder="Escribe un mensaje…" autocomplete="off"/><button disabled={!draft.trim()} aria-label="Enviar mensaje local"><Send size={19}/></button></form>
+   <div class="chat-heading"><span class="person-avatar" class:lucia={resource==='lucia'} class:marcos={resource==='marcos'}>{chatName.slice(0,1)}</span><div><h2>{chatName}</h2><p>Conversación</p></div></div>
+   {#key [adventure?.id,scene.id,resourceEntityId,resource].join(':')}
+    <RoutingTalesChat {resource} progressKey={chatProgressKey(adventure?.id??'',scene.id,resourceEntityId,resource)} onclose={()=>void closePanel()}/>
+   {/key}
   {:else if panel==='goal'&&selectedGoal}
    <div class="drawer-icon"><Flag size={27}/></div><h2>{selectedGoal.title}</h2><p class="drawer-description">{selectedGoal.description}</p><div class="goal-callout"><Map size={28}/><p>Cada objetivo es un lugar al que volver. Explora a tu ritmo y marca este paso cuando lo hayas conseguido.</p></div><button class="primary-button" onclick={finishGoal} disabled={selectedGoal.done}>{#if selectedGoal.done}<Check size={18}/> Objetivo completado{:else}<Flag size={18}/> Marcar como completado{/if}</button>
   {:else if panel==='object'&&selectedEntity}
@@ -191,6 +192,8 @@
 {/if}
 
 <style>
+.unified-modal.chat-panel{display:flex;flex-direction:column;gap:18px;overflow:hidden}.chat-panel .chat-heading{flex-shrink:0}.chat-panel .demo-footnote{display:none}
+
 .unified-modal.activity-panel{inset:0 0 0 auto;margin:0;height:100dvh;max-height:100dvh;width:min(460px,100vw);border-radius:18px 0 0 18px;animation:activity-enter .2s ease-out}.unified-modal.activity-panel::backdrop{backdrop-filter:none;-webkit-backdrop-filter:none;background:#18282120}@keyframes activity-enter{from{transform:translateX(100%)}to{transform:translateX(0)}}@media(prefers-reduced-motion:reduce){.unified-modal.activity-panel{animation:none}}
 
 .map-inventory{position:absolute;right:28px;bottom:84px;z-index:3;display:flex;align-items:center;justify-content:center;gap:8px;min-width:52px;min-height:48px;padding:10px 13px;background:#fffef8;border:1px solid #d5dfce;border-radius:10px;color:#35502f;box-shadow:0 3px 12px #28433318}.map-inventory:hover{background:#e8efde}.map-inventory:focus-visible{outline:2px solid #577c35;outline-offset:3px}.map-inventory span{font-size:12px;font-variant-numeric:tabular-nums}@media(max-width:700px){.map-inventory{right:16px;bottom:80px}}
