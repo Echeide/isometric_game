@@ -1,7 +1,7 @@
 <script lang="ts">
  import {onMount} from 'svelte';
  import {chatUrl,parseChat,resumeNode,type ChatConfig} from '$lib/chat/routingtales';
- let {resource,progressKey,onclose}:{resource:string;progressKey:string;onclose:()=>void}=$props();
+ let {resource,progressKey,onclose,onprogress}:{resource:string;progressKey:string;onclose:()=>void;onprogress?:(node:string)=>void}=$props();
  let frame=$state<HTMLIFrameElement>();
  let error=$state(''),loading=$state(true),completed=$state(false);
  onMount(()=>{
@@ -18,7 +18,7 @@
    if(event.data.type==='close')onclose();
    if(event.data.type==='node'&&config?.chatNodes.some(n=>n.id===event.data.id)){
     completed=event.data.id==='success';
-    try{localStorage.setItem(progressKey,event.data.id);}catch{/* Continue playing without persistence. */}
+    try{const previous=localStorage.getItem(progressKey);localStorage.setItem(progressKey,event.data.id);if(previous!==event.data.id)onprogress?.(event.data.id);}catch{/* Continue playing without persistence. */}
    }
   }
   window.addEventListener('message',receive);

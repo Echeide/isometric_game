@@ -33,3 +33,9 @@ La importación limita número de entradas, tamaños descomprimidos, rutas admit
 Implementar el contrato `AdventureRepository` con la API del anfitrión y cambiar la composición de la demo. Prisma puede almacenar la definición versionada del mapa y los metadatos de los recursos; los PNG pueden vivir en el almacenamiento de archivos del anfitrión. El resolutor traduce los identificadores a las URLs que consume el motor. Los permisos, pertenencia a proyecto y progreso quedan bajo control del anfitrión.
 
 Los recursos compartidos al duplicar son inmutables: sustituir crea un identificador nuevo. Esta primera versión no elimina aventuras ni purga binarios antiguos; la recolección de recursos sin referencias y los escenarios automáticos de carga quedan pendientes. El panel muestra los totales de imágenes, mapas y elementos para orientar las pruebas manuales.
+
+## Panel de pruebas y reinicio
+
+El botón de portapapeles junto a la mochila abre **Pruebas de aventura**. Permite completar y reabrir objetivos de todos los mapas y las tareas de la demo. Registra hasta 100 acciones: cambios de hitos, tareas, viajes, recogidas y pasos de conversación. No reconstruye actividad anterior a esta versión.
+
+Los hitos, tareas y registro se guardan por aventura en `isometrico.progress.v1:<id>`; inventario y chats mantienen sus claves independientes. El reinicio requiere confirmación en el panel, limpia únicamente el progreso de esa aventura (incluidos chats de mapas eliminados) y vuelve al punto inicial. No modifica definiciones de mapas ni recursos. El registro comienza de nuevo con una entrada de reinicio. Estas funciones son herramientas locales de la demo y no llaman a las APIs de Checkpoint o RoutingTales.

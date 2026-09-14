@@ -1,4 +1,13 @@
 <script lang="ts">
+ import AdventureTests from '$lib/components/AdventureTests.svelte';
+ import {readProgress,writeProgress,resetProgress,appendActivity,milestones,type Activity} from '$lib/demo/test-progress';
+ let activityLog=$state<Activity[]>([]),testError=$state('');
+ function restoreProgress(a:Adventure){const p=readProgress(localStorage,a);tasks=p.tasks;completed=p.completed;activityLog=p.log;testError='';}
+ function record(message:string){if(!adventure)return;activityLog=appendActivity(activityLog,message);try{writeProgress(localStorage,adventure.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});testError='';}catch{testError='No se pudo guardar el progreso en este navegador.';}}
+ function toggleTestGoal(key:string){if(!adventure)return;const goal=milestones(adventure).find(g=>g.key===key);if(!goal)return;const wasDone=completed.includes(key);completed=wasDone?completed.filter(k=>k!==key):[...completed,key];record(`${wasDone?'Reabierto':'Completado'} desde pruebas: ${goal.label} (${goal.map}).`);}
+ function toggleTestTask(id:string){const task=tasks.find(t=>t.id===id);if(!task)return;const wasDone=task.status==='done';tasks=tasks.map(t=>t.id===id?{...t,status:wasDone?'todo':'done'}:t);record(`${wasDone?'Reabierta':'Completada'} desde pruebas: ${task.title}.`);}
+ function restartAdventure(){if(!adventure)return;try{const initial=parseScene(adventure.maps.find(m=>m.id===adventure!.startMap)!);const p=resetProgress(localStorage,adventure.id);tasks=p.tasks;completed=p.completed;activityLog=p.log;inventory=emptyInventory();obtained=null;blockedExit=null;testError='';panMode=false;controller?.setConversation(null);traveler=createTraveler(adventure);changeScene(initial,'se');arrivalCamera=undefined;status='Aventura reiniciada.';}catch(e){testError=`No se pudo reiniciar: ${(e as Error).message}`;}}
+
  import RoutingTalesChat from '$lib/components/RoutingTalesChat.svelte';
  import {chatProgressKey} from '$lib/chat/routingtales';
  import InfoBubble from '$lib/components/InfoBubble.svelte';
@@ -27,7 +36,7 @@
  import {parseScene,type WorldScene,type Facing} from '@isometrico/world';
  import { World, type WorldController, type WorldInteraction } from '@isometrico/world';
  import { office,outdoors,makeAdapter,initialTasks,initialGoals,type Task } from '$lib/demo/scenes';
- import { LockKeyhole, Package, Backpack, Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Flag, Armchair, CircleHelp, CheckCheck, Hand, LocateFixed } from 'lucide-svelte';
+ import { ClipboardList, LockKeyhole, Package, Backpack, Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Flag, Armchair, CircleHelp, CheckCheck, Hand, LocateFixed } from 'lucide-svelte';
  let traveler:ReturnType<typeof createTraveler>|undefined;
  let adventure=$state<Adventure|null>(null),mapsReady=$state(false);
  let currentScene=$state<WorldScene>(office);
@@ -45,7 +54,7 @@
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
   await loadGraphics(adventure.id);const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
   const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
-  inventory=readInventory(localStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
+  restoreProgress(adventure);inventory=readInventory(localStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
  }catch(e){loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}})();});
  function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;transitionReady=true;}
  function changeScene(next:WorldScene,facing:Facing){
@@ -53,7 +62,7 @@
   celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;
  }
  let tasks=$state<Task[]>(structuredClone(initialTasks));
- let panel=$state<'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|null>(null);
+ let panel=$state<'tests'|'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|null>(null);
  let blockedExit=$state<{name:string;item:string;quantity:number;image?:string}|null>(null);
  const exitIndicators=$derived.by(()=>{
   const result:Record<string,import('../../packages/world/src/types').ExitIndicator>={};
@@ -68,7 +77,7 @@
  let status=$state('Tu espacio, a tu ritmo.');
  const done=$derived(tasks.filter(t=>t.status==='done').length);
  const active=$derived(tasks.find(t=>t.status==='active'));
- const scene=$derived({...currentScene,entities:currentScene.entities.map(e=>({...e,completed:e.completed||completed.includes(objectiveKey(currentScene.id,e.id))}))});
+ const scene=$derived({...currentScene,entities:currentScene.entities.map(e=>({...e,completed:completed.includes(objectiveKey(currentScene.id,e.id))}))});
  const informationEntity=$derived(scene.entities.find(e=>e.id===information?.entityId));
  const sceneGoals=$derived(scene.entities.filter(e=>!e.pickup&&e.kind==='goal'&&e.interaction?.action!=='adventure.exit'));
  const completedGoals=$derived(sceneGoals.filter(e=>e.completed).length);
@@ -92,7 +101,7 @@
    if(transitionImage)return;
    if(event.action==='inventory.collect'){
     if(!adventure)return;
-    try{const next=collectItem(adventure,$state.snapshot(inventory),event.sceneId,event.entityId);saveInventory(localStorage,adventure.id,next);inventory=next;obtained={name:adventure.items?.find(i=>i.id===event.resourceId)?.name??'Objeto',quantity:scene.entities.find(e=>e.id===event.entityId)?.pickup?.quantity??1};panel='obtained';status='Has recogido '+(adventure.items?.find(i=>i.id===event.resourceId)?.name??'un objeto')+'.';}catch(e){status=(e as Error).message;}return;
+    try{const next=collectItem(adventure,$state.snapshot(inventory),event.sceneId,event.entityId);saveInventory(localStorage,adventure.id,next);inventory=next;obtained={name:adventure.items?.find(i=>i.id===event.resourceId)?.name??'Objeto',quantity:scene.entities.find(e=>e.id===event.entityId)?.pickup?.quantity??1};panel='obtained';record(`Objeto recogido: ${obtained.name} × ${obtained.quantity}.`);status='Has recogido '+(adventure.items?.find(i=>i.id===event.resourceId)?.name??'un objeto')+'.';}catch(e){status=(e as Error).message;}return;
    }
    if(event.action==='adventure.exit'){
     if(!adventure)return;
@@ -101,9 +110,9 @@
       blockedExit={name:adventure.maps.find(m=>m.id===exit.toMap)?.name??'Salida',item:adventure.items?.find(i=>i.id===requirement.itemId)?.name??requirement.itemId,quantity:requirement.quantity};
       const pickup=adventure.maps.flatMap(m=>m.entities).find(e=>e.pickup?.itemId===requirement.itemId);
       if(pickup?.visualId)blockedExit.image=graphics.objects[pickup.visualId]?.image;
-      opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel='locked';return;
+      opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel='locked';record(`Salida cerrada: ${blockedExit.name}. Falta ${blockedExit.item}.`);return;
     }
-    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);saveInventory(localStorage,adventure.id,progress);inventory=progress;changeScene(next.scene,next.facing);}
+    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);saveInventory(localStorage,adventure.id,progress);inventory=progress;record(`Viaje: ${currentScene.name} → ${next.scene.name}.`);changeScene(next.scene,next.facing);}
     catch(e){status=(e as Error).message;}
     return;
    }
@@ -117,23 +126,22 @@
 
  async function closePanel(){information=null;panel=null;controller?.setConversation(null);await tick();if(opener?.isConnected)opener.focus();else document.querySelector<HTMLElement>('[role=application]')?.focus();}
  function shortcut(entityId:string){void closePanel().then(()=>controller?.goTo(entityId));}
- const adventureProgress=new globalThis.Map<string,{tasks:Task[];completed:string[]}>();
+
  async function switchAdventure(value:string){
   if(!adventure||transitionImage||value===adventure.id)return;
   try{
    const next=await selectAdventure(value);await loadGraphics(next.id);
-   adventureProgress.set(adventure.id,{tasks:structuredClone($state.snapshot(tasks)),completed:[...completed]});
-   const progress=adventureProgress.get(value);tasks=progress?.tasks??structuredClone(initialTasks);completed=progress?.completed??[];
+   restoreProgress(next);
    inventory=readInventory(localStorage,next.id);traveler=createTraveler(next);adventure=next;changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
    const url=new URL(location.href);url.search='';url.searchParams.set('adventure',value);history.replaceState(null,'',url);
   }catch(e){status=(e as Error).message;}
  }
 
- function startTask(id:string){tasks=tasks.map(t=>({...t,status:t.id===id?'active':t.status==='active'?'todo':t.status}));status='En camino a tu puesto de trabajo.';void closePanel();}
- function finishTask(id:string){tasks=tasks.map(t=>t.id===id?{...t,status:'done'}:t);status='¡Un paso más! Tarea completada.';celebration++;void closePanel();}
- function pauseTask(){tasks=tasks.map(t=>t.status==='active'?{...t,status:'todo'}:t);status='Tarea en pausa.';void closePanel();}
- function finishGoal(){if(!selectedEntity)return;const key=objectiveKey(scene.id,selectedEntity.id);if(!completed.includes(key))completed=[...completed,key];status='¡Objetivo completado! Tu ruta sigue avanzando.';celebration++;void closePanel();}
- function showPanel(value:'space'|'help'|'inventory'){information=null;opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel=value;}
+ function startTask(id:string){tasks=tasks.map(t=>({...t,status:t.id===id?'active':t.status==='active'?'todo':t.status}));status='En camino a tu puesto de trabajo.';record(`Tarea iniciada: ${tasks.find(t=>t.id===id)?.title}.`);void closePanel();}
+ function finishTask(id:string){tasks=tasks.map(t=>t.id===id?{...t,status:'done'}:t);status='¡Un paso más! Tarea completada.';record(`Tarea completada: ${tasks.find(t=>t.id===id)?.title}.`);celebration++;void closePanel();}
+ function pauseTask(){tasks=tasks.map(t=>t.status==='active'?{...t,status:'todo'}:t);status='Tarea en pausa.';record('Tarea pausada.');void closePanel();}
+ function finishGoal(){if(!selectedEntity)return;const key=objectiveKey(scene.id,selectedEntity.id);if(!completed.includes(key))completed=[...completed,key];status='¡Objetivo completado! Tu ruta sigue avanzando.';record(`Objetivo completado: ${selectedEntity.label} (${scene.name}).`);celebration++;void closePanel();}
+ function showPanel(value:'tests'|'space'|'help'|'inventory'){information=null;opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel=value;}
 </script>
 <svelte:head><title>Isométrico — Tu espacio de trabajo</title><meta name="description" content="Un espacio isométrico para trabajar, conversar y avanzar. Demo de un módulo reutilizable para SvelteKit."/></svelte:head>
 
@@ -150,6 +158,7 @@
    <div class="scene-heading"><div class="eyebrow">{adventure?.name??'MI AVENTURA'}</div><h1>{scene.name}</h1><span>{environments[scene.theme].label}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label="Abrir inventario" title="Inventario"><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
+   <button class="map-inventory map-tests" disabled={!adventure||!!transitionImage} onclick={()=>showPanel('tests')} aria-label="Abrir pruebas de aventura" title="Pruebas de aventura"><ClipboardList size={22}/></button>
    <div class="map-controls"><button aria-label="Volver al personaje" title="Centrar y seguir al personaje" onclick={()=>{panMode=false;controller?.focusPlayer();}}><LocateFixed size={18}/></button><button aria-label="Mover vista" aria-pressed={panMode} title="Mover vista: arrastra con ratón o dedo" onclick={()=>panMode=!panMode}><Hand size={18}/></button><button onclick={()=>controller?.zoom(-.15)} aria-label="Alejar mapa" title="Alejar"><Minus size={17}/></button><button onclick={()=>controller?.recenter()} aria-label="Centrar mapa" title="Centrar"><Scan size={17}/></button><button onclick={()=>controller?.zoom(.15)} aria-label="Acercar mapa" title="Acercar"><Plus size={17}/></button></div>
    <div class="player-hud"><div class="my-avatar">E</div><div><strong>Explorador <span>Tú</span></strong><small>{hasTasks&&active?'En foco · '+active.title:'Disponible para explorar'}</small></div></div>
    <div class="scene-instructions"><MousePointer2 size={14}/><span>Haz clic para caminar · Interactúa con objetos y compañeros</span></div>
@@ -161,9 +170,11 @@
  <!-- Native dialog keeps focus inside the floating interaction. -->
  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
  <!-- svelte-ignore a11y_click_events_have_key_events -->
- <dialog class="drawer unified-modal" class:chat-panel={panel==='chat'} class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
-  <div class="drawer-top"><span>{panel==='obtained'?'INVENTARIO':panel==='locked'?'SALIDA CERRADA':panel==='inventory'?'INVENTARIO':panel==='chat'?'CONVERSACIÓN':panel==='goal'?'TU SIGUIENTE PASO':panel==='space'?'TU ESPACIO':panel==='help'?'CÓMO JUGAR':panel==='object'?'INTERACCIÓN':'CHECKPOINT / ATLAS'}</span><button onclick={closePanel} aria-label="Cerrar panel"><X size={20}/></button></div>
-  {#if panel==='obtained'&&obtained}<div class="drawer-icon"><Backpack size={28}/></div><h2>Objeto obtenido</h2><p class="drawer-description">{obtained.name} × {obtained.quantity}</p><button class="primary-button" onclick={closePanel}>Continuar</button>
+ <dialog class="drawer unified-modal" class:chat-panel={panel==='chat'} class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='tests'?'Pruebas de aventura':panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
+  <div class="drawer-top"><span>{panel==='tests'?'PROGRESO Y PRUEBAS':panel==='obtained'?'INVENTARIO':panel==='locked'?'SALIDA CERRADA':panel==='inventory'?'INVENTARIO':panel==='chat'?'CONVERSACIÓN':panel==='goal'?'TU SIGUIENTE PASO':panel==='space'?'TU ESPACIO':panel==='help'?'CÓMO JUGAR':panel==='object'?'INTERACCIÓN':'CHECKPOINT / ATLAS'}</span><button onclick={closePanel} aria-label="Cerrar panel"><X size={20}/></button></div>
+  {#if panel==='tests'&&adventure}
+   {#if testError}<p role="alert">{testError}</p>{/if}<AdventureTests {adventure} {tasks} {completed} log={activityLog} ontask={toggleTestTask} ongoal={toggleTestGoal} onreset={restartAdventure}/>
+  {:else if panel==='obtained'&&obtained}<div class="drawer-icon"><Backpack size={28}/></div><h2>Objeto obtenido</h2><p class="drawer-description">{obtained.name} × {obtained.quantity}</p><button class="primary-button" onclick={closePanel}>Continuar</button>
   {:else if panel==='locked'&&blockedExit}<div class="drawer-icon"><LockKeyhole size={28}/></div><h2>{blockedExit.name}</h2><p class="drawer-description">Necesitas este artículo para abrir la salida:</p><section class="progress-card">{#if blockedExit.image}<img src={blockedExit.image} alt="" style="width:64px;height:64px;object-fit:contain;image-rendering:pixelated"/>{:else}<Package size={24}/>{/if}<h3>{blockedExit.item} × {blockedExit.quantity}</h3></section><button class="primary-button" onclick={closePanel}>Seguir explorando</button>
   {:else if panel==='inventory'}
    <h2>Mochila</h2><p class="drawer-description">Tus objetos te acompañan a lo largo de la aventura. Aquí puedes consultar lo que has recogido.</p>
@@ -183,7 +194,7 @@
   {:else if panel==='chat'}
    <div class="chat-heading"><span class="person-avatar" class:lucia={resource==='lucia'} class:marcos={resource==='marcos'}>{chatName.slice(0,1)}</span><div><h2>{chatName}</h2><p>Conversación</p></div></div>
    {#key [adventure?.id,scene.id,resourceEntityId,resource].join(':')}
-    <RoutingTalesChat {resource} progressKey={chatProgressKey(adventure?.id??'',scene.id,resourceEntityId,resource)} onclose={()=>void closePanel()}/>
+    <RoutingTalesChat onprogress={node=>record(`Conversación con ${chatName}: ${node==='success'?'completada':'paso '+node}.`)} {resource} progressKey={chatProgressKey(adventure?.id??'',scene.id,resourceEntityId,resource)} onclose={()=>void closePanel()}/>
    {/key}
   {:else if panel==='goal'&&selectedGoal}
    <div class="drawer-icon"><Flag size={27}/></div><h2>{selectedGoal.title}</h2><p class="drawer-description">{selectedGoal.description}</p><div class="goal-callout"><Map size={28}/><p>Cada objetivo es un lugar al que volver. Explora a tu ritmo y marca este paso cuando lo hayas conseguido.</p></div><button class="primary-button" onclick={finishGoal} disabled={selectedGoal.done}>{#if selectedGoal.done}<Check size={18}/> Objetivo completado{:else}<Flag size={18}/> Marcar como completado{/if}</button>
@@ -199,6 +210,7 @@
 {/if}
 
 <style>
+.map-inventory.map-tests{right:108px}@media(max-width:700px){.map-inventory.map-tests{right:96px}}
 .unified-modal.chat-panel{display:flex;flex-direction:column;gap:18px;overflow:hidden}.chat-panel .chat-heading{flex-shrink:0}.chat-panel .demo-footnote{display:none}
 
 .unified-modal.activity-panel{inset:0 0 0 auto;margin:0;height:100dvh;max-height:100dvh;width:min(460px,100vw);border-radius:18px 0 0 18px;animation:activity-enter .2s ease-out}.unified-modal.activity-panel::backdrop{backdrop-filter:none;-webkit-backdrop-filter:none;background:#18282120}@keyframes activity-enter{from{transform:translateX(100%)}to{transform:translateX(0)}}@media(prefers-reduced-motion:reduce){.unified-modal.activity-panel{animation:none}}
