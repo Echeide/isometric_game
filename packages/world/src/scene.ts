@@ -1,11 +1,23 @@
 import {environments} from './environments';
 import {levelAt,stairAt} from './elevation';
-import {tileKinds} from './types';
+import {isTileKind} from './types';
 import {hasTile,wallCells,wallKey,sceneWalls} from './walls';
 import type { Cell, WorldScene } from './types';
 import { footprint, walkable, createNavigator, interactionCells, cellKey } from './navigation';
 export type ObjectCategory='office'|'nature'|'urban'|'people';
 export interface VisualAsset {id:string;kind:import('./types').EntityKind;label:string;category:ObjectCategory;size:Cell;color?:number}
+export type VisualCatalogOverrides=Record<string,Partial<Pick<VisualAsset,'label'|'category'>>>;
+export const isCustomVisual=(id:unknown):id is string=>typeof id==='string'&&/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id);
+export function validateCustomCatalog(value:unknown):VisualAsset[]{
+ if(value===undefined)return [];
+ if(!Array.isArray(value)||value.length>128)throw new Error('El catálogo admite hasta 128 recursos propios.');
+ const ids=new Set<string>();
+ for(const a of value){
+  if(!a||!isCustomVisual(a.id)||ids.has(a.id)||!['object','person'].includes(a.kind)||typeof a.label!=='string'||!a.label.trim()||a.label.length>120||!['office','nature','urban','people'].includes(a.category)||!a.size||![a.size.x,a.size.y].every(n=>Number.isInteger(n)&&n>=1&&n<=16))throw new Error('Entrada de catálogo no válida.');
+  ids.add(a.id);
+ }
+ return JSON.parse(JSON.stringify(value));
+}
 export const visualCatalog:readonly VisualAsset[] = [
  {id:'pixel.plant',kind:'plant',label:'Planta · Pixel',category:'nature',size:{x:1,y:1}},
  {id:'pixel.sofa',kind:'sofa',label:'Sofá · Pixel',category:'office',size:{x:1,y:3}},
@@ -31,6 +43,22 @@ export const visualCatalog:readonly VisualAsset[] = [
  {id:'pixel.person-lucia',kind:'person',label:'Lucía · Pixel',category:'people',size:{x:1,y:1},color:0xce936a},
  {id:'pixel.person-marcos',kind:'person',label:'Marcos · Pixel',category:'people',size:{x:1,y:1},color:0x819582},
 ];
+/** Base resources retain their identity and geometry; the host can customize catalogue metadata. */
+export function validateCatalogOverrides(value:unknown):VisualCatalogOverrides{
+ if(value===undefined)return {};
+ const fail=():never=>{throw new Error('Personalización del catálogo base no válida.');};
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length>visualCatalog.length)return fail();
+ for(const [id,entry]of Object.entries(value)){
+  if(!visualCatalog.some(a=>a.id===id)||!entry||typeof entry!=='object'||Array.isArray(entry))return fail();
+  if(Object.keys(entry).some(k=>k!=='label'&&k!=='category'))return fail();
+  if('label' in entry&&(typeof entry.label!=='string'||!entry.label.trim()||entry.label.length>120))return fail();
+  if('category' in entry&&!['office','nature','urban','people'].includes(entry.category))return fail();
+ }
+ return JSON.parse(JSON.stringify(value));
+}
+export function resolveVisualCatalog(custom:readonly VisualAsset[]=[],overrides:VisualCatalogOverrides={}):VisualAsset[]{
+ return [...visualCatalog.map(a=>({...a,label:overrides[a.id]?.label??a.label,category:overrides[a.id]?.category??a.category,size:{...a.size}})),...custom.map(a=>({...a,size:{...a.size}}))];
+}
 /** Validate external data before allocating a renderer or changing the active map. */
 export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={}): WorldScene {
  const fail=(message:string):never=>{throw new Error(message);};
@@ -49,7 +77,7 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
   if(!v.tiles||typeof v.tiles!=='object'||Array.isArray(v.tiles))return fail('Suelo no válido.');
   for(const [key,tile] of Object.entries(v.tiles)){
    const [x,y]=key.split(',').map(Number);
-   if(key!==`${x},${y}`||!point({x,y})||![...tileKinds,'void'].includes(tile as string))return fail(`Baldosa no válida: ${key}.`);
+   if(key!==`${x},${y}`||!point({x,y})||(tile!=='void'&&!isTileKind(tile)))return fail(`Baldosa no válida: ${key}.`);
   }
  }
  for(const field of ['elevations','stairs'] as const){
@@ -67,8 +95,10 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
   const e=raw as Record<string,unknown>;
   if(typeof e.id!=='string'||!e.id.trim()||ids.has(e.id))return fail('Los objetos necesitan identificadores únicos.');ids.add(e.id);
   if(typeof e.label!=='string'||!e.label.trim())return fail(`Falta el nombre de ${e.id}.`);
-  if(!visualCatalog.some(a=>a.kind===e.kind))return fail(`Tipo de objeto desconocido: ${e.id}.`);
-  if(e.visualId!==undefined&&e.visualId!==`builtin.${e.kind}`&&!visualCatalog.some(a=>a.id===e.visualId&&a.kind===e.kind))return fail(`Recurso visual no compatible: ${e.id}.`);
+  if(e.kind!=='object'&&!visualCatalog.some(a=>a.kind===e.kind))return fail(`Tipo de objeto desconocido: ${e.id}.`);
+  const custom=isCustomVisual(e.visualId)&&['object','person'].includes(e.kind as string);
+  if(e.kind==='object'&&!custom)return fail('Un objeto propio necesita su recurso gráfico.');
+  if(!custom&&e.visualId!==undefined&&e.visualId!==`builtin.${e.kind}`&&!visualCatalog.some(a=>a.id===e.visualId&&a.kind===e.kind))return fail(`Recurso visual no compatible: ${e.id}.`);
   if(!point(e.position))return fail(`Posición no válida: ${e.id}.`);
   if(e.size!==undefined&&(!e.size||typeof e.size!=='object'||!dimension((e.size as Cell).x)||!dimension((e.size as Cell).y)))return fail(`Tamaño no válido: ${e.id}.`);
   for(const flag of ['solid','completed','flipX'])if(e[flag]!==undefined&&typeof e[flag]!=='boolean')return fail(`Valor ${flag} no válido: ${e.id}.`);

@@ -10,3 +10,11 @@ export function alphaHitArea(mask:{width:number;height:number;alpha:Uint8Array},
   return (mask.alpha[py*mask.width+px]??0)>=64;
  }};
 }
+
+/** The diamond-shaped floor area occupied by an entity, in entity-local pixels. */
+export function footprintHitArea(size:{x:number;y:number}={x:1,y:1}){
+ return {contains(x:number,y:number){
+  const gridX=x/64+y/32,gridY=y/32-x/64;
+  return gridX>=0&&gridY>=0&&gridX<=size.x&&gridY<=size.y;
+ }};
+}

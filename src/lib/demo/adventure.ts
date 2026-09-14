@@ -1,11 +1,11 @@
 import type {InventoryItem} from './inventory';
 import {entranceFacing} from '../../../packages/world/src/exits';
-import { parseScene, type Cell, type Facing, type WorldScene } from '@isometrico/world';
+import { parseScene, isCustomVisual, validateCustomCatalog, validateCatalogOverrides, type VisualCatalogOverrides, type VisualAsset, type Cell, type Facing, type WorldScene } from '@isometrico/world';
 import { findPath, interactionCells, walkable } from '../../../packages/world/src/navigation';
 import { insertEntity } from './editor';
 
 export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; destinationEntityId?:string; requirement?:{itemId:string;quantity:number;consume:boolean} }
-export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1 }
+export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides }
 export const ADVENTURE_KEY='isometrico.adventure.v1';
 export function createAdventure(maps:WorldScene[]):Adventure {
  return parseAdventure({kind:'isometric-adventure',version:1,id:'my-adventure',name:'Mi aventura',startMap:maps[0]?.id,maps,exits:[]});
@@ -16,6 +16,9 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
  if(typeof a.id!=='string'||!a.id.trim()||typeof a.name!=='string'||!a.name.trim())throw new Error('La aventura necesita identificador y nombre.');
  if(!Array.isArray(a.maps)||!a.maps.length||a.maps.length>64||!Array.isArray(a.exits)||a.exits.length>1024)throw new Error('La aventura admite entre 1 y 64 mapas y hasta 1024 salidas.');
  const maps=a.maps.map(m=>parseScene(m,options)), byId=new Map(maps.map(m=>[m.id,m]));
+ const catalog=validateCustomCatalog(a.catalog);
+ validateCatalogOverrides(a.catalogOverrides);
+ for(const map of maps)for(const e of map.entities)if(isCustomVisual(e.visualId)&&!catalog.some(r=>r.id===e.visualId&&r.kind===e.kind))throw new Error(`Falta ${e.visualId} en el catálogo de la aventura.`);
  if(byId.size!==maps.length)throw new Error('Hay mapas con identificadores repetidos.');
  if(!byId.has(a.startMap))throw new Error('El mapa inicial no existe.');
  const items=a.items??[];

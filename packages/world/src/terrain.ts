@@ -4,3 +4,7 @@ export function defaultTile(scene:WorldScene,{x,y}:Cell):TileKind{
  return scene.theme==='outdoors'&&(y===5||y===6||x===6)?'path':environments[scene.theme].tile;
 }
 export function tileAt(scene:WorldScene,cell:Cell):TileKind|'void'{return scene.tiles?.[`${cell.x},${cell.y}`]??defaultTile(scene,cell);}
+/** Validate resource references at the host / rendering boundary; maps keep stable tile IDs. */
+export function validateSceneTiles(scene:WorldScene,tiles:Record<TileKind,string>){
+ for(const id of new Set(Object.values(scene.tiles??{})))if(id!=='void'&&!Object.hasOwn(tiles,id))throw new Error(`Falta el suelo ${id} utilizado en ${scene.name}.`);
+}

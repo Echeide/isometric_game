@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { PixelArtPack } from './pixelart';
   import { onMount, untrack } from 'svelte';
-  import type { WorldAdapter, WorldController, WorldEntity, WorldEditor } from './types';
-  let { followCamera=false, paused=false, exitIndicators={}, hiddenIds=[], revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus }: {followCamera?:boolean;paused?:boolean;exitIndicators?:Record<string,import('./types').ExitIndicator>;hiddenIds?:string[];revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void} = $props();
+  import type { CameraState, WorldAdapter, WorldController, WorldEntity, WorldEditor } from './types';
+  let { followCamera=false, paused=false, exitIndicators={}, hiddenIds=[], revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus, oncamera }: {followCamera?:boolean;paused?:boolean;exitIndicators?:Record<string,import('./types').ExitIndicator>;hiddenIds?:string[];revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void; oncamera?: (camera:CameraState)=>void} = $props();
   let host: HTMLDivElement;
   let engine: Awaited<ReturnType<typeof import('./renderer').createWorld>> | undefined = $state();
   let error = $state('');
@@ -21,7 +21,7 @@
         const version=requested,scene=adapter.scene,authoring=editor;
         const {createWorld}=await import('./renderer');
         if(disposed)break;
-        const next=await createWorld(host,scene,interact,s=>onstatus?.(s),authoring,graphics,engine?.application);
+        const next=await createWorld(host,scene,interact,s=>onstatus?.(s),authoring,graphics,engine?.application,camera=>oncamera?.(camera));
         if(disposed||version!==requested){next.destroy(!!engine);continue;}
         engine?.destroy(true);
         engine=next;ready=true;error='';lastCelebration=celebration;

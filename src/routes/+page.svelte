@@ -33,7 +33,7 @@
  import {loadAdventureLibrary,selectAdventure} from '$lib/storage/local-adventures';
  let adventures=$state<Adventure[]>([]);
  import {createTraveler,type Adventure} from '$lib/demo/adventure';
- import {parseScene,type WorldScene,type Facing} from '@isometrico/world';
+ import {parseScene,type WorldScene,type Facing,type CameraAction} from '@isometrico/world';
  import { World, type WorldController, type WorldInteraction } from '@isometrico/world';
  import { office,outdoors,makeAdapter,initialTasks,initialGoals,type Task } from '$lib/demo/scenes';
  import { ClipboardList, LockKeyhole, Package, Backpack, Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Flag, Armchair, CircleHelp, CheckCheck, Hand, LocateFixed } from 'lucide-svelte';
@@ -56,7 +56,7 @@
   const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
   restoreProgress(adventure);inventory=readInventory(localStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
  }catch(e){loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}})();});
- function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;transitionReady=true;}
+ function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;primaryCameraAction=c.getCamera().action;transitionReady=true;}
  function changeScene(next:WorldScene,facing:Facing){
   arrivalCamera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;
   celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;
@@ -73,6 +73,8 @@
  });
  let resource=$state('');
  let controller=$state<WorldController>();
+ let primaryCameraAction=$state<CameraAction>('fit');
+ function usePrimaryCamera(){if(!controller)return;panMode=false;controller.setPanMode(false);if(primaryCameraAction==='player')controller.focusPlayer();else controller.recenter();}
  let celebration=$state(0);
  let status=$state('Tu espacio, a tu ritmo.');
  const done=$derived(tasks.filter(t=>t.status==='done').length);
@@ -150,16 +152,16 @@
   <a class="immersive-brand" href="/" aria-label="Isométrico, inicio"><span class="brand-mark"><Layers size={22}/></span><span class="wordmark">isométrico</span></a>
   <div class="header-divider"></div>
   <div class="world-select"><label class="sr-only" for="world-select">Cambiar de aventura</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{item.name}</option>{/each}</select><ChevronDown size={15}/></div></div>
-  <div class="topbar-right"><a class="editor-link" href="/sprites">Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>Editar mapa</a><span class="demo-badge">DEMO LOCAL</span><button class="header-action" onclick={()=>showPanel('space')} aria-label="Abrir lugares y progreso" title="Lugares y progreso"><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label="Ayuda" title="Ayuda"><CircleHelp size={19}/></button><span class="avatar-mini">E</span></div>
+  <div class="topbar-right"><a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>Editar mapa</a><span class="demo-badge">DEMO LOCAL</span><button class="header-action" onclick={()=>showPanel('space')} aria-label="Abrir lugares y progreso" title="Lugares y progreso"><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label="Ayuda" title="Ayuda"><CircleHelp size={19}/></button><span class="avatar-mini">E</span></div>
  </header>
  <main class="immersive-world" aria-label="Espacio virtual">
   <div class:outdoors={environments[scene.theme].outdoor} class="map-stage">
-   {#if loadError}<p class="load-error" role="alert">{loadError}</p>{:else if mapsReady}<World followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/>
+   {#if loadError}<p class="load-error" role="alert">{loadError}</p>{:else if mapsReady}<World followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/>
    <div class="scene-heading"><div class="eyebrow">{adventure?.name??'MI AVENTURA'}</div><h1>{scene.name}</h1><span>{environments[scene.theme].label}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label="Abrir inventario" title="Inventario"><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
    <button class="map-inventory map-tests" disabled={!adventure||!!transitionImage} onclick={()=>showPanel('tests')} aria-label="Abrir pruebas de aventura" title="Pruebas de aventura"><ClipboardList size={22}/></button>
-   <div class="map-controls"><button aria-label="Volver al personaje" title="Centrar y seguir al personaje" onclick={()=>{panMode=false;controller?.focusPlayer();}}><LocateFixed size={18}/></button><button aria-label="Mover vista" aria-pressed={panMode} title="Mover vista: arrastra con ratón o dedo" onclick={()=>panMode=!panMode}><Hand size={18}/></button><button onclick={()=>controller?.zoom(-.15)} aria-label="Alejar mapa" title="Alejar"><Minus size={17}/></button><button onclick={()=>controller?.recenter()} aria-label="Centrar mapa" title="Centrar"><Scan size={17}/></button><button onclick={()=>controller?.zoom(.15)} aria-label="Acercar mapa" title="Acercar"><Plus size={17}/></button></div>
+   <div class="map-controls"><button aria-label="Mover vista" aria-pressed={panMode} title="Mover vista: arrastra con ratón o dedo" onclick={()=>panMode=!panMode}><Hand size={18}/></button><button onclick={()=>controller?.zoom(-.15)} aria-label="Alejar mapa" title="Alejar"><Minus size={17}/></button><button onclick={usePrimaryCamera} aria-label={primaryCameraAction==='player'?'Centrar personaje':'Encajar mapa'} title={primaryCameraAction==='player'?'Centrar y seguir al personaje':'Encajar el mapa completo'}>{#if primaryCameraAction==='player'}<LocateFixed size={18}/>{:else}<Scan size={17}/>{/if}</button><button onclick={()=>controller?.zoom(.15)} aria-label="Acercar mapa" title="Acercar"><Plus size={17}/></button></div>
    <div class="player-hud"><div class="my-avatar">E</div><div><strong>Explorador <span>Tú</span></strong><small>{hasTasks&&active?'En foco · '+active.title:'Disponible para explorar'}</small></div></div>
    <div class="scene-instructions"><MousePointer2 size={14}/><span>Haz clic para caminar · Interactúa con objetos y compañeros</span></div>
    <p class="sr-only" role="status">{status}</p>

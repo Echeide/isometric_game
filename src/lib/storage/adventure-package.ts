@@ -1,9 +1,10 @@
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
-import type {PixelArtPack} from '@isometrico/world';
+import {validateSceneTiles,type PixelArtPack} from '@isometrico/world';
 import {characterImage,characterVariants} from '../../../packages/world/src/character';
 import {parseAdventure,type Adventure} from '$lib/demo/adventure';
 import {graphics} from '$lib/demo/pixelart';
 import {imageUrls,mapImages,resourceBlob,localAdventures,type AdventureRepository} from './local-adventures';
+import {validateGraphics} from '@isometrico/world';
 const MAX=100_000_000;
 export function pngSize(bytes:Uint8Array){
  if(bytes.length<24||[137,80,78,71,13,10,26,10].some((v,i)=>bytes[i]!==v)||strFromU8(bytes.slice(12,16))!=='IHDR')throw new Error('El recurso debe ser una imagen PNG válida.');
@@ -25,10 +26,17 @@ export function validatePack(value:unknown,files:Record<string,Uint8Array>):Pixe
  for(const url of imageUrls(p)){if(typeof url!=='string'||!/^assets\/[a-zA-Z0-9_-]+\.png$/.test(url)||!files[url])throw new Error(`Falta un recurso del paquete: ${url}.`);sizes.set(url,pngSize(files[url]));}
  for(const variant of characterVariants(c))for(const pose of Object.keys(c.animations) as (keyof typeof c.animations)[]){const a=c.animations[pose],s=sizes.get(characterImage(c,pose,variant));if(!s||a.frames*c.frameWidth>s.width||(a.row+c.directions.length)*c.frameHeight>s.height)throw new Error(`La animación ${pose} sale de su hoja.`);}
  for(const o of Object.values(p.objects))if(o.frame){const s=sizes.get(o.image)!;if(o.frame[0]+o.frame[2]>s.width||o.frame[1]+o.frame[3]>s.height)fail();}
+ validateGraphics(p,sizes);
  return p;
+}
+export function validateCatalogGraphics(adventure:Adventure,pack:PixelArtPack){
+ for(const map of adventure.maps)validateSceneTiles(map,pack.tiles);
+ for(const entry of adventure.catalog??[])if(!Object.hasOwn(pack.objects,entry.id))throw new Error(`Falta el objeto ${entry.label}.`);
+ for(const map of adventure.maps)for(const entity of map.entities)if((entity.kind!=='person'||entity.visualId?.startsWith('custom.'))&&entity.interaction?.action!=='adventure.exit'&&!Object.hasOwn(pack.objects,entity.visualId??`pixel.${entity.kind}`))throw new Error(`Falta el objeto ${entity.visualId}.`);
 }
 export async function exportAdventure(adventure:Adventure,repository:Pick<AdventureRepository,'pack'|'blob'>=localAdventures){
  const valid=parseAdventure(adventure),pack=await repository.pack(valid.id),files:Record<string,Uint8Array>={},paths=new Map<string,string>();let total=0;
+ validateCatalogGraphics(valid,pack);
  for(const [index,url] of imageUrls(pack).entries()){
   const blob=await resourceBlob(url,repository);if(blob.size>10_000_000||(total+=blob.size)>MAX)throw new Error('Los recursos superan el límite del paquete (100 MB).');
   const path=`assets/${index}.png`,bytes=new Uint8Array(await blob.arrayBuffer());pngSize(bytes);files[path]=bytes;paths.set(url,path);
@@ -51,6 +59,7 @@ export function unpackAdventure(bytes:Uint8Array){
  const manifest=JSON.parse(strFromU8(files['manifest.json']));
  if(manifest.kind!=='isometric-adventure-package'||manifest.version!==1)throw new Error('Versión de paquete no compatible.');
  const adventure=parseAdventure(manifest.adventure),pack=validatePack(manifest.graphics,files);
+ validateCatalogGraphics(adventure,pack);
  for(const map of adventure.maps)for(const entity of map.entities)if(entity.kind!=='person'&&entity.visualId?.startsWith('pixel.')&&!pack.objects[entity.visualId])throw new Error(`Falta el objeto ${entity.visualId}.`);
  const refs=new Map<string,string>(),blobs:Record<string,Blob>={};
  for(const url of imageUrls(pack)){const id=crypto.randomUUID();refs.set(url,`asset:${id}`);blobs[id]=new Blob([files[url] as Uint8Array<ArrayBuffer>],{type:'image/png'});}

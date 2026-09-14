@@ -1,8 +1,8 @@
-import { parseScene, visualCatalog, type WorldEntity, type WorldScene } from '@isometrico/world';
+import { parseScene, visualCatalog, type VisualAsset, type WorldEntity, type WorldScene } from '@isometrico/world';
 /** Find a valid free placement rather than stacking every new item at (1,1). */
-export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string, position?: {x:number;y:number}): WorldScene {
+export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string, position?: {x:number;y:number},catalog:readonly VisualAsset[]=visualCatalog): WorldScene {
  const base=parseScene(draft);
- const asset=visualCatalog.find(a=>a.kind===kind&&(!visualId||a.id===visualId));
+ const asset=catalog.find(a=>a.kind===kind&&(!visualId||a.id===visualId));
  if(!asset)throw new Error('Este objeto no está en el catálogo.');
  const size={...asset.size};
  if(position){

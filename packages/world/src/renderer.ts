@@ -1,21 +1,21 @@
-import {shouldFollow,mobileCamera} from './follow-camera';
+import {cameraAction,shouldFollow,mobileCamera} from './follow-camera';
 import {prepareWallOcclusion,wallOccludesActor} from './wall-occlusion';
 import 'pixi.js/prepare';
 import {advanceRoute} from './movement';
 import {environments} from './environments';
 import {terrainCellAt,topContains,levelAt,stairAt,stairDirections,STAIR_STEPS,LEVEL_HEIGHT,projectSurface,surfaceHeight,wallHeight} from './elevation';
 import {exitFacing} from './exits';
-import {alphaHitArea} from './alpha-hit';
+import {alphaHitArea,footprintHitArea} from './alpha-hit';
 import {depthOrder,movingDepthIndex,type DepthItem} from './depth';
 import {sceneWalls,wallCells,hasTile,wallEndExposed} from './walls';
 import type {Wall} from './types';
 import { cameraGestures } from './camera-gestures';
-import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle } from 'pixi.js';
-import { loadPixelArt, pixelObject, type LoadedPixelArt, type PixelArtPack } from './pixelart';
+import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture } from 'pixi.js';
+import { loadPixelArt, pixelObject, pixelNpc, type LoadedPixelArt, type PixelArtPack } from './pixelart';
 import { createActor, facingFor } from './actor';
-import {tileAt,defaultTile} from './terrain';
+import {tileAt,defaultTile,validateSceneTiles} from './terrain';
 import { seatPlacement } from './seating';
-import type { WorldEditor, ActorPose, Facing, Cell, WorldEntity, WorldScene } from './types';
+import type { WorldEditor, ActorPose, Facing, Cell, WorldEntity, WorldScene, CameraState } from './types';
 import { createNavigator, interactionCells, project, walkable } from './navigation';
 
 const palette = { top: 0xdce6e4, left: 0xb1c5c2, right: 0x91aaa7 };
@@ -46,7 +46,7 @@ function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt, scene:W
     return c;
   }
   if(e.kind!=='person'){
-    const id=e.visualId?.startsWith('pixel.')?e.visualId:`pixel.${e.kind}`;
+    const id=e.visualId??`pixel.${e.kind}`;
     const custom=pixelObject(art,id==='pixel.goal'&&e.completed?'pixel.goal-completed':id);
     if(!custom)throw new Error(`Falta el gráfico de píxel: ${id}.`);
     drawing.addChild(custom);
@@ -56,7 +56,8 @@ function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt, scene:W
   }
   return c;
 }
-export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack,existingApp?:Application) {
+export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack,existingApp?:Application,onCameraChange?:(camera:CameraState)=>void) {
+  validateSceneTiles(scene,graphics.tiles);
   const art=await loadPixelArt(graphics);
   const navigation=createNavigator(scene);
   const app = existingApp??new Application();
@@ -81,6 +82,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   floor.addChild(foundation);
   const depthItems:{view:Container;bounds:()=>DepthItem}[]=[];
   const tileDrawers=new Map<string,(kind:import('./types').TileKind|'void')=>void>();
+  const tileTextures=new Map(Object.entries(art.pack.tiles).map(([kind,url])=>{const texture=art.textures.get(url)!,frame=art.pack.tileFrames?.[kind as import('./types').TileKind];return [kind,frame?new Texture({source:texture.source,frame:new Rectangle(...frame)}):texture];}));
   for(let x=0;x<scene.width;x++) for(let y=0;y<scene.height;y++) {
     const z=levelAt(scene,{x,y})*LEVEL_HEIGHT;const base=project({x,y});const p={x:base.x,y:base.y-z}; const tile=new Graphics();
     let textureTile:Sprite|undefined;
@@ -91,7 +93,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       if(kind==='void'){if(editor)tile.poly([p.x,p.y,p.x+32,p.y+16,p.x,p.y+32,p.x-32,p.y+16]).stroke({color:0x829d7a,alpha:.25,width:1});return;}
       if(z>minimumHeight)box(tile,x,y,1,1,z-minimumHeight,groundPalette,z);
       {
-        const texture=art.textures.get(art.pack.tiles[kind])!;
+        const texture=tileTextures.get(kind)!;
         if(!textureTile){textureTile=new Sprite(texture);textureTile.position.set(p.x-32,p.y);textureTile.width=64;textureTile.height=32;textureTile.eventMode='none';textureTile.roundPixels=true;tile.addChild(textureTile);}
         else textureTile.texture=texture;
         // Lighten the grass top without lifting the darker vertical faces.
@@ -186,7 +188,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     const view=entityArt(e,outdoor,art,scene);const p=projectSurface(scene,e.position);view.position.set(p.x,p.y);view.zIndex=(e.position.x+e.position.y+(e.size?.x??1)/2+(e.size?.y??1)/2)*100;
     depthItems.push({view,bounds:()=>({...(drag?.id===e.id?drag.position:e.position),width:e.size?.x??1,height:e.size?.y??1})});
     {view.eventMode='static';view.cursor='pointer';view.on('pointertap',()=>{host.focus({preventScroll:true});if(!editor&&!gestures.blocked())goTo(e.id);});view.on('pointerover',event=>{if(event.pointerType==='touch')return;view.alpha=.8;hovered.add(e.id);refreshLabels();});view.on('pointerout',()=>{view.alpha=1;hovered.delete(e.id);refreshLabels();});}
-    if(e.kind==='person'){const actor=createActor(e.color??0xd79875,false,art);const at=project({x:.5,y:.5});actor.view.position.set(at.x,at.y);actor.view.scale.x=e.flipX?-1:1;view.addChildAt(actor.view,0);occupants.set(e.id,actor);}
+    if(e.kind==='person'){const custom=!!art.pack.objects[e.visualId??'pixel.person'];const actor=custom?pixelNpc(art,e.visualId??'pixel.person'):createActor(e.color??0xd79875,false,art);const at=custom?{x:0,y:0}:project({x:.5,y:.5});actor.view.position.set(at.x,at.y);actor.view.scale.x=e.flipX?-1:1;view.addChildAt(actor.view,0);occupants.set(e.id,actor);}
     if(e.seat){
       const placement=seatPlacement(e.seat),p=projectSurface(scene,placement);
       const base=pixelObject(art,'pixel.chair-base');
@@ -208,7 +210,9 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       highlight(e.id,e.position);
     });
     const bounds=view.getLocalBounds();
-    view.hitArea??=new Rectangle(bounds.x,bounds.y,bounds.width,bounds.height);
+    const visualHitArea=view.hitArea??new Rectangle(bounds.x,bounds.y,bounds.width,bounds.height);
+    const gridHitArea=footprintHitArea(e.size);
+    view.hitArea={contains:(x:number,y:number)=>visualHitArea.contains(x,y)||!!editor&&!editor.onpick&&!editor.brush&&!editor.wallTool&&gridHitArea.contains(x,y)};
     const size=e.size??{x:1,y:1},at=project({x:size.x/2,y:size.y/2});
     const label=new Container();label.eventMode='none';label.visible=false;
     const text=new Text({text:e.label,style:{fontFamily:'system-ui',fontSize:12,fontWeight:'600',fill:outdoor?0x385648:0x344a4e}});
@@ -385,7 +389,10 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   let cell={...scene.spawn};let px=cell.x,py=cell.y;let route:Cell[]=[];let destination:WorldEntity|null=null;let zoomLevel=1;let cameraScale=1;let cameraBaseScale:number|undefined;let destroyed=false;
   let time=0,celebrationUntil=0,standingUntil=0;let facing:Facing='se';let working=false;let seatedAt:WorldEntity|null=null;let conversation:string|null=null;let purpose:'interact'|'work'='interact';
   const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function fit() {if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;if(app.screen.width!==w||app.screen.height!==h)app.renderer.resize(w,h);fitScale=Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135+Math.max(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT-minimumHeight));const scale=(cameraBaseScale??fitScale)*zoomLevel;world.scale.set(Math.max(.2,scale));cameraScale=world.scale.x;world.position.set(w/2-(scene.width-scene.height)*16*scale,h/2-(scene.width+scene.height)*8*scale+35*scale+panY);world.x+=panX;host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);}
+  let lastCameraSignature='';
+  function cameraState():CameraState{return {zoom:zoomLevel,scale:cameraScale,fitScale,action:cameraAction(cameraScale,fitScale)};}
+  function notifyCamera(){const state=cameraState(),signature=`${state.action}:${state.zoom.toFixed(4)}:${state.scale.toFixed(4)}:${state.fitScale.toFixed(4)}`;if(signature!==lastCameraSignature){lastCameraSignature=signature;onCameraChange?.(state);}}
+  function fit() {if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;if(app.screen.width!==w||app.screen.height!==h)app.renderer.resize(w,h);fitScale=Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135+Math.max(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT-minimumHeight));const scale=(cameraBaseScale??fitScale)*zoomLevel;world.scale.set(Math.max(.2,scale));cameraScale=world.scale.x;world.position.set(w/2-(scene.width-scene.height)*16*scale,h/2-(scene.width+scene.height)*8*scale+35*scale+panY);world.x+=panX;host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);host.dataset.cameraAction=cameraAction(cameraScale,fitScale);notifyCamera();}
   function followPlayer(snap=false,dt=0){
     const active=shouldFollow(followEnabled,!!editor,followSuspended||!!panGesture||gestures.blocked(),cameraScale,fitScale);
     host.dataset.follow=active?'active':followSuspended?'paused':'off';
@@ -534,7 +541,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     panBy(x:number,y:number){followSuspended=true;panX+=x;panY+=y;fit();},
     getPan(){return {x:panX,y:panY};},
     getFacing(){return facing;},
-    getCamera(){return {zoom:zoomLevel,scale:cameraScale};},
+    getCamera(){return cameraState();},
     restoreCamera(camera:{zoom:number;scale:number}){zoomLevel=camera.zoom;cameraBaseScale=camera.scale/camera.zoom;fit();followPlayer(true);},
     captureFrame(){app.renderer.render({container:app.stage});return app.canvas.toDataURL('image/png');},
     setFacing(value:Facing){facing=value;player.update(time,0,'idle',facing,reduceMotion);host.dataset.facing=facing;},

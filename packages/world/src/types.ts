@@ -1,12 +1,18 @@
 export const tileKinds = ['office','grass','path','parquet','asphalt','sidewalk','cobble','sand','dirt'] as const;
-export type TileKind = typeof tileKinds[number];
+export type BuiltinTileKind = typeof tileKinds[number];
+export type CustomTileKind = `custom.${string}`;
+export type TileKind = BuiltinTileKind | CustomTileKind;
+export const isCustomTile=(id:unknown):id is CustomTileKind=>typeof id==='string'&&/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id);
+export const isTileKind=(id:unknown):id is TileKind=>typeof id==='string'&&((tileKinds as readonly string[]).includes(id)||isCustomTile(id));
 export type WallMaterial = 'white'|'glass'|'stone'|'cobble';
 export type Wall = {x:number;y:number;axis:'x'|'y';kind:'wall'|'door';exitId?:string;material?:WallMaterial};
 export type MapBrush = TileKind | 'void' | 'erase' | `height:${number}` | `stairs:${Facing}` | 'stairs:erase';
 export type Cell = { x: number; y: number };
 export type Facing = 'ne' | 'se' | 'sw' | 'nw';
 export type ActorPose = 'idle' | 'walk' | 'sit' | 'work' | 'talk' | 'celebrate';
-export type EntityKind = 'desk' | 'board' | 'person' | 'plant' | 'sofa' | 'table' | 'goal' | 'tree' | 'cabinet' | 'bookshelf' | 'printer' | 'chair' | 'bench' | 'bin' | 'bollard' | 'lamp' | 'rock' | 'bush' | 'flowers' | 'pine';
+export type CameraAction = 'fit' | 'player';
+export interface CameraState {zoom:number;scale:number;fitScale:number;action:CameraAction}
+export type EntityKind = 'object' | 'desk' | 'board' | 'person' | 'plant' | 'sofa' | 'table' | 'goal' | 'tree' | 'cabinet' | 'bookshelf' | 'printer' | 'chair' | 'bench' | 'bin' | 'bollard' | 'lamp' | 'rock' | 'bush' | 'flowers' | 'pine';
 export interface WorldEntity {
   id: string;
   label: string;
@@ -63,7 +69,7 @@ export interface WorldController {
   panBy: (x:number,y:number)=>void;
   getPan: ()=>{x:number;y:number};
   getFacing: () => Facing;
-  getCamera: () => { zoom: number; scale: number };
+  getCamera: () => CameraState;
   restoreCamera: (camera: { zoom: number; scale: number }) => void;
   captureFrame: () => string;
   setFacing: (facing: Facing) => void;

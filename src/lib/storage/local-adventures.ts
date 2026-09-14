@@ -21,7 +21,11 @@ function db(){return database??=new Promise<IDBDatabase>((resolve,reject)=>{
 });}
 function result<T>(request:IDBRequest<T>){return new Promise<T>((resolve,reject)=>{request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
 function complete(tx:IDBTransaction){return new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error??new Error('No se pudo guardar la aventura.'));});}
-async function read<T>(store:string,key:string){return result<T|undefined>((await db()).transaction(store).objectStore(store).get(key));}
+async function read<T>(store:string,key:IDBValidKey){return result<T|undefined>((await db()).transaction(store).objectStore(store).get(key));}
+/** Workshop drafts keep Blob originals without adding incomplete assets to the playable pack. */
+export async function saveWorkshopDraft(id:string,value:unknown){const tx=(await db()).transaction('packs','readwrite'),done=complete(tx);tx.objectStore('packs').put(value,['workshop-draft',id]);await done;}
+export const loadWorkshopDraft=<T>(id:string)=>read<T>('packs',['workshop-draft',id]);
+export async function clearWorkshopDraft(id:string){const tx=(await db()).transaction('packs','readwrite'),done=complete(tx);tx.objectStore('packs').delete(['workshop-draft',id]);await done;}
 export const localAdventures:AdventureRepository={
  async load(){
   const saved=await read<AdventureLibrary>('library','current');
@@ -57,10 +61,12 @@ export const selectAdventure=(id:string)=>localAdventures.select(id);
 
 export function mapImages(pack:PixelArtPack,replace:(url:string)=>string):PixelArtPack{
  const copy:PixelArtPack=JSON.parse(JSON.stringify(pack));
- copy.character.image=replace(copy.character.image);
- for(const variants of [copy.character.variants,...Object.values(copy.character.animations).map(a=>a.variants)])if(variants)for(const key of Object.keys(variants))variants[key]=replace(variants[key]);
- for(const animation of Object.values(copy.character.animations))if(animation.image)animation.image=replace(animation.image);
- for(const object of Object.values(copy.objects))object.image=replace(object.image);
+ for(const character of [copy.character,...Object.values(copy.players??{}).map(p=>p.character)]){
+ character.image=replace(character.image);
+ for(const variants of [character.variants,...Object.values(character.animations).map(a=>a.variants)])if(variants)for(const key of Object.keys(variants))variants[key]=replace(variants[key]);
+ for(const animation of Object.values(character.animations))if(animation.image)animation.image=replace(animation.image);
+ }
+ for(const object of Object.values(copy.objects)){object.image=replace(object.image);for(const clip of Object.values(object.animations??{}))clip.image=replace(clip.image);}
  for(const key of Object.keys(copy.tiles) as (keyof typeof copy.tiles)[])copy.tiles[key]=replace(copy.tiles[key]);
  return copy;
 }
