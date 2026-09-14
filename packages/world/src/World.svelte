@@ -2,7 +2,7 @@
   import type { PixelArtPack } from './pixelart';
   import { onMount, untrack } from 'svelte';
   import type { WorldAdapter, WorldController, WorldEntity, WorldEditor } from './types';
-  let { paused=false, exitIndicators={}, hiddenIds=[], revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus }: {paused?:boolean;exitIndicators?:Record<string,import('./types').ExitIndicator>;hiddenIds?:string[];revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void} = $props();
+  let { followCamera=false, paused=false, exitIndicators={}, hiddenIds=[], revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus }: {followCamera?:boolean;paused?:boolean;exitIndicators?:Record<string,import('./types').ExitIndicator>;hiddenIds?:string[];revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void} = $props();
   let host: HTMLDivElement;
   let engine: Awaited<ReturnType<typeof import('./renderer').createWorld>> | undefined = $state();
   let error = $state('');
@@ -26,7 +26,7 @@
         engine?.destroy(true);
         engine=next;ready=true;error='';lastCelebration=celebration;
         next.setPaused(paused);next.setExitIndicators(exitIndicators);next.setHidden(hiddenIds);next.setEditor(editor);next.setPanMode(panMode);next.setWorking(working);
-        next.renderFrame();onready?.(next);
+        next.setFollowCamera(followCamera);next.renderFrame();onready?.(next);
         if(version===requested)break;
       }
     }catch(cause){console.error('World initialization failed',cause);if(!disposed)error='No se pudo actualizar el escenario. La vista anterior se conserva.';}
@@ -37,6 +37,7 @@
     return ()=>{disposed=true;if(!building)engine?.destroy();};
   });
   $effect(()=>{if(mounted){revision;untrack(()=>{requested++;void rebuild();});}});
+  $effect(()=>{engine?.setFollowCamera(followCamera);});
   $effect(()=>{engine?.setPaused(paused);});
   $effect(()=>{engine?.setWorking(working);});
   $effect(()=>{engine?.setExitIndicators(exitIndicators);});

@@ -57,6 +57,8 @@ export interface WorldController {
   goTo: (entityId: string) => void;
   zoom: (delta: number) => void;
   recenter: () => void;
+  setFollowCamera:(enabled:boolean)=>void;
+  focusPlayer:()=>void;
   setPanMode: (enabled:boolean)=>void;
   panBy: (x:number,y:number)=>void;
   getPan: ()=>{x:number;y:number};
