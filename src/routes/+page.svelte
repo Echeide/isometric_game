@@ -10,11 +10,18 @@
 
  import {environments} from '@isometrico/world';
  let panMode=$state(false);
- import { graphics } from '$lib/demo/pixelart';
+ import { graphics as defaultGraphics } from '$lib/demo/pixelart';
+ import {resolveGraphics,localAdventures} from '$lib/storage/local-adventures';
+ import {onDestroy} from 'svelte';
+ let graphics=$state.raw(defaultGraphics);
+ const resourceReleases:Array<()=>void>=[];
+ let disposed=false;
+ async function loadGraphics(id:string){const resolved=await resolveGraphics(id);if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;}
+ onDestroy(()=>{disposed=true;resourceReleases.forEach(release=>release());});
  import { tick,onMount } from 'svelte';
  import MapDissolve from '$lib/components/MapDissolve.svelte';
  import {objectiveKey} from '$lib/demo/playable-adventure';
- import {loadAdventureLibrary,selectAdventure} from '$lib/demo/adventure-library';
+ import {loadAdventureLibrary,selectAdventure} from '$lib/storage/local-adventures';
  let adventures=$state<Adventure[]>([]);
  import {createTraveler,type Adventure} from '$lib/demo/adventure';
  import {parseScene,type WorldScene,type Facing} from '@isometrico/world';
@@ -32,14 +39,14 @@
  let loadError=$state('');
  let completed=$state<string[]>([]);
  let resourceEntityId=$state('');
- onMount(()=>{try{
-  const library=loadAdventureLibrary(localStorage,true);adventures=library.adventures;
+ onMount(()=>{void (async()=>{try{
+  const library=await loadAdventureLibrary();adventures=library.adventures;
   const requestedAdventure=new URLSearchParams(location.search).get('adventure');
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
-  const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
+  await loadGraphics(adventure.id);const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
   const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
   inventory=readInventory(localStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
- }catch(e){loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}});
+ }catch(e){loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}})();});
  function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;transitionReady=true;}
  function changeScene(next:WorldScene,facing:Facing){
   arrivalCamera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;
@@ -111,10 +118,10 @@
  async function closePanel(){information=null;panel=null;controller?.setConversation(null);await tick();if(opener?.isConnected)opener.focus();else document.querySelector<HTMLElement>('[role=application]')?.focus();}
  function shortcut(entityId:string){void closePanel().then(()=>controller?.goTo(entityId));}
  const adventureProgress=new globalThis.Map<string,{tasks:Task[];completed:string[]}>();
- function switchAdventure(value:string){
+ async function switchAdventure(value:string){
   if(!adventure||transitionImage||value===adventure.id)return;
   try{
-   const next=selectAdventure(localStorage,value);
+   const next=await selectAdventure(value);await loadGraphics(next.id);
    adventureProgress.set(adventure.id,{tasks:structuredClone($state.snapshot(tasks)),completed:[...completed]});
    const progress=adventureProgress.get(value);tasks=progress?.tasks??structuredClone(initialTasks);completed=progress?.completed??[];
    inventory=readInventory(localStorage,next.id);traveler=createTraveler(next);adventure=next;changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');

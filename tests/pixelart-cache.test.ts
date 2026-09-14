@@ -17,3 +17,9 @@ it('allows another attempt after a failed asset load',async()=>{
  const graphics=pack();await expect(loadPixelArt(graphics)).rejects.toThrow('Unavailable');
  await expect(loadPixelArt(graphics)).rejects.toThrow('Unavailable');expect(Assets.load).toHaveBeenCalledTimes(2);
 });
+it('explicitly loads local Blob resources as textures without relying on a file extension',async()=>{
+ vi.stubGlobal('document',{createElement:()=>({getContext:()=>({drawImage:()=>{},getImageData:()=>({data:new Uint8ClampedArray([0,0,0,255])})})})});
+ vi.mocked(Assets.load).mockResolvedValue({source:{width:1,height:1,resource:{}}});
+ const graphics=pack();graphics.objects.item.image='blob:local-resource';await loadPixelArt(graphics);
+ expect(Assets.load).toHaveBeenCalledWith({src:'blob:local-resource',parser:'loadTextures'});
+});

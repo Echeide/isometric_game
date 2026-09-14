@@ -19,7 +19,7 @@ async function preparePixelArt(pack:PixelArtPack):Promise<LoadedPixelArt>{
  const variants=characterVariants(pack.character);
  const urls=[...variants.flatMap(variant=>(Object.keys(pack.character.animations) as ActorPose[]).map(pose=>characterImage(pack.character,pose,variant))),...Object.values(pack.objects).map(a=>a.image),...Object.values(pack.tiles)];
  const textures=new Map<string,Texture>();
- await Promise.all([...new Set(urls)].map(async url=>{const texture=await Assets.load<Texture>(url);texture.source.scaleMode='nearest';textures.set(url,texture);}));
+ await Promise.all([...new Set(urls)].map(async url=>{const texture=await Assets.load<Texture>(url.startsWith('blob:')?{src:url,parser:'loadTextures'}:url);texture.source.scaleMode='nearest';textures.set(url,texture);}));
  const masks=new Map<string,{width:number;height:number;alpha:Uint8Array}>();
  for(const url of new Set(Object.values(pack.objects).map(item=>item.image))){
   const texture=textures.get(url)!,width=texture.source.width,height=texture.source.height;

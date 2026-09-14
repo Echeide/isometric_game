@@ -3,7 +3,7 @@
  import {sceneWalls,wallKey,wallCells,hasTile} from '../../../packages/world/src/walls';
  import {walkable} from '../../../packages/world/src/navigation';
  import type {Wall,MapBrush,WallMaterial} from '@isometrico/world';
- import {loadAdventureLibrary,storeAdventure,selectAdventure} from '$lib/demo/adventure-library';
+ import {loadAdventureLibrary,storeAdventure,selectAdventure} from '$lib/storage/local-adventures';
  let availableAdventures=$state<Adventure[]>([]);
  import { draggablePanel } from '$lib/actions/draggable-panel';
  const panelPositions = new Map();
@@ -11,7 +11,14 @@
  let transitionImage=$state<string|null>(null),transitionReady=$state(false);
  let arrivalCamera:ReturnType<WorldController['getCamera']>|undefined;
  let panMode=$state(false);
- import { graphics } from '$lib/demo/pixelart';
+ import { graphics as defaultGraphics } from '$lib/demo/pixelart';
+ import {resolveGraphics,localAdventures} from '$lib/storage/local-adventures';
+ import {onDestroy} from 'svelte';
+ let graphics=$state.raw(defaultGraphics);
+ const resourceReleases:Array<()=>void>=[];
+ let disposed=false;
+ async function loadGraphics(id:string){const resolved=await resolveGraphics(id);if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;}
+ onDestroy(()=>{disposed=true;resourceReleases.forEach(release=>release());});
  import { untrack, onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import { World, parseScene as validateScene, visualCatalog, type WorldScene, type WorldEntity, type WorldAdapter, type WorldEditor, type WorldController, type Facing, type TileKind, type Cell } from '@isometrico/world';
@@ -74,23 +81,23 @@
  function zoom(delta:number){if(!cameraReady)return;zoomLevel=controller?.getCamera().zoom??zoomLevel;const next=Math.round(Math.max(.65,Math.min(3,zoomLevel+delta))*100)/100;controller?.zoom(next-zoomLevel);zoomLevel=next;}
  function fitMap(){if(!cameraReady)return;controller?.recenter();zoomLevel=1;}
  const editing=$derived<WorldEditor|undefined>(testing?undefined:{selectedId:selected??'',onpick:pickingExitId?pickArrival:pendingAsset||pendingExit?placeAt:undefined,wallTool:wallTool??undefined,onwall:editWall,wallOpacity,brush:selected===null?brush??undefined:undefined,onpaint:paint,onselect:selectObject,onmove:move});
- onMount(()=>{
-  try{const library=loadAdventureLibrary(localStorage,true),query=new URLSearchParams(location.search);availableAdventures=library.adventures;const saved=library.adventures.find(a=>a.id===(query.get('adventure')??library.activeId))??library.adventures.find(a=>a.id===library.activeId)!;
-   adopt(saved,query.get('map')??query.get('world')??saved.startMap);
+ onMount(()=>{void (async()=>{
+  try{const library=await loadAdventureLibrary(),query=new URLSearchParams(location.search);availableAdventures=library.adventures;const saved=library.adventures.find(a=>a.id===(query.get('adventure')??library.activeId))??library.adventures.find(a=>a.id===library.activeId)!;
+   await loadGraphics(saved.id);adopt(saved,query.get('map')??query.get('world')??saved.startMap);
   }catch(e){error=`No se pudo cargar la aventura: ${(e as Error).message}`;}
- });
+ })();});
  function syncUrl(){const url=new URL(location.href);url.search='';url.searchParams.set('adventure',adventure.id);url.searchParams.set('map',draft.id);window.history.replaceState(null,'',url);}
- function persist(){try{const library=storeAdventure(localStorage,bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en este navegador.';return true;}catch(e){error=(e as Error).message;return false;}}
- async function playSaved(){if(persist())await goto(`/?adventure=${encodeURIComponent(adventure.id)}`);}
- function switchAdventure(id:string){
-  if(id===adventure.id||!persist())return;
-  try{const next=selectAdventure(localStorage,id);adopt(next,next.startMap);syncUrl();history=[];future=[];toolPanel='adventures';notice='Aventura seleccionada.';}catch(e){error=(e as Error).message;}
+ async function persist(){try{const library=await storeAdventure(bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en este navegador.';return true;}catch(e){error=(e as Error).message;return false;}}
+ async function playSaved(){if(await persist())await goto(`/?adventure=${encodeURIComponent(adventure.id)}`);}
+ async function switchAdventure(id:string){
+  if(id===adventure.id||!(await persist()))return;
+  try{const next=await selectAdventure(id);await loadGraphics(next.id);adopt(next,next.startMap);syncUrl();history=[];future=[];toolPanel='adventures';notice='Aventura seleccionada.';}catch(e){error=(e as Error).message;}
  }
- function newAdventure(){
-  if(!persist())return;
+ async function newAdventure(){
+  if(!(await persist()))return;
   const map:WorldScene={schemaVersion:1,id:crypto.randomUUID(),name:'Mapa inicial',theme:'outdoors',width:12,height:12,spawn:{x:1,y:1},entities:[]};
   const next={...createAdventure([map]),id:crypto.randomUUID(),name:`Aventura ${availableAdventures.length+1}`};
-  try{const library=storeAdventure(localStorage,next);availableAdventures=library.adventures;adopt(next,map.id);syncUrl();history=[];future=[];toolPanel='adventures';}catch(e){error=(e as Error).message;}
+  try{const library=await storeAdventure(next);await loadGraphics(next.id);availableAdventures=library.adventures;adopt(next,map.id);syncUrl();history=[];future=[];toolPanel='adventures';}catch(e){error=(e as Error).message;}
  }
  function chooseWallMaterial(material:WallMaterial){
   wallMaterial=material;
@@ -186,19 +193,23 @@
  function cancelPicking(){const exit=adventure.exits.find(e=>e.id===pickingExitId);pickingExitId=null;if(exit){changeWorld(exit.fromMap);selected=exit.entityId;}}
  function pickArrival(cell:Cell){const exit=adventure.exits.find(e=>e.id===pickingExitId);if(!exit)return;try{const a=parseAdventure({...bundle(),exits:adventure.exits.map(e=>e.id===exit.id?{...e,arrival:cell}:e)});snapshot();adopt(a,exit.fromMap);selected=exit.entityId;pickingExitId=null;notice=`Llegada elegida en ${cell.x}, ${cell.y}.`;error='';}catch(e){error=(e as Error).message;}}
  function returnExit(){if(!selectedExit)return;try{const a=connectMaps(bundle(),selectedExit.toMap,draft.id,crypto.randomUUID());snapshot();adventure=a;notice='Conexión de vuelta creada. Selecciona el mapa destino para colocarla.';error='';}catch(e){error=(e as Error).message;}}
- function download(){try{const valid=parseAdventure(bundle());const blob=new Blob([JSON.stringify(valid,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${valid.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);error='';notice='Aventura completa exportada.';}catch(e){error=(e as Error).message;}}
- async function upload(event:Event,adventureOnly=false){const input=event.currentTarget as HTMLInputElement;const file=input.files?.[0];if(!file)return;try{if(file.size>10_000_000)throw new Error('El archivo no puede superar 10 MB.');const data=JSON.parse(await file.text());if(adventureOnly&&data?.kind!=='isometric-adventure')throw new Error('Selecciona un JSON de aventura completa. Para importar un mapa suelto, usa Más opciones → Importar JSON.');let a:Adventure;let mapId:string;
-  if(data.kind==='isometric-adventure'){a=parseAdventure(data);if(!persist())return;if(availableAdventures.some(item=>item.id===a.id))a={...a,id:crypto.randomUUID(),name:`${a.name} (importada)`};mapId=a.startMap;}
+ import {exportAdventure,importAdventure,downloadBlob} from '$lib/storage/adventure-package';
+ let transferring=$state(false);
+ async function download(){if(transferring)return;transferring=true;notice='Preparando el paquete con todos sus recursos…';try{downloadBlob(await exportAdventure(parseAdventure(bundle())),`${adventure.id}.zip`);error='';notice='Paquete exportado con mapas, catálogo e imágenes.';}catch(e){error=(e as Error).message;}finally{transferring=false;}}
+ async function openResources(){if(await persist())await goto(`/resources?adventure=${encodeURIComponent(adventure.id)}`);}
+ async function duplicateAdventure(){if(!(await persist()))return;try{const copy={...parseAdventure(bundle()),id:crypto.randomUUID(),name:adventure.name+' (copia)'};const library=await localAdventures.save(copy,{pack:await localAdventures.pack(adventure.id),blobs:{}});availableAdventures=library.adventures;await loadGraphics(copy.id);adopt(copy,copy.startMap);syncUrl();history=[];future=[];notice='Copia creada con sus recursos. El progreso del juego es independiente.';}catch(e){error=(e as Error).message;}}
+ async function upload(event:Event,adventureOnly=false){const input=event.currentTarget as HTMLInputElement;const file=input.files?.[0];if(!file||transferring)return;transferring=true;try{if(file.name.toLowerCase().endsWith('.zip')){if(!(await persist()))return;const imported=await importAdventure(file);availableAdventures=(await localAdventures.load()).adventures;await loadGraphics(imported.id);adopt(imported,imported.startMap);syncUrl();history=[];future=[];notice='Aventura importada y guardada con todos sus recursos.';error='';return;}if(file.size>10_000_000)throw new Error('El archivo no puede superar 10 MB.');const data=JSON.parse(await file.text());if(adventureOnly&&data?.kind!=='isometric-adventure')throw new Error('Selecciona un JSON de aventura completa. Para importar un mapa suelto, usa Más opciones → Importar JSON.');let a:Adventure;let mapId:string;
+  if(data.kind==='isometric-adventure'){a=parseAdventure(data);if(!(await persist()))return;if(availableAdventures.some(item=>item.id===a.id))a={...a,id:crypto.randomUUID(),name:`${a.name} (importada)`};mapId=a.startMap;}
   else{const scene=parseScene(data);const current=parseAdventure(bundle());if(current.maps.some(m=>m.id===scene.id))scene.id=crypto.randomUUID();a=parseAdventure({...current,maps:[...current.maps,scene]});mapId=scene.id;}
-  snapshot();adopt(a,mapId);syncUrl();testing=false;error='';notice='Importación validada. Guarda para conservarla.';
- }catch(e){error=(e as Error).message;}finally{input.value='';}}
+  snapshot();if(a.id!==adventure.id)await loadGraphics(a.id);adopt(a,mapId);syncUrl();testing=false;error='';notice='Importación validada. Guarda para conservarla.';
+ }catch(e){error=(e as Error).message;}finally{input.value='';transferring=false;}}
  function setInteraction(key:'label'|'action'|'resourceId',value:string){if(entity)update({interaction:{label:'Abrir',action:'space.open',resourceId:'world',...entity.interaction,[key]:value}});}
  function setSeat(axis:'x'|'y',value:number){if(entity?.seat)update({seat:{...entity.seat,cell:{...entity.seat.cell,[axis]:value}},interactionPoints:[{...entity.seat.cell,[axis]:value}]});}
 </script>
 <svelte:window onkeydown={toolKeys}/>
 <svelte:head><title>Editor de escenarios — Isométrico</title></svelte:head>
 <div class="editor">
- <header><a href="/" title="Volver al juego"><ArrowLeft size={18}/><span>Juego</span></a><strong>Editor <span>{draft.name}</span></strong><div class="editor-actions"><button onclick={persist}><Check size={17}/><span>Guardar</span></button><button class="save-play" onclick={playSaved}><Play size={17}/><span>Guardar y jugar</span></button><div class="file-menu"><button aria-label="Más opciones" aria-expanded={fileMenu} onclick={()=>fileMenu=!fileMenu}><MoreHorizontal size={20}/></button>{#if fileMenu}<div class="file-popover"><button onclick={()=>{fileMenu=false;fileInput.click();}}><Upload size={16}/>Importar JSON</button><button onclick={()=>{fileMenu=false;download();}}><Download size={16}/>Exportar aventura</button><a href="/sprites">Hojas de sprites</a></div>{/if}</div></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo de mapa JSON" accept=".json,application/json" bind:this={fileInput} onchange={upload}/></header>
+ <header><a href="/" title="Volver al juego"><ArrowLeft size={18}/><span>Juego</span></a><strong>Editor <span>{draft.name}</span></strong><div class="editor-actions"><button onclick={persist}><Check size={17}/><span>Guardar</span></button><button class="save-play" onclick={playSaved}><Play size={17}/><span>Guardar y jugar</span></button><div class="file-menu"><button aria-label="Más opciones" aria-expanded={fileMenu} onclick={()=>fileMenu=!fileMenu}><MoreHorizontal size={20}/></button>{#if fileMenu}<div class="file-popover"><button onclick={()=>{fileMenu=false;fileInput.click();}}><Upload size={16}/>Importar ZIP / JSON</button><button onclick={()=>{fileMenu=false;download();}}><Download size={16}/>Exportar ZIP con recursos</button><button onclick={openResources}>Recursos de la aventura</button><a href="/sprites">Hojas de sprites</a></div>{/if}</div></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo de mapa JSON" accept=".zip,application/zip,.json,application/json" bind:this={fileInput} onchange={upload}/></header>
  <nav class="editor-tools" aria-label="Herramientas del editor">
   <button aria-pressed={!toolPanel&&!panMode&&!brush&&!pendingAsset&&!pendingExit&&!pickingExitId&&!testing} onclick={clearTools}><MousePointer2 size={18}/>Seleccionar</button>
   <span class="tool-divider"></span>
@@ -220,7 +231,7 @@
     <button class="delete-object" disabled={inventoryInUse(inventoryArticle.id)} onclick={removeInventoryArticle}><Trash2 size={16}/> Eliminar artículo</button>
     {#if inventoryInUse(inventoryArticle.id)}<p class="environment-note">Este artículo está vinculado a objetos o condiciones. Desvincúlalo antes de eliminarlo.</p>{/if}
     {:else}<p class="environment-note">Selecciona un artículo o crea uno nuevo.</p>{/if}
-   {:else if toolPanel==='adventures'}<label>Aventura<select value={adventure.id} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each availableAdventures as item}<option value={item.id}>{item.id===adventure.id?adventure.name:item.name}</option>{/each}</select></label><label>Nombre de la aventura<input value={adventure.name} onchange={e=>{snapshot();adventure={...adventure,name:e.currentTarget.value};}}/></label><p class="environment-note">{adventure.maps.length} mapas en esta aventura. Al cambiar de aventura se guardan tus cambios.</p><button class="panel-primary" onclick={newAdventure}>Nueva aventura</button><button class="panel-primary" onclick={()=>showTool('maps')}>Gestionar mapas de esta aventura</button><section class="adventure-transfer" aria-label="Importar y exportar aventuras"><h3>Importar y exportar</h3><div class="paint-actions"><button onclick={download}><Download size={16}/> Exportar aventura</button><button onclick={()=>adventureFileInput?.click()}><Upload size={16}/> Importar aventura</button></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo JSON de aventura" accept=".json,application/json" bind:this={adventureFileInput} onchange={e=>upload(e,true)}/></section>
+   {:else if toolPanel==='adventures'}<label>Aventura<select value={adventure.id} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each availableAdventures as item}<option value={item.id}>{item.id===adventure.id?adventure.name:item.name}</option>{/each}</select></label><label>Nombre de la aventura<input value={adventure.name} onchange={e=>{snapshot();adventure={...adventure,name:e.currentTarget.value};}}/></label><p class="environment-note">{adventure.maps.length} mapas en esta aventura. Al cambiar de aventura se guardan tus cambios.</p><button class="panel-primary" onclick={newAdventure}>Nueva aventura</button><button class="panel-primary" onclick={duplicateAdventure}>Duplicar aventura</button><button class="panel-primary" onclick={openResources}>Gestionar recursos</button><button class="panel-primary" onclick={()=>showTool('maps')}>Gestionar mapas de esta aventura</button><section class="adventure-transfer" aria-label="Importar y exportar aventuras"><h3>Importar y exportar</h3><div class="paint-actions"><button disabled={transferring} onclick={download}><Download size={16}/> Exportar ZIP con recursos</button><button onclick={()=>adventureFileInput?.click()}><Upload size={16}/> Importar aventura</button></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo ZIP o JSON de aventura" accept=".zip,application/zip,.json,application/json" bind:this={adventureFileInput} onchange={e=>upload(e,true)}/></section>
    {:else if toolPanel==='maps'}<label for="template">Mapas · {adventure.maps.length}</label><select id="template" value={draft.id} onchange={e=>changeWorld(e.currentTarget.value)}>{#each adventure.maps as map}<option value={map.id}>{map.id===draft.id?draft.name:map.name}{map.id===adventure.startMap?' · Inicio':''}</option>{/each}</select><div class="paint-actions"><button onclick={()=>newMap()}>+ Nuevo mapa</button><button onclick={()=>newMap(true)}>Duplicar</button><button disabled={adventure.startMap===draft.id} onclick={()=>{snapshot();adventure={...adventure,startMap:draft.id};}}>Empezar aquí</button></div><button class="panel-primary" onclick={()=>{selectObject('');}}>Propiedades del mapa actual</button>
    {:else if toolPanel==='objects'}<label class="search-label"><Search size={16}/><input aria-label="Buscar objetos" placeholder="Buscar objeto…" bind:value={search}/></label><div class="object-list">{#each draft.entities.filter(e=>e.label.toLocaleLowerCase().includes(search.toLocaleLowerCase())) as e}<button onclick={()=>selectObject(e.id)}><span>{e.label}</span><small>{e.position.x}, {e.position.y}</small></button>{:else}<p class="environment-note">No hay objetos que coincidan.</p>{/each}</div>
    {:else if toolPanel==='catalog'}<div class="catalog-categories" role="group" aria-label="Categorías de objetos">{#each objectCategories as category}<button aria-pressed={objectCategory===category.id} onclick={()=>objectCategory=category.id}>{category.label}</button>{/each}</div><label class="search-label"><Search size={16}/><input aria-label="Buscar en la categoría" placeholder="Buscar…" bind:value={catalogSearch}/></label><p class="environment-note">Elige un objeto y pulsa sobre el mapa para colocarlo.</p><div class="asset-grid">{#each visualCatalog.filter(a=>a.category===objectCategory&&a.label.toLocaleLowerCase().includes(catalogSearch.toLocaleLowerCase())) as asset}<button onclick={()=>beginPlacement(asset.id)}>{#if graphics.objects[asset.id]}<img src={graphics.objects[asset.id].image} alt=""/>{:else}<span class="person-preview" style={`background-image:url(${asset.color===0xce936a?'/pixelart/characters/lucia/idle.png':asset.color===0x819582?'/pixelart/characters/marcos/idle.png':graphics.character.image})`}></span>{/if}<span>{asset.label.replace(' · Pixel','')}</span><small>{asset.size.x} × {asset.size.y}</small></button>{:else}<p class="environment-note">No hay elementos que coincidan.</p>{/each}</div>

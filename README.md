@@ -185,3 +185,7 @@ El juego y el editor reutilizan la aplicación Pixi y el canvas al cambiar de es
 ### Cámara de juego en móvil
 
 `<World followCamera ... />` activa la cámara contextual de juego; el editor no la utiliza. En pantallas de hasta 700 px, la primera carga usa una escala cercana a 1 unidad de escena por píxel CSS y centra el cuerpo del avatar. El seguimiento suave se activa cuando la escala supera en un 20 % el encuadre completo del mapa. Al alejarse se conserva la cámara libre; Centrar mapa vuelve a la vista general. Mover vista, el arrastre manual y los gestos de dos dedos pausan temporalmente el seguimiento; se retoma al mover de nuevo al personaje (o al continuar su ruta tras soltar el gesto). Arrastrar el fondo fuera del mapa mueve la cámara sin activar la mano. Volver al personaje recupera el zoom cercano y el seguimiento. El movimiento reducido elimina la interpolación de cámara. No requiere cambios en los mapas guardados.
+
+### Biblioteca de aventuras y recursos
+
+El editor guarda en IndexedDB y migra automáticamente las aventuras anteriores del navegador. En **Aventuras** puedes duplicar y gestionar recursos; **Más opciones → Exportar ZIP con recursos** permite trasladar mapas y PNG a otro navegador. La pantalla `/resources` permite descargar plantillas y sustituir imágenes por aventura manteniendo sus dimensiones. Consulta [el contrato de almacenamiento y formato de paquetes](docs/adventure-storage.md) para integrar el módulo en otra aplicación.
