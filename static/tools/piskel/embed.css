@@ -1,0 +1,6 @@
+/* Isométrico: one image, fixed dimensions, workshop-owned saving. */
+.fake-piskelapp-header, .left-column, .preview-container,
+[data-setting="resize"], [data-setting="save"], [data-setting="export"], [data-setting="import"],
+[data-tool-id="tool-crop"], [data-tool-id="tool-clone"], .performance-link { display: none !important; }
+#main-wrapper { margin-top: 0 !important; }
+html, body { min-width: 760px; }

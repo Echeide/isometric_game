@@ -28,6 +28,7 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
  function validateObject(o:ObjectSprite){
   if(!o||!positive(o.width)||!positive(o.height)||!point(o.origin))fail('Dimensiones o punto de apoyo no válidos.');
   image(o.image);if(o.frame)frame(o.frame,o.image);
+  if(o.originalImage!==undefined){const original=image(o.originalImage),current=image(o.image);if(original.width!==current.width||original.height!==current.height)fail('El original y la imagen retocada deben tener las mismas dimensiones.');}
   for(const [pose,clip]of Object.entries(o.animations??{})){
    if(!['idle','talk'].includes(pose))fail('Un PNJ solo admite idle y talk.');
    const c=clip as NpcClip;
@@ -44,4 +45,8 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
  }
  for(const [kind,name]of Object.entries(pack.tileNames??{}))if(!Object.hasOwn(pack.tiles,kind)||typeof name!=='string'||!name.trim()||name.length>120)fail('Nombre de suelo no válido.');
  if(Object.keys(pack.tileFrames??{}).some(k=>!Object.hasOwn(pack.tiles,k)))fail('El recorte referencia un suelo que no existe.');
+ for(const [kind,url]of Object.entries(pack.tileOriginalImages??{})){
+  if(!Object.hasOwn(pack.tiles,kind))fail('El original referencia un suelo que no existe.');
+  const original=image(url!),current=image(pack.tiles[kind as TileKind]);if(original.width!==current.width||original.height!==current.height)fail('El original y el suelo retocado deben tener las mismas dimensiones.');
+ }
 }

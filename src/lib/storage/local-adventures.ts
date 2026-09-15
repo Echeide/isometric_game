@@ -66,8 +66,9 @@ export function mapImages(pack:PixelArtPack,replace:(url:string)=>string):PixelA
  for(const variants of [character.variants,...Object.values(character.animations).map(a=>a.variants)])if(variants)for(const key of Object.keys(variants))variants[key]=replace(variants[key]);
  for(const animation of Object.values(character.animations))if(animation.image)animation.image=replace(animation.image);
  }
- for(const object of Object.values(copy.objects)){object.image=replace(object.image);for(const clip of Object.values(object.animations??{}))clip.image=replace(clip.image);}
+ for(const object of Object.values(copy.objects)){object.image=replace(object.image);if(object.originalImage)object.originalImage=replace(object.originalImage);for(const clip of Object.values(object.animations??{}))clip.image=replace(clip.image);}
  for(const key of Object.keys(copy.tiles) as (keyof typeof copy.tiles)[])copy.tiles[key]=replace(copy.tiles[key]);
+ for(const key of Object.keys(copy.tileOriginalImages??{}) as (keyof typeof copy.tiles)[])copy.tileOriginalImages![key]=replace(copy.tileOriginalImages![key]!);
  return copy;
 }
 export function imageUrls(pack:PixelArtPack){const urls=new Set<string>();mapImages(pack,url=>{urls.add(url);return url;});return [...urls];}

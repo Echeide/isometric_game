@@ -6,6 +6,8 @@ Estado: primera versión implementada. El resto del documento conserva los crite
 
 - `/sprites?adventure=…` y `/resources?adventure=…` abren el mismo taller, con biblioteca por aventura y pestañas Objetos, PNJ, Jugador y Suelos.
 - Importación de PNG original, recorte por coordenadas o eliminación de transparencia dentro de la selección, escala proporcional o dimensiones independientes, apoyo numérico o arrastrando sobre la retícula y huella predeterminada.
+- «Editar imagen», a la izquierda de «Descargar» en Imagen original, abre Piskel para objetos, suelos e imagen estática de PNJ. Permite retocar, deshacer/rehacer, aplicar al taller o descartar. Conserva dimensiones, recorte, escala, apoyo y animaciones asociadas; los retoques se hacen efectivos al guardar en el catálogo.
+- Recuperación de la imagen anterior al primer retoque. Tanto esta copia como el PNG editado viajan en el ZIP y en el borrador. Sustituir manualmente el PNG inicia un nuevo original.
 - Alta de objetos y PNJ, variantes, miniaturas recortadas, búsqueda y consulta de los mapas que los usan. Se impide borrar recursos colocados y al jugador activo.
 - Nombre y categoría editables en los objetos base. La personalización pertenece a la aventura y se conserva en el ZIP; el taller y el editor resuelven el mismo catálogo. Los nuevos objetos toman ese nombre al colocarlos; los ya colocados conservan su nombre propio.
 - PNJ estático válido por sí mismo. `idle` y `talk` son hojas opcionales e independientes; sin `talk`, conserva el reposo. Los PNJ de la demo también pueden editarse.
@@ -16,7 +18,9 @@ Estado: primera versión implementada. El resto del documento conserva los crite
 
 Las comprobaciones incluyen los límites de imagen y fotogramas, referencias de catálogo, las cuatro combinaciones de animaciones de PNJ, PNG originales tras exportar/importar y compatibilidad con los paquetes anteriores. El motor sigue sin depender de IndexedDB, Prisma ni de las aplicaciones anfitrionas.
 
-Pendiente: editor de píxeles, texturas de paredes y exportar un PNG normalizado a partir de la receta. El calibrador actual guarda la receta y el original; la descarga entrega el original.
+Pendiente: retoque de animaciones, conservación del proyecto de capas de Piskel, texturas de paredes y exportar un PNG normalizado a partir de la receta. El calibrador guarda la receta y la imagen fuente; «Descargar» entrega esa imagen con sus retoques, sin aplicar la escala ni el recorte.
+
+Piskel se sirve desde `static/tools/piskel/` en el mismo servidor y solo se carga al abrir el editor. El procesamiento sucede en el navegador y no requiere otro servicio. La integración actual combina las capas en un PNG de un solo fotograma; las herramientas de Piskel conservan sus nombres en inglés y están pensadas para ratón y teclado. Consulta [la versión fijada y el procedimiento de actualización](../vendor/piskel/README.md).
 
 Los suelos propios usan claves estables `custom.*` en `PixelArtPack.tiles`; `tileNames` conserva sus nombres y `tileFrames` su recorte. Las casillas del mapa guardan la clave, de modo que renombrar o cambiar la textura actualiza su apariencia sin repintar. El ZIP transporta también los PNG utilizados exclusivamente por suelos propios. La entrada `section=tile` abre directamente esta sección desde el editor.
 
@@ -97,7 +101,7 @@ Una importación incompleta permanece como borrador y no aparece entre los recur
 
 Al sustituir un recurso, conservar su identificador y revisar la nueva configuración junto a la anterior. Mostrar cuántos objetos o mapas se verán afectados y permitir crear una variante con un identificador nuevo. Las sustituciones de una textura compartida deben indicar que afectarán a todas sus casillas de uso en esa aventura.
 
-Un editor de píxeles ligero puede añadirse a este flujo como «Retocar». Su primera versión se limita a lápiz, borrador, cuentagotas, relleno, sustitución de color y deshacer/rehacer. Conserva el original y, en animaciones, las dimensiones y alineación del fotograma. Las herramientas de calibración no dependen de que este editor esté implementado.
+«Editar imagen» integra las herramientas de Piskel y mantiene el PNG del primer retoque como copia recuperable. Se edita la imagen fuente completa, incluso si el recurso usa un recorte. «Aplicar al taller» actualiza el borrador en pantalla; «Guardar en catálogo» persiste el resultado. Cancelar con cambios pide confirmar su descarte. Las dimensiones se mantienen para conservar la calibración y los recortes. La edición de hojas de animación queda pendiente; las animaciones existentes de PNJ se conservan al retocar su imagen estática.
 
 ## Espacio de calibración
 

@@ -1,7 +1,7 @@
 <script lang="ts">
  import {onMount,onDestroy,untrack} from 'svelte';
  import {beforeNavigate,goto} from '$app/navigation';
- import {ArrowLeft,Plus,Search,Box,UserRound,Users,Layers,Upload,Download,Copy,Save,Trash2,Play,Pause,Check,Minus,RotateCcw,Move,Scissors} from 'lucide-svelte';
+ import {ArrowLeft,Plus,Search,Box,UserRound,Users,Layers,Upload,Download,Copy,Save,Trash2,Play,Pause,Check,Minus,RotateCcw,Move,Scissors,Pencil} from 'lucide-svelte';
  import {actorPoses,characterImage,resolveVisualCatalog,type PixelArtPack,type ObjectSprite,type CharacterPack,type ActorPose,type TileKind,type VisualAsset} from '@isometrico/world';
  import {graphics as defaultGraphics} from '$lib/demo/pixelart';
  import type {Adventure} from '$lib/demo/adventure';
@@ -12,6 +12,8 @@
  import {readPng,visibleCrop} from './images';
  import ResourceStage from '$lib/components/ResourceStage.svelte';
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
+ import ImageEditor from '$lib/components/ImageEditor.svelte';
+ import {validateEditedImage,withEditedImage,type ImageEditSession} from './image-edit';
 
  const clone=<T,>(v:T):T=>JSON.parse(JSON.stringify(v));
  const tabs=[{id:'object',label:'Objetos',icon:Box},{id:'npc',label:'PNJ',icon:Users},{id:'player',label:'Jugador',icon:UserRound},{id:'tile',label:'Suelos',icon:Layers}] as const;
@@ -20,13 +22,14 @@
  let kind=$state<ResourceKind>('object'),selected=$state(''),name=$state(''),category=$state<VisualAsset['category']>('office'),size=$state({x:1,y:1});
  let item=$state<ObjectSprite>({image:'',width:64,height:64,origin:[32,48]});
  let character=$state<CharacterPack>(standaloneCharacter(defaultGraphics.character,'728da5'));
- let tileImage=$state(''),tileFrame=$state<[number,number,number,number]>([0,0,64,32]);
+ let tileImage=$state(''),tileOriginalImage=$state<string>(),tileFrame=$state<[number,number,number,number]>([0,0,64,32]);
+ let imageEdit=$state.raw<ImageEditSession>(),imageEditDirty=$state(false);
  let pose=$state<ActorPose>('idle'),direction=$state(1),playing=$state(true),zoom=$state(2),reuseSit=$state(false),locked=$state(true);
  let search=$state(''),dirty=$state(false),busy=$state(false),loading=$state(true),error=$state(''),notice=$state(''),hasDraft=$state(false);
  let imageRevision=$state(0),fileInput:HTMLInputElement,confirmDialog:HTMLDialogElement;
  let pendingAction:(()=>void)|undefined,uploadSlot='base',packSignature='',catalogSignature='',disposed=false;
  const pending=new Map<string,Blob>(),urls=new Map<string,string>(),sizes=new Map<string,ImageSize>();
- type Draft={kind:ResourceKind;selected:string;name:string;category:VisualAsset['category'];size:{x:number;y:number};item:ObjectSprite;character:CharacterPack;tileImage:string;tileFrame:[number,number,number,number];reuseSit:boolean;pending:Record<string,Blob>};
+ type Draft={kind:ResourceKind;selected:string;name:string;category:VisualAsset['category'];size:{x:number;y:number};item:ObjectSprite;character:CharacterPack;tileImage:string;tileOriginalImage?:string;tileFrame:[number,number,number,number];reuseSit:boolean;pending:Record<string,Blob>};
  const entries=$derived(workshopEntries(pack,adventure?.catalog,adventure?.catalogOverrides));
  function catalogVersion(a:Adventure){return JSON.stringify([a.catalog??[],a.catalogOverrides??{}]);}
  const filtered=$derived(entries.filter(e=>e.kind===kind&&e.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())));
@@ -35,6 +38,7 @@
  const usages=$derived(adventure&&current?resourceUsages(adventure.maps,current):[]);
  const source=$derived(kind==='player'?characterImage(character,pose):kind==='tile'?tileImage:item.image);
  const sourceSize=$derived.by(()=>{imageRevision;return sizes.get(source);});
+ const originalImage=$derived(kind==='tile'?tileOriginalImage:kind==='player'?undefined:item.originalImage);
  const crop=$derived(item.frame??[0,0,sourceSize?.width??64,sourceSize?.height??64]);
  const scalePercent=$derived(Math.round(item.width/(crop[2]||1)*100));
  const isActivePlayer=$derived(kind==='player'&&(pack.activePlayer??'default')===selected);
@@ -43,8 +47,8 @@
  function message(cause:unknown){error=cause instanceof Error?cause.message:'No se pudo completar la operación.';}
  function ask(action:()=>void){if(dirty){pendingAction=action;confirmDialog.showModal();}else action();}
  function continueAction(){dirty=false;confirmDialog.close();const action=pendingAction;pendingAction=undefined;action?.();}
- beforeNavigate(nav=>{if(dirty&&nav.to?.url&&!nav.willUnload){nav.cancel();ask(()=>void goto(nav.to!.url));}});
- function beforeUnload(event:BeforeUnloadEvent){if(dirty){event.preventDefault();event.returnValue='';}}
+ beforeNavigate(nav=>{if(imageEdit){nav.cancel();return;}if(dirty&&nav.to?.url&&!nav.willUnload){nav.cancel();ask(()=>void goto(nav.to!.url));}});
+ function beforeUnload(event:BeforeUnloadEvent){if(dirty||imageEditDirty){event.preventDefault();event.returnValue='';}}
  async function addImage(url:string,blob:Blob){const dimensions=pngSize(new Uint8Array(await blob.arrayBuffer()));if(disposed)return;const old=urls.get(url);if(old)URL.revokeObjectURL(old);urls.set(url,URL.createObjectURL(blob));sizes.set(url,dimensions);imageRevision++;}
  async function hydrate(next:PixelArtPack){await Promise.all(imageUrls(next).filter(url=>!sizes.has(url)).map(async url=>addImage(url,await resourceBlob(url))));}
  async function load(id?:string){
@@ -61,14 +65,14 @@
   kind=entry.kind;selected=entry.id;name=entry.name;pose='idle';error='';notice='';dirty=false;zoom=2;locked=true;
   const asset=resolveVisualCatalog(adventure?.catalog,adventure?.catalogOverrides).find(a=>a.id===entry.id);category=asset?.category??'office';size=clone(asset?.size??{x:1,y:1});
   if(kind==='player'){character=entry.id==='default'?standaloneCharacter(pack.character,'728da5'):clone(pack.players![entry.id].character);reuseSit=characterImage(character,'sit')===characterImage(character,'work')&&character.animations.sit.frames===1;}
-  else if(kind==='tile'){tileImage=pack.tiles[entry.id as TileKind];const dimensions=sizes.get(tileImage)!;tileFrame=clone(pack.tileFrames?.[entry.id as TileKind]??[0,0,dimensions.width,dimensions.height]);}
+  else if(kind==='tile'){tileImage=pack.tiles[entry.id as TileKind];tileOriginalImage=pack.tileOriginalImages?.[entry.id as TileKind];const dimensions=sizes.get(tileImage)!;tileFrame=clone(pack.tileFrames?.[entry.id as TileKind]??[0,0,dimensions.width,dimensions.height]);}
   else item=clone(kind==='npc'?workshopNpc(pack,entry.id):pack.objects[entry.id]);
  }
  function tab(next:ResourceKind){ask(()=>{kind=next;search='';const entry=entries.find(e=>e.kind===next);if(entry)select(entry);else{selected='';dirty=false;}});}
  function create(){ask(()=>{
   selected=`custom.${crypto.randomUUID()}`;name=kind==='npc'?'Nuevo PNJ':kind==='player'?'Nuevo jugador':kind==='tile'?'Nuevo suelo':'Nuevo objeto';size={x:1,y:1};category=kind==='npc'?'people':'office';pose='idle';error='';notice='';dirty=true;
   if(kind==='player'){character=standaloneCharacter(defaultGraphics.character);character.image='';for(const p of actorPoses)character.animations[p].image='';reuseSit=true;}
-  else if(kind==='tile'){tileImage='';tileFrame=[0,0,64,32];}
+  else if(kind==='tile'){tileImage='';tileOriginalImage=undefined;tileFrame=[0,0,64,32];}
   else item={image:'',width:64,height:64,origin:[32,48]};
  });}
  function duplicate(){ask(()=>{selected=`custom.${crypto.randomUUID()}`;name=`${name} · copia`;dirty=true;notice='Variante independiente. Guarda para añadirla al catálogo.';});}
@@ -85,15 +89,33 @@
    if(kind==='player'){
     const p=uploadSlot as ActorPose;character.animations[p]={...character.animations[p],image:url,row:0,frames:Math.min(64,Math.max(1,Math.floor(dimensions.width/character.frameWidth)))};
     if(p==='idle')character.image=url;if(p==='work'&&reuseSit)syncSit();
-   }else if(kind==='tile'){tileImage=url;tileFrame=[0,0,dimensions.width,dimensions.height];}
+   }else if(kind==='tile'){tileImage=url;tileOriginalImage=undefined;tileFrame=[0,0,dimensions.width,dimensions.height];}
    else if(uploadSlot==='idle'||uploadSlot==='talk'){
     const frameWidth=item.frame?.[2]??sizes.get(item.image)?.width??dimensions.width,frameHeight=item.frame?.[3]??sizes.get(item.image)?.height??dimensions.height;
     item.animations={...item.animations,[uploadSlot]:{image:url,frameWidth,frameHeight,row:0,frames:Math.min(64,Math.max(1,Math.floor(dimensions.width/frameWidth))),fps:6}};
-   }else{item.image=url;item.frame=[0,0,dimensions.width,dimensions.height];const factor=Math.min(1,96/dimensions.width,96/dimensions.height);item.width=dimensions.width*factor;item.height=dimensions.height*factor;support();}
+   }else{item.image=url;delete item.originalImage;item.frame=[0,0,dimensions.width,dimensions.height];const factor=Math.min(1,96/dimensions.width,96/dimensions.height);item.width=dimensions.width*factor;item.height=dimensions.height*factor;support();}
    dirty=true;notice='PNG cargado. Ajusta el tamaño y comprueba la vista previa.';
   }catch(e){message(e);}finally{busy=false;}
  }
  function syncSit(){if(reuseSit)character.animations.sit={...character.animations.work,frames:1};}
+ async function editImage(){
+  if(busy||!source||!sourceSize||kind==='player')return;busy=true;error='';
+  try{const blob=pending.get(source.slice(6))??await resourceBlob(source);imageEditDirty=false;imageEdit={blob,name,width:sourceSize.width,height:sourceSize.height};}
+  catch(e){message(e);}finally{busy=false;}
+ }
+ async function applyImage(blob:Blob){
+  if(!imageEdit)return;
+  await validateEditedImage(blob,imageEdit);
+  const id=crypto.randomUUID(),url=`asset:${id}`;await addImage(url,blob);if(disposed)return;pending.set(id,blob);
+  if(kind==='tile'){tileOriginalImage??=tileImage;tileImage=url;}else item=withEditedImage(item,url);
+  dirty=true;notice='Retoques aplicados. Revisa la vista previa y pulsa «Guardar en catálogo». La imagen original se conserva.';
+ }
+ function closeImageEditor(){imageEdit=undefined;imageEditDirty=false;}
+ function restoreOriginalImage(){
+  if(!originalImage)return;
+  if(kind==='tile')tileImage=originalImage;else item.image=originalImage;
+  dirty=true;notice='Imagen original recuperada. Guarda en el catálogo para aplicar el cambio.';
+ }
  $effect(()=>{if(kind==='player'&&reuseSit){const work={...character.animations.work};untrack(()=>{character.animations.sit={...work,frames:1};});}});
  async function latest(){if(!adventure)throw new Error('No hay aventura seleccionada.');const library=await localAdventures.load(),currentAdventure=library.adventures.find(a=>a.id===adventure!.id);if(!currentAdventure)throw new Error('La aventura ya no existe.');const currentPack=await localAdventures.pack(adventure.id);if(JSON.stringify(currentPack)!==packSignature||catalogVersion(currentAdventure)!==catalogSignature)throw new Error('Los recursos han cambiado en otra pestaña. Guarda un borrador y recarga el taller antes de continuar.');return {currentAdventure,currentPack};}
  async function save(){
@@ -101,7 +123,7 @@
   try{const {currentAdventure,currentPack}=await latest();let id=selected;
    if(!name.trim()||name.length>120)throw new Error('Escribe un nombre de hasta 120 caracteres.');
    if(kind==='player'){syncSit();if(id==='default')id=`custom.${crypto.randomUUID()}`;currentPack.players={...currentPack.players,[id]:{name:name.trim(),character:clone(character)}};}
-   else if(kind==='tile'){currentPack.tiles[id as TileKind]=tileImage;currentPack.tileFrames={...currentPack.tileFrames,[id]:clone(tileFrame)};currentPack.tileNames={...currentPack.tileNames,[id]:name.trim()};}
+   else if(kind==='tile'){currentPack.tiles[id as TileKind]=tileImage;currentPack.tileFrames={...currentPack.tileFrames,[id]:clone(tileFrame)};currentPack.tileNames={...currentPack.tileNames,[id]:name.trim()};if(tileOriginalImage)currentPack.tileOriginalImages={...currentPack.tileOriginalImages,[id]:tileOriginalImage};else if(currentPack.tileOriginalImages)delete currentPack.tileOriginalImages[id as TileKind];}
    else{currentPack.objects[id]=clone(item);if(custom){const entry:VisualAsset={id,label:name.trim(),kind:kind==='npc'?'person':'object',category:kind==='npc'?'people':category,size:clone(size)};currentAdventure.catalog=[...(currentAdventure.catalog??[]).filter(e=>e.id!==id),entry];}else currentAdventure.catalogOverrides={...currentAdventure.catalogOverrides,[id]:{label:name.trim(),category:kind==='npc'?'people':category}};}
    validateGraphics(currentPack,sizes);validateCatalogGraphics(currentAdventure,currentPack);
    const used=new Set(imageUrls(currentPack).filter(u=>u.startsWith('asset:')).map(u=>u.slice(6))),blobs=Object.fromEntries([...pending].filter(([key])=>used.has(key)));
@@ -113,12 +135,13 @@
  async function remove(){busy=true;error='';try{const {currentAdventure,currentPack}=await latest();if(kind==='player'){if(currentPack.activePlayer===selected)throw new Error('Activa otro jugador antes de eliminar este.');delete currentPack.players?.[selected];}else if(kind==='tile'){
     if(currentAdventure.maps.some(m=>Object.values(m.tiles??{}).includes(selected as TileKind)))throw new Error('Este suelo se utiliza en un mapa. Sustituye las baldosas pintadas antes de eliminarlo.');
     delete currentPack.tiles[selected as TileKind];delete currentPack.tileFrames?.[selected as TileKind];delete currentPack.tileNames?.[selected as TileKind];
+    delete currentPack.tileOriginalImages?.[selected as TileKind];
    }else{if(currentAdventure.maps.some(m=>m.entities.some(e=>e.visualId===selected)))throw new Error('Este recurso se utiliza en un mapa. Retira sus instancias antes de eliminarlo.');delete currentPack.objects[selected];currentAdventure.catalog=currentAdventure.catalog?.filter(e=>e.id!==selected);}
    validateGraphics(currentPack,sizes);validateCatalogGraphics(currentAdventure,currentPack);
    await localAdventures.save(currentAdventure,{pack:currentPack,blobs:{}});dirty=false;await load(adventure!.id);notice='Recurso eliminado del catálogo.';
   }catch(e){message(e);}finally{busy=false;}}
- async function saveDraft(){if(!adventure)return false;busy=true;try{const draft:Draft={kind,selected,name,category,size:clone(size),item:clone(item),character:clone(character),tileImage,tileFrame:clone(tileFrame),reuseSit,pending:Object.fromEntries(pending)};await saveWorkshopDraft(adventure.id,draft);hasDraft=true;notice='Borrador guardado en este navegador. Aún no modifica el juego.';return true;}catch(e){message(e);return false;}finally{busy=false;}}
- async function restoreDraft(){if(!adventure)return;busy=true;try{const draft=await loadWorkshopDraft<Draft>(adventure.id);if(!draft)return;for(const [id,blob]of Object.entries(draft.pending)){pending.set(id,blob);await addImage(`asset:${id}`,blob);}kind=draft.kind;selected=draft.selected;name=draft.name;category=draft.category;size=draft.size;item=draft.item;character=draft.character;tileImage=draft.tileImage;tileFrame=draft.tileFrame;reuseSit=draft.reuseSit;dirty=true;notice='Borrador recuperado. Revisa los campos y guarda en el catálogo.';}catch(e){message(e);}finally{busy=false;}}
+ async function saveDraft(){if(!adventure)return false;busy=true;try{const draft:Draft={kind,selected,name,category,size:clone(size),item:clone(item),character:clone(character),tileImage,tileOriginalImage,tileFrame:clone(tileFrame),reuseSit,pending:Object.fromEntries(pending)};await saveWorkshopDraft(adventure.id,draft);hasDraft=true;notice='Borrador guardado en este navegador. Aún no modifica el juego.';return true;}catch(e){message(e);return false;}finally{busy=false;}}
+ async function restoreDraft(){if(!adventure)return;busy=true;try{const draft=await loadWorkshopDraft<Draft>(adventure.id);if(!draft)return;for(const [id,blob]of Object.entries(draft.pending)){pending.set(id,blob);await addImage(`asset:${id}`,blob);}kind=draft.kind;selected=draft.selected;name=draft.name;category=draft.category;size=draft.size;item=draft.item;character=draft.character;tileImage=draft.tileImage;tileOriginalImage=draft.tileOriginalImage;tileFrame=draft.tileFrame;reuseSit=draft.reuseSit;dirty=true;notice='Borrador recuperado. Revisa los campos y guarda en el catálogo.';}catch(e){message(e);}finally{busy=false;}}
  async function download(){try{if(source)downloadBlob(pending.get(source.slice(6))??await resourceBlob(source),`${name||'recurso'}.png`);}catch(e){message(e);}}
  async function exportZip(){busy=true;try{const a=(await localAdventures.load()).adventures.find(a=>a.id===adventure!.id)!;downloadBlob(await exportAdventure(a),`${a.id}.zip`);notice='ZIP exportado con el catálogo y sus imágenes guardadas.';}catch(e){message(e);}finally{busy=false;}}
 </script>
@@ -144,7 +167,9 @@
    <div class="preview-tools"><div>{#if kind==='player'||kind==='npc'}<button aria-label={playing?'Pausar animación':'Reproducir animación'} onclick={()=>playing=!playing}>{#if playing}<Pause size={16}/>{:else}<Play size={16}/>{/if}</button><select aria-label="Acción de vista previa" bind:value={pose}>{#each kind==='npc'?npcPoses:actorPoses as p}<option value={p}>{actionLabels[p]}</option>{/each}</select>{/if}{#if kind==='player'}<select aria-label="Dirección de vista previa" bind:value={direction}><option value={0}>NE ↗</option><option value={1}>SE ↘</option><option value={2}>SW ↙</option><option value={3}>NW ↖</option></select>{/if}</div><div><span>Vista</span><button aria-label="Alejar vista previa" disabled={zoom<=.5} onclick={()=>zoom=Math.max(.5,zoom-.5)}><Minus size={15}/></button><output>{zoom}×</output><button aria-label="Acercar vista previa" disabled={zoom>=4} onclick={()=>zoom=Math.min(4,zoom+.5)}><Plus size={15}/></button></div></div>
    {#if kind==='npc'}<p class="preview-note">{activeClip?`${pose==='talk'&&item.animations?.talk?'Conversación animada':'Animación de reposo'} · ${activeClip.frames} fotogramas a ${activeClip.fps} fps`:'Imagen estática · lista para usar sin animaciones.'}</p>{/if}
    {#if kind==='player'}<div class="action-strip">{#each actorPoses as p}<button class:active={pose===p} onclick={()=>pose=p}><span>{actionLabels[p]}</span><small>{characterImage(character,p)?`${character.animations[p].frames} fotogramas`:'Sin imagen'}</small></button>{/each}</div>{/if}
-   <div class="source-card"><div><h3>Imagen original</h3><p>{sourceSize?`${sourceSize.width} × ${sourceSize.height} px`:'Carga un PNG para empezar'} · PNG transparente</p></div><button disabled={busy||!source} onclick={download}><Download size={15}/> Descargar</button></div>
+   <div class="source-card"><div><h3>Imagen original</h3><p>{sourceSize?`${sourceSize.width} × ${sourceSize.height} px`:'Carga un PNG para empezar'} · PNG transparente</p></div><div class="source-actions">{#if kind!=='player'}<button disabled={busy||!source} onclick={editImage}><Pencil size={15}/> Editar imagen</button>{/if}<button disabled={busy||!source} onclick={download}><Download size={15}/> Descargar</button></div></div>
+   {#if originalImage&&source!==originalImage}<button class="restore-image" disabled={busy} onclick={restoreOriginalImage}><RotateCcw size={14}/> Recuperar imagen original</button>{/if}
+   {#if kind==='npc'}<p class="source-hint">Editar imagen retoca el PNG estático del PNJ. Sus animaciones se conservan.</p>{/if}
    {#if source}<details class="source-detail"><summary>Ver {kind==='player'?'hoja de la acción':'imagen y márgenes'} originales</summary><div><img src={resolve(source)} alt={`Original de ${name}`}/></div></details>{/if}
    <div class="usage-card"><h3>Uso en la aventura</h3><p>{kind==='player'?(isActivePlayer?'Es el personaje controlado al jugar esta aventura.':'Guárdalo y actívalo para usarlo al jugar.'):usages.length?`Este recurso se utiliza en: ${usages.join(', ')}. Guardar su aspecto actualizará esos usos.`:'Disponible para colocar al guardar. Las variantes mantienen su propio gráfico.'}</p>{#if current}<button disabled={busy} onclick={duplicate}><Copy size={15}/> Duplicar como variante</button>{/if}</div>
   </main>
@@ -170,10 +195,12 @@
   {:else}<main class="empty-stage"><Users size={40}/><h2>Un nuevo habitante para tu mundo</h2><p>Sube una imagen, ajusta su tamaño junto al jugador y colócala en el mapa. Las animaciones son opcionales.</p><button class="primary" onclick={create}><Plus size={17}/>Añadir PNJ</button></main>{/if}
  </div>{/if}
 </div>
+{#if imageEdit}<ImageEditor session={imageEdit} onapply={applyImage} onclose={closeImageEditor} onchange={value=>imageEditDirty=value}/>{/if}
 <input class="sr-only" bind:this={fileInput} type="file" accept="image/png,.png" aria-label="Archivo PNG del recurso" onchange={upload}/>
 <dialog bind:this={confirmDialog} class="confirm"><h2>Tienes cambios sin guardar</h2><p>Puedes conservarlos como borrador antes de continuar.</p><div><button onclick={()=>confirmDialog.close()}>Seguir editando</button><button onclick={continueAction}>Descartar cambios</button><button class="primary" disabled={busy} onclick={async()=>{if(await saveDraft())continueAction();}}>Guardar borrador y continuar</button></div></dialog>
 
 <style>
+ .source-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.source-card{flex-wrap:wrap}.restore-image{font-size:11px;margin:8px 0}.source-hint{font-size:11px;line-height:1.5;color:#7a8671;margin:0 0 10px}
  .workshop{max-width:1560px;margin:auto;padding:0 32px 40px;color:#2b4133}.top{display:flex;align-items:center;gap:18px;height:64px;border-bottom:1px solid #dce3d5;font-size:12px}.top a{display:flex;align-items:center;gap:8px}.top>span:not(.top-separator){font-size:10px;letter-spacing:1.6px;color:#7b8771}.top-separator{height:16px;border-left:1px solid #d2dccb}.world-link{margin-left:auto}.intro{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:28px 0}.eyebrow{font-size:9px;letter-spacing:1.7px;color:#7a886b;font-weight:650;margin:0 0 9px}h1{font-size:34px;font-weight:600;letter-spacing:-1.2px;margin:0 0 8px}h1 span{color:#9abc70}.intro p:not(.eyebrow){margin:0;color:#7a8671;font-size:13px}.adventure-tools{display:flex;align-items:end;gap:10px}.adventure-tools select{min-width:190px}.category-bar{display:flex;gap:6px;border-bottom:1px solid #dce3d5;margin-bottom:22px;padding-bottom:12px}.category-bar button{border-color:transparent;background:transparent;padding:10px 16px}.category-bar button[aria-pressed=true]{background:#e5edda;color:#38552c;border-color:#d8e3c9}.category-bar button>span{font-size:10px;background:#ffffff90;padding:2px 6px;border-radius:5px}.local-label{margin-left:auto;align-self:center;font-size:11px;color:#929b86}.workspace{padding:0;margin:0;max-width:none;display:grid;grid-template-columns:240px minmax(300px,1fr) 292px;gap:24px;align-items:start}.library{border-right:1px solid #e0e6d9;padding-right:18px;min-width:0}.library-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.library-title h2,.inspector h2{font-size:14px;margin:0}.library-title>span{font-size:11px;color:#869078}.search{display:flex;flex-direction:row;align-items:center;gap:7px;border:1px solid #d9e1d1;border-radius:8px;padding:0 9px;background:#fff}.search input{border:0;background:transparent;padding:10px 0;min-width:0}.add{width:100%;justify-content:center;margin:12px 0;background:#f1f5e9;border-style:dashed;color:#587641}.resource-list{display:grid;gap:6px;max-height:650px;overflow-y:auto;margin-top:12px}.resource-list button{padding:8px;gap:10px;text-align:left;background:transparent;border-color:transparent;min-width:0}.resource-list button.selected{background:#edf2e4;border-color:#c7d8b4}.thumb{width:44px;height:49px;background:#e8eedf;border-radius:5px;display:grid;place-items:center;overflow:hidden;flex-shrink:0}.thumb :global(canvas){width:100%;height:100%}.resource-name{display:grid;gap:5px;min-width:0}.resource-name strong{font-size:11px;font-weight:550;white-space:normal;overflow-wrap:anywhere}.resource-name small{font-size:9px;color:#869176}.selection-dot{width:6px;height:6px;background:#7ea253;border-radius:50%;margin-left:auto;flex-shrink:0}.storage-note,.library-note,.empty-list{font-size:11px;line-height:1.65;color:#87927b;margin-top:20px}.stage-column{min-width:0;margin-left:0;width:100%}.resource-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:63px;margin-bottom:15px}.resource-heading h2{font-size:23px;font-weight:550;margin:0;overflow-wrap:anywhere}.state-badge{font-size:10px;color:#748164;background:#edf1e6;border:1px solid #e0e7d4;border-radius:20px;padding:6px 10px;white-space:nowrap}.state-badge.unsaved{color:#957138;background:#faf0db;border-color:#ebd9b5}.preview-tools{display:flex;justify-content:space-between;gap:10px;margin:12px 0}.preview-tools>div{display:flex;align-items:center;gap:5px}.preview-tools button{padding:7px}.preview-tools select{width:auto;padding:7px;font-size:11px}.preview-tools span,.preview-tools output{font-size:11px;min-width:25px;text-align:center;color:#839174}.preview-note{font-size:11px;color:#768867;margin:14px 0}.action-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:20px 0}.action-strip button{display:grid;gap:6px;text-align:left;padding:10px;font-size:11px}.action-strip small{font-size:9px;color:#829073}.action-strip button.active{border-color:#9cb57e;background:#eff5e5}.source-card{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:18px 0 12px;border-top:1px solid #e1e6da;margin-top:24px}h3{font-size:12px;font-weight:600;margin:0 0 9px}.source-card p{margin:0;font-size:11px;color:#89927b}.source-card button{font-size:11px;padding:8px}.source-detail{font-size:11px;color:#708361}.source-detail>div{background:repeating-conic-gradient(#e6e9e1 0% 25%,#f6f8f0 0% 50%) 0/16px 16px;max-height:240px;overflow:auto;margin-top:10px;padding:14px}.source-detail img{max-width:100%;image-rendering:pixelated}.usage-card{border-top:1px solid #e1e6da;margin-top:24px;padding-top:18px}.usage-card p{font-size:11px;line-height:1.7;color:#7d8b71}.usage-card button{font-size:11px}.inspector{border:1px solid #dce3d3;background:#fffef9;border-radius:13px;padding:18px;min-width:0}.inspector fieldset{border:0;padding:0;margin:0;min-width:0}.inspector-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}.inspector-title span{font-size:9px;color:#91a07d;text-transform:uppercase;letter-spacing:1px}label{display:flex;flex-direction:column;gap:7px;font-size:11px;color:#627354;margin-bottom:12px}input,select{font:inherit;color:#3e5334;border:1px solid #d8e0ce;border-radius:6px;padding:9px;background:#fff;width:100%;box-sizing:border-box;min-width:0}input[type=range]{padding:0;accent-color:#648944}input[type=checkbox]{width:14px;height:14px;accent-color:#628541}.checkbox{flex-direction:row;align-items:center;font-size:10px}.metadata-note{font-size:11px;color:#7d8b71;line-height:1.6;margin:0 0 12px}.fields-section{border-top:1px solid #e4e8dd;padding-top:17px;margin-top:20px}.fields-section p,.tile-info{font-size:10px;line-height:1.65;color:#8a947e;margin:10px 0}.fields-section button{font-size:10px;width:100%;justify-content:center}.fields-section>label>span{align-self:flex-end;margin-top:-18px;font-size:10px}.two-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.upload{justify-content:center;width:100%;background:#f2f6ea;border-style:dashed;font-size:11px;margin:10px 0 16px}.clip-editor{border:1px solid #e1e7d7;border-radius:7px;padding:10px;margin-top:10px}.clip-editor summary{font-size:11px}.clip-editor summary span{font-size:9px;float:right;color:#9ba58c}.clip-editor .two-fields{margin-top:12px}.clip-editor button{margin-top:12px}.save-actions{display:grid;gap:8px;margin-top:25px;border-top:1px solid #e0e6d8;padding-top:18px}.save-actions button{justify-content:center;font-size:11px}.text-danger{color:#a57565;background:transparent;border-color:transparent;font-size:10px}button,a{color:inherit}a{text-decoration:none}button{display:flex;align-items:center;gap:7px;font:inherit;font-size:12px;padding:10px 12px;border:1px solid #d8e0ce;background:#fffef9;border-radius:7px;cursor:pointer;line-height:1.3}button:hover:not(:disabled){border-color:#9eb687;background:#f1f5e9}button:disabled{opacity:.45;cursor:default}.primary{background:#476238;color:#fff;border-color:#476238}.primary:hover:not(:disabled){background:#365128;color:#fff}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #74994e;outline-offset:3px}summary{cursor:pointer;font-size:11px;color:#677d54}details[open]>summary{margin-bottom:12px}.alert{padding:12px 16px;border-radius:8px;margin:0 0 16px;font-size:12px;display:flex;align-items:center;gap:8px}.error{color:#963f31;background:#fbeae3}.notice{background:#e9f3df;color:#557a34}.draft-banner{display:flex;align-items:center;gap:12px;justify-content:space-between;font-size:12px;background:#f3eddc;padding:10px 14px;border-radius:8px;margin-bottom:18px}.loading{padding:80px;text-align:center;color:#81916f}.empty-stage{margin-left:0;width:100%;grid-column:span 2;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px;background:#eef3e6;border:1px dashed #cbd9bc;border-radius:16px;padding:28px}.empty-stage h2{font-size:22px}.empty-stage p{max-width:380px;font-size:13px;line-height:1.7;color:#7f8e71}.empty-stage button{margin-top:16px}.confirm{border:1px solid #d3dec6;border-radius:16px;padding:28px;max-width:460px;color:#344a2e}.confirm::backdrop{background:#26332266;backdrop-filter:blur(3px)}.confirm h2{font-size:21px}.confirm p{font-size:13px;color:#829271;line-height:1.6}.confirm>div{display:flex;gap:8px;flex-wrap:wrap}.confirm button{font-size:11px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
  @media(max-width:1180px){.workshop{padding:0 20px 30px}.workspace{grid-template-columns:190px minmax(260px,1fr) 260px;gap:16px}.category-bar button{padding:9px 12px}.library{padding-right:12px}}
  @media(max-width:960px){.workspace{grid-template-columns:190px minmax(0,1fr)}.inspector{grid-column:2}.stage-column{grid-column:2}.library{grid-row:span 2}.local-label{display:none}.adventure-tools{flex-direction:column;align-items:stretch}.adventure-tools label{margin:0}.intro h1{font-size:30px}.empty-stage{grid-column:2}}

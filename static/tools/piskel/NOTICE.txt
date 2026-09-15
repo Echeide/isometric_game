@@ -1,0 +1,5 @@
+Piskel — https://github.com/piskelapp/piskel
+Copyright 2017 Julian Descottes. Apache-2.0; see LICENSE.
+Source revision: a6b9c02daefceb10093f71e92d52d16920ccb16e
+Modified for Isométrico: local message adapter, fixed-image UI and workshop-owned persistence.
+See THIRD-PARTY-NOTICES.txt for bundled libraries.

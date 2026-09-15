@@ -30,6 +30,8 @@ El taller de la demo gestiona el catálogo por aventura con `AdventureRepository
 
 `validateGraphics(pack, sizes)` comprueba el catálogo usando un mapa de URL a dimensiones de imagen. La aplicación anfitriona resuelve sus URLs y persiste originales/metadatos; el motor solo recibe `PixelArtPack`. El guardado local de borradores pertenece al taller de demostración.
 
+El taller puede retocar PNG con Piskel, servido por la aplicación de demostración. `ObjectSprite.originalImage` y `PixelArtPack.tileOriginalImages` conservan opcionalmente la imagen anterior al primer retoque para recuperarla; deben referenciar imágenes con las mismas dimensiones que las actuales. El anfitrión incluye estas copias en su almacenamiento y exportación. Son metadatos de edición: el motor dibuja las imágenes actuales y no depende de Piskel.
+
 `TileKind` admite los nueve `BuiltinTileKind` y claves `CustomTileKind` (`custom.*`). `PixelArtPack.tiles` incluye los PNG de suelos propios; `tileNames` les asigna nombre y `tileFrames` permite extraer una baldosa de una hoja. El editor obtiene su paleta del catálogo resuelto. `validateSceneTiles(scene, graphics.tiles)` comprueba que cada suelo pintado existe; el renderizador y la importación/exportación de la demo realizan esa comprobación. Los suelos base siguen siendo necesarios para los entornos predeterminados. Los tipos nuevos no cambian colisiones ni navegación: cada suelo ocupa la misma baldosa isométrica de 64 × 32.
 
 `oncamera` recibe el estado efectivo tras botones, rueda, gesto de pinza y cambios de tamaño. Su campo `action` vale `player` cuando la vista general permite acercarse al personaje y `fit` cuando el mapa está recortado y conviene encajarlo. El anfitrión puede usarlo para mostrar un único control contextual.

@@ -2,7 +2,7 @@ import { Assets, Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js
 import type { ActorPose, Facing, TileKind } from './types';
 import {characterImage,characterVariants,type CharacterPack} from './character';
 export interface NpcClip {image:string;frameWidth:number;frameHeight:number;row:number;frames:number;fps:number}
-export interface ObjectSprite {image:string;width:number;height:number;origin:[number,number];frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
+export interface ObjectSprite {image:string;originalImage?:string;width:number;height:number;origin:[number,number];frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
 export interface PixelArtPack {
  version:1;
  character:CharacterPack;
@@ -10,6 +10,7 @@ export interface PixelArtPack {
  tiles:Record<TileKind,string>;
  tileFrames?:Partial<Record<TileKind,[number,number,number,number]>>;
  tileNames?:Partial<Record<TileKind,string>>;
+ tileOriginalImages?:Partial<Record<TileKind,string>>;
  players?:Record<string,{name:string;character:CharacterPack}>;
  activePlayer?:string;
 }
