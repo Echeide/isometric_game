@@ -129,12 +129,12 @@ La ayuda opcional permite:
 
 1. **Vista de referencia**: genera una propuesta para la orientación seleccionada. Sin referencia previa usa el texto; con una aprobada reutiliza su aspecto.
 2. **Aprobar como referencia**: conserva esa vista para peticiones posteriores. Las referencias aprobadas se guardan en el `.project.zip`, incluso si aún no hay animaciones. Los proyectos anteriores siguen siendo compatibles. Una propuesta sin aprobar no se guarda: puedes descargar su PNG original.
-3. **Descargar PNG**: guarda la referencia aprobada de la orientación que quieras animar y úsala en Kling u otra herramienta de vídeo.
+3. **Acciones de 1–3 fotogramas**: genera la imagen con ChatGPT y revísala directamente, sin crear un vídeo. Para las acciones más largas, **Descargar PNG**: guarda la referencia aprobada de la orientación que quieras animar y úsala en Kling u otra herramienta de vídeo.
 4. **Importar vídeo de Kling u otra herramienta**: carga el clip, revisa un ciclo completo y retoca sus fotogramas en Piskel antes de exportar la hoja final. La importación de secuencias e imágenes existentes sigue disponible.
 
 Comprueba la orientación antes de aprobar: SE muestra cara y pecho en tres cuartos hacia abajo/derecha; NE muestra nuca y espalda hacia arriba/derecha. Si una referencia NE antigua es frontal, quítala y genera una nueva vista NE antes de animarla.
 
-La API de imágenes crea únicamente referencias estáticas. Las hojas, fuentes, retoques y referencias guardadas en proyectos anteriores siguen cargándose; no se modifica el formato del proyecto. El taller conserva la reproducción a media velocidad y el ajuste manual del intervalo y los FPS para revisar el vídeo importado.
+La API de imágenes crea referencias y acciones de 1–3 fotogramas. Para estas acciones aparece **Crear con ChatGPT** en lugar de Kling: usa una referencia aprobada, revisa la propuesta y pulsa **Usar imagen y revisar ciclo** (o reemplazar si ya existe una fuente). Actualmente se aplica a `sit`, de un fotograma; las acciones de 4 o más siguen usando vídeo. La imagen aceptada se convierte en una fuente normal, se puede retocar en Piskel y se conserva en el ZIP del proyecto. Las propuestas descartadas no sustituyen la fuente anterior. Las hojas, fuentes, retoques y referencias guardadas en proyectos anteriores siguen cargándose; no se modifica el formato del proyecto. El taller conserva la reproducción a media velocidad y el ajuste manual del intervalo y los FPS para revisar el vídeo importado.
 
 ### Activación local
 

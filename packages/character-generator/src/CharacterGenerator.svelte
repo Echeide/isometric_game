@@ -7,12 +7,13 @@
   import { encodePNG, exportCharacter, importCharacterReference, loadProject, readImages, readSheet, readVideo, saveProject } from './browser';
   import SheetPreview from './SheetPreview.svelte';
   import ImageAssistant from './ImageAssistant.svelte';
+  import ActionAssistant from './ActionAssistant.svelte';
   import VideoAssistant from './VideoAssistant.svelte';
   import type { VideoProvider, VideoJob } from './video';
   import { extractFrames } from './pixel-edit';
   import { workflowTasks } from './workflow';
   import { orientationLabels } from './generation';
-  import { emptyArt, type ImageProvider } from './generation';
+  import { emptyArt, pngData, shortActionRecipe, type ImageProvider, type ImageRequest, type ImageResult } from './generation';
 
   let { onexample, imageProvider, videoProvider, pixelEditor }: { onexample?: () => Promise<Sources>; imageProvider?: ImageProvider; videoProvider?: VideoProvider; pixelEditor?: PixelEditorProvider } = $props();
   let settings = $state(defaultSettings());
@@ -29,6 +30,7 @@
   let destroyed = false;
   const profile = $derived(PROFILES[settings.profile]);
   const active = $derived(sources[action]?.[direction]);
+  const shortAction = $derived(shortActionRecipe(settings.profile, action));
   const mirrored = $derived(!active && settings.mirror && MIRRORS[direction] ? sources[action]?.[MIRRORS[direction]!] : undefined);
   const missing = $derived(missingSources(settings, sources));
   const recipes = $derived(createPrompts(brief, settings.profile, false));
@@ -48,13 +50,16 @@
     notice = 'Archivo preparado. Pulsa el enlace para guardarlo en tu equipo.';
   }
   function changed() { clearResult(); clearDownload(); error = ''; notice = ''; }
-  function chooseView(pose: string, facing: Direction) { action = pose; direction = facing; rawFrame = 0; }
+  function chooseView(pose: string, facing: Direction) {
+    if (!!shortActionRecipe(settings.profile, pose) !== !!shortAction) mode = shortActionRecipe(settings.profile, pose) ? 'images' : 'video';
+    action = pose; direction = facing; rawFrame = 0;
+  }
   function continueWorkflow() {
     const task = workflowTasks($state.snapshot(settings), sources, $state.snapshot(art), !!imageProvider)[0];
     if (!task) { void process(true); return; }
     chooseView(task.action, task.direction);
     if (task.step === 'review') void process(false, true);
-    document.getElementById(task.step === 'import' ? 'character-import' : 'character-cycle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById(task.step === 'import' && !shortActionRecipe(settings.profile, task.action) ? 'character-import' : 'character-cycle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function approveCycle() {
     if (!active) return;
@@ -136,6 +141,19 @@
     if (imported) await process(false, true);
     return imported;
   }
+  async function importGeneratedAction(image: ImageResult, request: ImageRequest) {
+    const recipe = shortActionRecipe(request.profile, request.action);
+    if (busy || request.kind !== 'action' || !recipe || request.profile !== settings.profile || request.action !== action || request.direction !== direction) return false;
+    let imported = false;
+    await run('Preparando los fotogramas de OpenAI…', async () => {
+      if (image.frames !== recipe.frames || image.columns !== recipe.frames || image.rows !== 1) throw new Error('La imagen no tiene la cuadrícula esperada para esta acción.');
+      const file = new File([new Uint8Array(pngData(image.image, 20_000_000))], `openai-${request.action}-${request.direction}.png`, { type: 'image/png' });
+      const clip = await readSheet(file, image.columns, image.rows, 0, recipe.fps);
+      if (!destroyed) { setSource(clip); imported = true; }
+    });
+    if (imported) await process(false, true);
+    return imported;
+  }
   async function process(all: boolean, oneView = false) {
     await run(all ? 'Construyendo todas las hojas…' : 'Preparando vista previa…', async () => {
       clearResult();
@@ -196,8 +214,8 @@
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if busy && aborter}<button onclick={() => aborter?.abort()}>Cancelar importación</button>{/if}
   <section class="guide" aria-label="Flujo del personaje">
-    <div><span class="step">REFERENCIA → VÍDEO → RETOQUE → EXPORTACIÓN</span><h2>{nextTask ? 'Tu siguiente paso' : 'Personaje revisado'}</h2>
-    <p>{nextTask ? `${nextTask.step === 'reference' ? 'Crear la referencia' : nextTask.step === 'import' ? 'Importar la animación' : 'Revisar y retocar el ciclo'} ${nextTask.action} · ${nextTask.direction.toUpperCase()}` : 'Todos los ciclos están aprobados. Ya puedes construir las hojas finales.'}</p>
+    <div><span class="step">REFERENCIA → IMAGEN O VÍDEO → RETOQUE → EXPORTACIÓN</span><h2>{nextTask ? 'Tu siguiente paso' : 'Personaje revisado'}</h2>
+    <p>{nextTask ? `${nextTask.step === 'reference' ? 'Crear la referencia' : nextTask.step === 'import' ? shortActionRecipe(settings.profile, nextTask.action) ? 'Crear o importar la imagen' : 'Importar la animación' : 'Revisar y retocar el ciclo'} ${nextTask.action} · ${nextTask.direction.toUpperCase()}` : 'Todos los ciclos están aprobados. Ya puedes construir las hojas finales.'}</p>
     <p class="hint">Revisa un ciclo cada vez. Las vistas por reflejo se completan automáticamente. {tasks.length} pasos de ciclo pendientes.</p></div>
     <button class="primary" disabled={!!busy} onclick={continueWorkflow}>{nextTask ? 'Ir al siguiente paso' : 'Construir hojas finales'}</button>
   </section>
@@ -250,13 +268,15 @@
               {#if active}<button class="primary" onclick={approveCycle}>Aprobar ciclo y continuar</button>{/if}
             {/if}
             {#if active?.edits}<p class="hint">Este ciclo tiene retoques finales: conserva sus colores y posición. Los reflejos usan también esos retoques.</p><button onclick={() => { if (active) setSource({ ...active, edits: undefined }); }}>Restaurar desde la fuente original</button>{/if}
-          {:else}<p class="hint">Importa el vídeo de esta vista desde Kling u otra herramienta. En cuanto esté listo podrás reproducirla y retocarla aquí, sin esperar a las otras orientaciones.</p>{/if}
+          {:else}<p class="hint">{shortAction ? 'Genera esta acción con ChatGPT o importa una imagen. Podrás revisarla y retocarla en Piskel.' : 'Importa el vídeo de esta vista desde Kling u otra herramienta. En cuanto esté listo podrás reproducirla y retocarla aquí, sin esperar a las otras orientaciones.'}</p>{/if}
         </div>
         {#if imageProvider}{#key `${assistantRevision}:${settings.profile}`}<ImageAssistant provider={imageProvider} {brief} profile={settings.profile} {action} {direction} bind:art onbusy={label => busy = label} onerror={message => error = message}/>{/key}{/if}
-        {#if videoProvider}<VideoAssistant provider={videoProvider} reference={art.references[direction]?.image} projectId={settings.id} profile={settings.profile} {action} {direction} suggestedPrompt={prompt.clips.find(c => c.action === action)!.prompt} negative={prompt.clips.find(c => c.action === action)!.negative} hasSource={!!active} revision={assistantRevision} onaccept={importGeneratedVideo} onbusy={label => busy = label}/>{/if}
-        <details class="prompts"><summary>Prompts para {direction.toUpperCase()} / {action}</summary><p class="hint">Genera primero una vista aprobada. Usa esa imagen como referencia al crear las demás vistas y al animar. Los prompts están en inglés; puedes usarlos con cualquier proveedor.</p><label>Nota específica de esta orientación<textarea rows="2" value={brief.notes[direction] || ''} oninput={e => brief.notes[direction] = e.currentTarget.value} placeholder="Qué accesorio se ve, hacia dónde apunta…"></textarea></label><h3>Imagen de referencia</h3><textarea rows="5" readonly value={prompt.still}></textarea><button onclick={() => copy(prompt.still)}>Copiar prompt de imagen</button><h3>Animación</h3><textarea rows="6" readonly value={prompt.clips.find(c => c.action === action)!.prompt}></textarea><button onclick={() => copy(prompt.clips.find(c => c.action === action)!.prompt)}>Copiar prompt de animación</button><h3>Evitar</h3><textarea rows="3" readonly value={prompt.clips.find(c => c.action === action)!.negative}></textarea><p class="hint">Sugerencia: clips de 5 segundos. Para sit basta una pose. Si tu herramienta lo permite, fija la misma referencia al inicio y al final.</p></details>
+        {#if shortAction}
+          {#if imageProvider}{#key `${assistantRevision}:${settings.id}:${settings.profile}:${action}:${direction}`}<ActionAssistant provider={imageProvider} {art} {brief} profile={settings.profile} {action} {direction} hasSource={!!active} onaccept={importGeneratedAction} onbusy={label => busy = label} onerror={message => error = message}/>{/key}{/if}
+        {:else if videoProvider}<VideoAssistant provider={videoProvider} reference={art.references[direction]?.image} projectId={settings.id} profile={settings.profile} {action} {direction} suggestedPrompt={prompt.clips.find(c => c.action === action)!.prompt} negative={prompt.clips.find(c => c.action === action)!.negative} hasSource={!!active} revision={assistantRevision} onaccept={importGeneratedVideo} onbusy={label => busy = label}/>{/if}
+        <details class="prompts"><summary>Prompts para {direction.toUpperCase()} / {action}</summary><p class="hint">Genera primero una vista aprobada. Usa esa imagen como referencia al crear las demás vistas y al animar. Los prompts están en inglés; puedes usarlos con cualquier proveedor.</p><label>Nota específica de esta orientación<textarea rows="2" value={brief.notes[direction] || ''} oninput={e => brief.notes[direction] = e.currentTarget.value} placeholder="Qué accesorio se ve, hacia dónde apunta…"></textarea></label><h3>Imagen de referencia</h3><textarea rows="5" readonly value={prompt.still}></textarea><button onclick={() => copy(prompt.still)}>Copiar prompt de imagen</button><h3>{shortAction ? 'Imagen de la acción' : 'Animación'}</h3><textarea rows="6" readonly value={prompt.clips.find(c => c.action === action)!.prompt}></textarea><button onclick={() => copy(prompt.clips.find(c => c.action === action)!.prompt)}>{shortAction ? 'Copiar prompt de la acción' : 'Copiar prompt de animación'}</button><h3>Evitar</h3><textarea rows="3" readonly value={prompt.clips.find(c => c.action === action)!.negative}></textarea><p class="hint">Sugerencia: clips de 5 segundos. Para sit basta una pose. Si tu herramienta lo permite, fija la misma referencia al inicio y al final.</p></details>
         {#if mirrored}<p class="notice">Esta dirección usa un reflejo de {MIRRORS[direction]!.toUpperCase()}. Puedes importar una vista para reemplazarlo.</p>{/if}
-        <details id="character-import" class="manual-import" open><summary>Importar vídeo de Kling u otra herramienta</summary><p class="hint">Usa la referencia aprobada para crear el vídeo y carga aquí el resultado. Conserva un ciclo completo con un paso de cada pierna. También puedes importar imágenes o una hoja existente.</p><div class="import-box"><label>Tipo de fuente<select bind:value={mode}><option value="video">Vídeo</option><option value="images">Imágenes ordenadas por nombre</option><option value="sheet">Una fila de una hoja PNG</option></select></label>
+        <details id="character-import" class="manual-import" open><summary>{shortAction ? 'Importar imagen o secuencia corta' : 'Importar vídeo de Kling u otra herramienta'}</summary><p class="hint">{shortAction ? 'Puedes cargar la pose o los fotogramas de esta acción desde cualquier herramienta. No necesitas generar un vídeo.' : 'Usa la referencia aprobada para crear el vídeo y carga aquí el resultado. Conserva un ciclo completo con un paso de cada pierna. También puedes importar imágenes o una hoja existente.'}</p><div class="import-box"><label>Tipo de fuente<select bind:value={mode}><option value="video">Vídeo</option><option value="images">Imágenes ordenadas por nombre</option><option value="sheet">Una fila de una hoja PNG</option></select></label>
           <div class="pair"><label>{mode === 'video' ? 'Muestras por segundo' : 'FPS de la secuencia'}<input type="number" min="1" max="30" bind:value={sourceFps}/></label>{#if mode === 'video'}<label>Desde el segundo<input type="number" min="0" step="0.1" bind:value={start}/></label>{:else if mode === 'sheet'}<label>Columnas<input type="number" min="1" max="180" bind:value={columns}/></label>{/if}</div>
           {#if mode === 'video'}<label>Segundos a importar<input type="number" min="0.1" max="10" step="0.1" bind:value={seconds}/></label>{:else if mode === 'sheet'}<div class="pair"><label>Filas totales<input type="number" min="1" max="180" bind:value={rows}/></label><label>Fila a importar (desde 1)<input type="number" min="1" max={rows} bind:value={sourceRow}/></label></div>{/if}
           <label class="button primary">{active ? 'Reemplazar fuente' : 'Importar fuente'} · {action}/{direction.toUpperCase()}<input type="file" accept={mode === 'video' ? 'video/mp4,video/webm,video/quicktime' : 'image/png,image/webp,image/jpeg'} multiple={mode === 'images'} onchange={importFiles}/></label>

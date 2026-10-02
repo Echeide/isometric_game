@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { allowLocalImages, createImageService, DEFAULT_IMAGE_MODEL, imageStatus, readImageBody } from '../src/lib/server/character-images';
-import { imagePlan, pngData, pngUrl, validateImageRequest, selectImageReference, type ImageRequest } from '../packages/character-generator/src/generation';
+import { imagePlan, pngData, pngUrl, validateImageRequest, selectImageReference, shortActionRecipe, type ImageRequest } from '../packages/character-generator/src/generation';
+import { PROFILES } from '../packages/character-generator/src/types';
 const image = pngUrl(new Uint8Array(readFileSync('static/pixelart/characters/grey-player-v1/sit.png')));
 const request = (): ImageRequest => ({ brief: { description: 'Exploradora con chaqueta verde', style: 'Pixel art', props: 'Mochila azul', notes: { ne: 'La mochila debe verse en la espalda' } }, kind: 'reference', profile: 'game', direction: 'se', action: 'idle', quality: 'medium' });
 const config = { apiKey: 'test-key-never-live' };
@@ -53,10 +54,49 @@ describe('image generation recipes', () => {
     expect(transport).not.toHaveBeenCalled();
     expect(() => validateImageRequest({ ...request(), reference: image, referenceDirection: 'invalid' })).toThrow();
   });
+  it('routes actions with fewer than four frames to images, leaving four-frame and longer cycles on video', () => {
+    expect(shortActionRecipe('game', 'sit')?.frames).toBe(1);
+    for (const action of ['idle', 'work', 'talk', 'walk', 'celebrate']) expect(shortActionRecipe('game', action)).toBeUndefined();
+    for (const { action } of PROFILES['iso-eight'].actions) expect(shortActionRecipe('iso-eight', action)).toBeUndefined();
+    const plan = imagePlan({ ...request(), kind: 'action', action: 'sit', reference: image, referenceDirection: 'se', direction: 'ne' });
+    expect([plan.frames, plan.columns, plan.rows]).toEqual([1, 1, 1]);
+    expect(plan.prompt).toContain('One still seated pose');
+    expect(plan.prompt).toContain('No furniture');
+    expect(plan.prompt).toContain('TARGET ORIENTATION: NE');
+  });
+  it('prepares two or three short frames as one evenly divided row when a recipe requests them', () => {
+    const recipe = PROFILES.game.actions.find(a => a.action === 'sit')!, previous = recipe.frames;
+    try {
+      for (const frames of [2, 3]) {
+        recipe.frames = frames;
+        const plan = imagePlan({ ...request(), kind: 'action', action: 'sit', reference: image, referenceDirection: 'se' });
+        expect([plan.frames, plan.columns, plan.rows, plan.size]).toEqual([frames, frames, 1, '1536x1024']);
+        expect(plan.prompt).toContain(`exactly ${frames} equal-width cells`);
+      }
+    } finally { recipe.frames = previous; }
+  });
+  it('rejects long action sheets or unapproved references before a paid request', async () => {
+    const transport = vi.fn(async () => reply()), generate = createImageService(transport);
+    const base = { ...request(), kind: 'action', action: 'sit', reference: image, referenceDirection: 'se' };
+    for (const override of [{ action: 'walk' }, { action: 'idle' }, { reference: undefined }, { referenceKind: 'inspiration' }]) {
+      await expect(generate({ ...base, ...override }, config)).rejects.toMatchObject({ status: 400 });
+    }
+    expect(transport).not.toHaveBeenCalled();
+  });
 
 });
 
 describe('private OpenAI image service', () => {
+  it('generates the seated action from its reference in one image edit request', async () => {
+    const transport = vi.fn(async () => reply());
+    const result = await createImageService(transport)({ ...request(), kind: 'action', action: 'sit', reference: image, referenceDirection: 'se' }, config);
+    const [url, options] = transport.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://api.openai.com/v1/images/edits');
+    expect((options.body as FormData).get('n')).toBe('1');
+    expect((options.body as FormData).get('prompt')).toContain('One still seated pose');
+    expect(result).toMatchObject({ frames: 1, columns: 1, rows: 1 });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
   it('shows optional configuration without exposing credentials or making a request', async () => {
     const transport = vi.fn(), generate = createImageService(transport);
     expect(imageStatus({}).available).toBe(false);

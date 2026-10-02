@@ -27,11 +27,13 @@ export function createPrompts(brief: CharacterBrief, profile: Profile, mirror = 
   return directions.map(direction => ({
     direction,
     still: `${identity} Create a single full-body character pose using the approved character reference to preserve identity, costume, proportions and equipment. Fixed orthographic isometric camera, no perspective change. ${angles[direction]} ${brief.notes[direction] || ''} Solid uniform magenta (#ff00ff) background, no floor, shadow or scenery. Leave clear padding around every limb and accessory.`,
-    clips: PROFILES[profile].actions.map(({ action }) => ({
+    clips: PROFILES[profile].actions.map(({ action, frames }) => ({
       action,
-      prompt: `${identity} Animate the approved ${direction.toUpperCase()} reference pose. ${motions[action]} ${angles[direction]} ${brief.notes[direction] || ''} Keep the character centered, at constant scale, with a fixed camera and uniform magenta background. ${['walk', 'run'].includes(action) && ['s', 'n'].includes(direction) ? `Travel is along the camera axis ${direction === 'n' ? 'away from' : 'toward'} the viewer, while staying in place. Show the foot lifting and landing in that depth direction, never side-stepping.` : ''} ${action === 'attack' ? 'The weapon and target must align with this facing, including front and rear attacks.' : ''} Return smoothly to the exact starting pose. If supported, use the same reference as the first and final image.`,
+      prompt: frames < 4
+        ? `${identity} Use the approved character reference to create ${frames === 1 ? 'exactly one full-body still pose' : `exactly ${frames} full-body poses in equal-width cells in one horizontal row, ordered in time from left to right`}. ACTION: ${action}. ${motions[action]} ${angles[direction]} ${brief.notes[direction] || ''} Fixed orthographic isometric camera, consistent scale and alignment. Uniform magenta (#ff00ff) background. No furniture, floor, shadows, labels or borders. Leave padding around every limb.`
+        : `${identity} Animate the approved ${direction.toUpperCase()} reference pose. ${motions[action]} ${angles[direction]} ${brief.notes[direction] || ''} Keep the character centered, at constant scale, with a fixed camera and uniform magenta background. ${['walk', 'run'].includes(action) && ['s', 'n'].includes(direction) ? `Travel is along the camera axis ${direction === 'n' ? 'away from' : 'toward'} the viewer, while staying in place. Show the foot lifting and landing in that depth direction, never side-stepping.` : ''} ${action === 'attack' ? 'The weapon and target must align with this facing, including front and rear attacks.' : ''} Return smoothly to the exact starting pose. If supported, use the same reference as the first and final image.`,
       negative: 'camera movement, rotation, changing costume, duplicate limbs, changing weapon hand, cropped feet, environment, text, cast shadow, tinted background, bloom around the silhouette',
-      suggestedSeconds: action === 'sit' ? 0 : 5
+      suggestedSeconds: frames < 4 ? 0 : 5
     }))
   }));
 }

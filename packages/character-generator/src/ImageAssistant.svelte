@@ -52,7 +52,7 @@
 
 <div class="assistant">
   <div class="heading"><div><span class="tag">AYUDA OPCIONAL · OPENAI</span><h3>Crear referencias del personaje</h3></div><span class:connected={status.available} class="badge">{status.available ? 'API configurada' : 'Sin conexión'}</span></div>
-  <p>Genera y aprueba una vista del personaje. Descarga su PNG, anímalo en Kling o en tu herramienta de vídeo e importa el resultado para preparar el ciclo.</p>
+  <p>Genera y aprueba una vista del personaje. Úsala para crear acciones cortas con ChatGPT o animarla en Kling y preparar los ciclos más largos.</p>
   <p class="status">{status.message}</p>
   {#if !status.available}<details><summary>Cómo activar esta ayuda</summary><p>En el servidor, copia <code>.env.example</code> a <code>.env</code>, configura <code>OPENAI_API_KEY</code> y reinicia <code>npm run dev</code>. La clave permanece en el servidor. Después pulsa comprobar conexión.</p><p>Sin API, el taller y la importación manual siguen disponibles.</p></details>{/if}
   <button disabled={checking} onclick={check}>{checking ? 'Comprobando…' : 'Comprobar conexión'}</button>
