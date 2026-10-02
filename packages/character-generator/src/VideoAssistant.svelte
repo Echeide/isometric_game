@@ -13,6 +13,9 @@
   const labels = { submitting: 'Enviando', pending: 'Generando', completed: 'Vídeo listo', failed: 'No se pudo generar', uncertain: 'Respuesta sin confirmar' };
   const matching = $derived(!!current && current.projectId === projectId && current.profile === profile && current.action === action && current.direction === direction);
   const working = $derived(submitting || checking || importing);
+  const generating = $derived(current?.status === 'pending' || current?.status === 'submitting');
+  const videoBusy = $derived(submitting || generating || importing);
+  const buttonLabel = $derived(submitting ? 'Enviando a Kling…' : importing ? 'Importando vídeo…' : generating ? 'Generando en Kling…' : `Generar vídeo · ${action}/${direction.toUpperCase()}`);
   $effect(() => { prompt = suggestedPrompt; });
   function update(job: VideoJob) { current = job; jobs = [job, ...jobs.filter(j => j.id !== job.id)].slice(0, 50); }
   function releaseVideo() { if (download) URL.revokeObjectURL(download); download = ''; downloadedId = ''; downloadBlob = undefined; }
@@ -85,7 +88,15 @@
   {#if reference}<img src={reference} alt={`Referencia para animar ${direction.toUpperCase()}`}/>{:else}<p>Aprueba primero una referencia de {direction.toUpperCase()} arriba, o abre un proyecto que ya la incluya.</p>{/if}
   <details><summary>Prompt del vídeo · {action}/{direction.toUpperCase()}</summary><label>Movimiento<textarea rows="6" maxlength="2500" bind:value={prompt}></textarea></label><small>{prompt.length}/2500 caracteres</small><button onclick={() => prompt = suggestedPrompt}>Restaurar prompt sugerido</button></details>
   <p class="hint">Un clic genera un vídeo de 5 segundos y consume créditos de Magnific. Se enviarán esta imagen y el prompt. Revisa el movimiento antes de aprobarlo.</p>
-  <button class="primary" disabled={working || !available || !reference || !prompt.trim() || prompt.length > 2500 || current?.status === 'pending' || current?.status === 'submitting'} onclick={generate}>Generar vídeo · {action}/{direction.toUpperCase()}</button>
+  <button class="primary generate" class:loading={videoBusy} aria-busy={videoBusy} disabled={working || generating || !available || !reference || !prompt.trim() || prompt.length > 2500} onclick={generate}>
+    {#if videoBusy}<span class="spinner" aria-hidden="true"></span>{/if}
+    {buttonLabel}
+  </button>
+  <div role="status">
+    {#if submitting}<p class="hint">Enviando la referencia y el movimiento. No hace falta volver a pulsar.</p>
+    {:else if importing}<p class="hint">Preparando el vídeo y extrayendo los fotogramas del ciclo…</p>
+    {:else if generating}<p class="hint">Kling está preparando el vídeo. Puede tardar unos minutos; puedes seguir trabajando. El proveedor no indica un porcentaje de avance.</p>{/if}
+  </div>
   {#if hasSource}<p class="hint">Conservarás el ciclo actual hasta pulsar «Reemplazar ciclo con este vídeo».</p>{/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if current}
@@ -108,5 +119,6 @@
 </div>
 
 <style>
+  .generate{display:inline-flex;align-items:center;justify-content:center;gap:8px}.generate.loading:disabled{opacity:1;cursor:wait}.spinner{display:inline-block;flex-shrink:0;width:14px;height:14px;border:2px solid #ffffff55;border-top-color:currentColor;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-style:dotted}}
   .video-assistant{border:1px solid #cad5b8;background:#f4f7ed;border-radius:12px;padding:20px;margin-top:20px;color:#26371e}.eyebrow{font-size:11px;letter-spacing:.1em;color:#526e37;font-weight:700}h3{margin:8px 0 12px}p{font-size:13px;line-height:1.6}img{width:96px;height:128px;object-fit:contain;border-radius:6px}details{margin:14px 0}summary{cursor:pointer;font-size:13px;font-weight:600}label{display:grid;gap:6px;margin-top:10px;font-size:13px}textarea{width:100%;box-sizing:border-box;border:1px solid #b6c5a1;padding:10px;border-radius:6px;font:12px/1.5 monospace}button{font:13px system-ui;padding:9px 12px;border:1px solid #acbb99;border-radius:7px;background:white;cursor:pointer;margin:5px 6px 5px 0}button:disabled{opacity:.5;cursor:default}.primary{background:#405a2d;color:white;border-color:#405a2d}.hint,small{font-size:12px;color:#58644d}.error{color:#a12b24}.job{border-top:1px solid #cad5b8;margin-top:16px;padding-top:16px;font-size:13px}.saved{display:block;text-align:left}a{display:block;color:#405a2d;margin:12px 0}
 </style>
