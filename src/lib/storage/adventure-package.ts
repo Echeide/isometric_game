@@ -19,7 +19,7 @@ export function validatePack(value:unknown,files:Record<string,Uint8Array>):Pixe
  if(!p||p.version!==1||!p.character||!p.objects||!p.tiles)fail();
  const c=p.character;
  if(!Number.isInteger(c.frameWidth)||!Number.isInteger(c.frameHeight)||!positive(c.frameWidth)||!positive(c.frameHeight)||!pair(c.anchor)||JSON.stringify(c.directions)!==JSON.stringify(graphics.character.directions)||!c.animations)fail();
- for(const pose of Object.keys(graphics.character.animations) as (keyof typeof c.animations)[]){const a=c.animations[pose];if(!a||!Number.isInteger(a.row)||a.row<0||!Number.isInteger(a.frames)||a.frames<1||a.frames>64||!Number.isFinite(a.fps)||a.fps<=0||a.fps>120)fail();}
+ for(const pose of Object.keys(graphics.character.animations) as (keyof typeof c.animations)[]){const a=c.animations[pose];if(!a||!Number.isInteger(a.row)||a.row<0||!Number.isInteger(a.frames)||a.frames<1||a.frames>64||!Number.isFinite(a.fps)||a.fps<=0||a.fps>120)fail();if(a.directionFps&&(typeof a.directionFps!=='object'||Object.entries(a.directionFps).some(([d,fps])=>!c.directions.includes(d as typeof c.directions[number])||!Number.isFinite(fps)||fps<=0||fps>120)))fail();}
  for(const [id,o] of Object.entries(p.objects)){if(!o||!positive(o.width)||!positive(o.height)||!pair(o.origin))fail();if(o.frame&&(!Array.isArray(o.frame)||o.frame.length!==4||!o.frame.every(n=>Number.isInteger(n)&&n>=0)||!o.frame[2]||!o.frame[3]))fail();}
  for(const key of Object.keys(graphics.tiles))if(!(key in p.tiles))fail();
  const sizes=new Map<string,ReturnType<typeof pngSize>>();

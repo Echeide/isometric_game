@@ -1,6 +1,6 @@
 import { Assets, Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import type { ActorPose, Facing, TileKind } from './types';
-import {characterImage,characterVariants,type CharacterPack} from './character';
+import {characterFps,characterImage,characterVariants,type CharacterPack} from './character';
 export interface NpcClip {image:string;frameWidth:number;frameHeight:number;row:number;frames:number;fps:number}
 export interface ObjectSprite {image:string;originalImage?:string;width:number;height:number;origin:[number,number];frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
 export interface PixelArtPack {
@@ -71,7 +71,7 @@ export function pixelActor(art:LoadedPixelArt,color:number,me:boolean){
  function update(_time:number,dt:number,pose:ActorPose,facing:Facing,reduced=false){
   if(pose!==lastPose){elapsed=0;lastPose=pose;}elapsed+=dt;
   const clip=character.animations[pose],frames=art.frames.get(`${prefix}${variant}:${pose}:${facing}`)!;
-  const texture=frames[reduced?0:Math.floor(elapsed*clip.fps)%frames.length];
+  const texture=frames[reduced?0:Math.floor(elapsed*characterFps(character,pose,facing))%frames.length];
   if(sprite.texture!==texture)sprite.texture=texture;
  }
  return {view,update};

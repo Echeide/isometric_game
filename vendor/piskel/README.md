@@ -32,3 +32,7 @@ Scope: one original PNG for objects, floors and the static image of an NPC. Dime
 transparency are preserved, layers flatten into that PNG, and image edits remain pending in
 the workshop until saved. Animation timelines and authoring-project/layer persistence are
 outside this first integration. Piskel's tools retain their upstream English labels.
+
+### Ciclos del generador
+
+El mensaje `open` admite `frames` y `fps` opcionales. El PNG recibido contiene una fila con celdas iguales. En modo ciclo, la integración permite navegar y previsualizar los fotogramas; `apply` conserva cantidad, orden y dimensiones y devuelve una única fila PNG con las capas combinadas. Los mensajes que omiten esos campos conservan el comportamiento de una imagen. El FPS de Piskel controla solo la vista previa.

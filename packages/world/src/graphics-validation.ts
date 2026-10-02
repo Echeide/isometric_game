@@ -15,6 +15,7 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
   if(Object.keys(c.animations).some(a=>!actorPoses.includes(a as typeof actorPoses[number])))fail('Acción de jugador no admitida.');
   for(const pose of actorPoses){
    const a=c.animations[pose];if(!a||!integer(a.frames)||a.frames>64||!Number.isInteger(a.row)||a.row<0||!Number.isFinite(a.fps)||a.fps<1||a.fps>60)fail(`Revisa los fotogramas y la velocidad de ${pose}.`);
+   if(a.directionFps!==undefined&&(!a.directionFps||typeof a.directionFps!=='object'||Array.isArray(a.directionFps)||Object.entries(a.directionFps).some(([d,fps])=>!c.directions.includes(d as typeof c.directions[number])||!Number.isFinite(fps)||fps<1||fps>30)))fail('Velocidad por orientación no válida.');
    for(const variant of characterVariants(c)){const s=image(characterImage(c,pose,variant));if(c.frameWidth*a.frames>s.width||(a.row+4)*c.frameHeight>s.height)fail(`La acción ${pose} sale de su hoja. Necesita cuatro filas de direcciones.`);}
   }
  }

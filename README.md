@@ -189,3 +189,26 @@ El juego y el editor reutilizan la aplicación Pixi y el canvas al cambiar de es
 ### Biblioteca de aventuras y recursos
 
 El editor guarda en IndexedDB y migra automáticamente las aventuras anteriores del navegador. En **Aventuras** puedes duplicar y gestionar recursos; **Más opciones → Exportar ZIP con recursos** permite trasladar mapas y PNG a otro navegador. La pantalla `/resources` permite descargar plantillas y sustituir imágenes por aventura manteniendo sus dimensiones. Consulta [el contrato de almacenamiento y formato de paquetes](docs/adventure-storage.md) para integrar el módulo en otra aplicación.
+
+### Generador independiente de personajes
+
+Abre `/characters` desde **Sprites → Generador de personajes**. El taller prepara prompts por orientación, importa vídeos, secuencias de imágenes o filas de hojas PNG y construye un PNG por acción con `character.json`. Incluye transparencia, búsqueda de ciclos, ajuste de escala y apoyo, paleta compartida, reflejos opcionales y velocidades por orientación. **Guardar proyecto** conserva las muestras para continuar después.
+
+El perfil del juego genera las seis acciones actuales en cuatro direcciones; hay un perfil de ocho direcciones para otros motores. Puedes importar imágenes y vídeos de cualquier herramienta o activar la ayuda opcional de OpenAI para generar referencias del personaje desde el taller. Con `MAGNIFIC_API_KEY` puedes animarlas con Kling 2.6 Pro desde el taller: envía la referencia aprobada, consulta el progreso e importa el vídeo automáticamente. También puedes animarlas en otra herramienta e importar el vídeo manualmente. Configura `OPENAI_API_KEY` en `.env` del servidor y reinicia `npm run dev`; sin clave se conserva el flujo manual. La generación utiliza la cuenta de API y requiere revisar y aprobar cada propuesta. **Cargar ejemplo del juego** permite probar el recorrido con los recursos existentes. Las descargas no sustituyen el catálogo activo.
+
+El paquete reutilizable está en `packages/character-generator`; `npm run package:characters` lo compila. Consulta [su documentación y formato de exportación](packages/character-generator/README.md). El motor admite `directionFps` opcional por animación y mantiene `fps` como valor de respaldo para catálogos anteriores.
+
+
+## Despliegue en Railway
+
+El repositorio incluye `railway.json`, el adaptador de Node y `npm start`. Railway construye con `npm run build` y usa su variable `PORT`. La aplicación pública sigue disponible en `/`; `/characters` y `/api/characters/*` requieren autenticación HTTP Basic en producción sobre HTTPS.
+
+Configura como variables privadas del servicio, nunca en Git:
+
+- `OPENAI_API_KEY`, `OPENAI_IMAGE_MODEL` y `MAGNIFIC_API_KEY` para las ayudas opcionales; `MAGNIFIC_API_KEY_NAME` y `MAGNIFIC_WEBHOOK_SECRET` pueden conservarse como configuración del proveedor.
+- `ORIGIN`: URL HTTPS canónica, sin barra final.
+- `CHARACTER_WORKSHOP_USER` y `CHARACTER_WORKSHOP_PASSWORD`: acceso al taller; contraseña de al menos 24 caracteres. Sin estos valores el taller de producción permanece cerrado.
+- `BODY_SIZE_LIMIT=3000000`: permite enviar las referencias PNG normalizadas.
+- `CHARACTER_VIDEO_JOBS_DIR=/data/character-video-jobs`: montar un volumen persistente en `/data` para conservar solicitudes y vídeos recuperados entre despliegues.
+
+Las variables del `.env` local no se cargan automáticamente al ejecutar `node build`: Railway debe inyectarlas. Mantén una sola réplica para el registro de solicitudes en archivos. Las imágenes del proyecto siguen guardándose con **Guardar proyecto**, independientemente del volumen del servidor. En desarrollo continúa el acceso exclusivo desde loopback y la importación manual no requiere ninguna API.

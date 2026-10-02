@@ -2,7 +2,7 @@ import type {ObjectSprite} from '@isometrico/world';
 import {pngSize} from '$lib/storage/adventure-package';
 
 export const editorChannel = 'isometrico-piskel-v1';
-export type ImageEditSession = {blob:Blob;name:string;width:number;height:number};
+export type ImageEditSession = {blob:Blob;name:string;width:number;height:number;frames?:number;fps?:number};
 
 export async function validateEditedImage(blob:Blob, expected:{width:number;height:number}) {
  if (!(blob instanceof Blob) || blob.size > 10_000_000) throw new Error('El PNG editado no puede superar 10 MB.');

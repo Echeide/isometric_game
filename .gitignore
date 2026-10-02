@@ -2,11 +2,13 @@ node_modules/
 .svelte-kit/
 build/
 packages/world/dist/
+packages/character-generator/dist/
 .env
 .env.*
 !.env.example
 .DS_Store
 .sites-runtime/
+.character-video-jobs/
 
 # Generated package archives and Python cache
 *.tgz

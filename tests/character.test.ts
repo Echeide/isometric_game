@@ -20,3 +20,12 @@ it('continues to resolve legacy shared atlases',()=>{
  expect(characterImage(legacy,'walk')).toBe('/old.png');
  expect(characterImage(legacy,'work','friend')).toBe('/friend.png');
 });
+
+it('uses per-facing playback rates with a legacy fallback',async()=>{
+ const {characterFps}=await import('../packages/world/src/character');
+ const c:CharacterPack={...character,animations:{...character.animations,walk:{...character.animations.walk,directionFps:{ne:7.5,se:11}}}};
+ expect(characterFps(c,'walk','ne')).toBe(7.5);
+ expect(characterFps(c,'walk','se')).toBe(11);
+ expect(characterFps(c,'walk','sw')).toBe(character.animations.walk.fps);
+ expect(characterFps(character,'idle','ne')).toBe(character.animations.idle.fps);
+});

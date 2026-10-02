@@ -3,7 +3,7 @@
  import {X, Check, RotateCcw, RotateCw} from 'lucide-svelte';
  import {editorChannel,validateEditedImage,type ImageEditSession} from '$lib/workshop/image-edit';
 
- let {session,onapply,onclose,onchange}:{session:ImageEditSession;onapply:(blob:Blob)=>Promise<void>;onclose:()=>void;onchange:(dirty:boolean)=>void}=$props();
+ let {session,onapply,onclose,onchange,saveHint='Los retoques se guardarán cuando pulses «Guardar en catálogo».'}:{session:ImageEditSession;saveHint?:string;onapply:(blob:Blob)=>Promise<void>;onclose:()=>void;onchange:(dirty:boolean)=>void}=$props();
  let dialog:HTMLDialogElement;
  let frame=$state<HTMLIFrameElement>();
  let nonce=$state(''),ready=$state(false),working=$state(false),changed=$state(false),error=$state(''),confirmClose=$state(false);
@@ -15,7 +15,7 @@
  async function receive(event:MessageEvent){
   const data=event.data;
   if(event.origin!==location.origin||event.source!==frame?.contentWindow||!data||data.channel!==editorChannel||data.session!==nonce)return;
-  if(data.type==='ready'){send('open',{blob:session.blob,name:session.name,width:session.width,height:session.height});}
+  if(data.type==='ready'){send('open',{blob:session.blob,name:session.name,width:session.width,height:session.height,frames:session.frames,fps:session.fps});}
   else if(data.type==='loaded'){clearTimeout(timer);ready=true;error='';}
   else if(data.type==='dirty'&&typeof data.dirty==='boolean'){changed=data.dirty;onchange(changed);}
   else if(data.type==='apply-request')apply();
@@ -43,15 +43,15 @@
 
 <dialog bind:this={dialog} class="image-editor" aria-labelledby="image-editor-title" oncancel={e=>{e.preventDefault();close();}}>
  <div class="editor-shell">
-  <header><div><p>RETOQUE DE PÍXELES · PISKEL</p><h2 id="image-editor-title">Editar imagen · {session.name}</h2></div><button class="close" aria-label="Cerrar editor de imagen" disabled={working} onclick={close}><X size={20}/></button></header>
-  <div class="toolbar"><span>{session.width} × {session.height} px · Tamaño y apoyo conservados</span><div><button disabled={!ready||working} onclick={()=>send('undo')}><RotateCcw size={15}/> Deshacer</button><button disabled={!ready||working} onclick={()=>send('redo')}><RotateCw size={15}/> Rehacer</button></div></div>
+  <header><div><p>RETOQUE DE PÍXELES · PISKEL</p><h2 id="image-editor-title">{session.frames && session.frames > 1 ? 'Editar ciclo' : 'Editar imagen'} · {session.name}</h2></div><button class="close" aria-label="Cerrar editor de imagen" disabled={working} onclick={close}><X size={20}/></button></header>
+  <div class="toolbar"><span>{session.width / (session.frames || 1)} × {session.height} px{session.frames ? ` · ${session.frames} fotogramas` : ''} · Tamaño y apoyo conservados</span><div><button disabled={!ready||working} onclick={()=>send('undo')}><RotateCcw size={15}/> Deshacer</button><button disabled={!ready||working} onclick={()=>send('redo')}><RotateCw size={15}/> Rehacer</button></div></div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if confirmClose}<div class="discard" role="alert"><span>Hay retoques sin aplicar.</span><button onclick={()=>confirmClose=false}>Seguir editando</button><button onclick={onclose}>Descartar retoques</button></div>{/if}
   <div class="canvas-area" class:working>
    {#if nonce}<iframe bind:this={frame} title="Editor de píxeles Piskel" src={`/tools/piskel/index.html#${nonce}`} sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>{/if}
    {#if !ready&&!error}<div class="loading" role="status">Preparando la imagen…</div>{/if}
   </div>
-  <footer><div><span>Los retoques se guardarán cuando pulses «Guardar en catálogo».</span><small>Las capas se combinan en un PNG. Editor pensado para ratón y teclado.</small></div><button disabled={working} onclick={close}>Cancelar</button><button class="primary" disabled={!ready||working} onclick={apply}><Check size={16}/>{working?'Aplicando…':'Aplicar al taller'}</button></footer>
+  <footer><div><span>{saveHint}</span><small>Las capas se combinan en un PNG. Editor pensado para ratón y teclado.</small></div><button disabled={working} onclick={close}>Cancelar</button><button class="primary" disabled={!ready||working} onclick={apply}><Check size={16}/>{working?'Aplicando…':'Aplicar al taller'}</button></footer>
  </div>
 </dialog>
 

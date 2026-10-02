@@ -13,7 +13,7 @@ export type { Facing, ActorPose, WorldEditor } from './types';
 
 export type { PixelArtPack } from './pixelart';
 
-export { characterImage, characterVariants } from './character';
+export { characterFps, characterImage, characterVariants } from './character';
 export type { CharacterPack, CharacterClip } from './character';
 
 export type { TileKind, BuiltinTileKind, CustomTileKind } from './types';

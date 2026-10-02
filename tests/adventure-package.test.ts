@@ -41,3 +41,15 @@ it('does not mutate the source catalogue when resolving or replacing images',()=
  const before=JSON.stringify(graphics);mapImages(graphics,()=> 'asset:replacement');
  expect(JSON.stringify(graphics)).toBe(before);
 });
+
+it('round-trips directional FPS and rejects unsupported directions or invalid speeds',async()=>{
+ const files=unzipSync(await archive()),manifest=JSON.parse(strFromU8(files['manifest.json']));
+ manifest.graphics.character.animations.walk.directionFps={ne:7.5,se:11};
+ files['manifest.json']=strToU8(JSON.stringify(manifest));
+ expect(unpackAdventure(zipSync(files)).pack.character.animations.walk.directionFps).toEqual({ne:7.5,se:11});
+ for(const invalid of [{ne:0},{ne:121},{south:8}]){
+  manifest.graphics.character.animations.walk.directionFps=invalid;
+  files['manifest.json']=strToU8(JSON.stringify(manifest));
+  expect(()=>unpackAdventure(zipSync(files))).toThrow('Catálogo');
+ }
+});

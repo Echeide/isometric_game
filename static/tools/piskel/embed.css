@@ -4,3 +4,8 @@
 [data-tool-id="tool-crop"], [data-tool-id="tool-clone"], .performance-link { display: none !important; }
 #main-wrapper { margin-top: 0 !important; }
 html, body { min-width: 760px; }
+
+/* Character cycles expose navigation and playback, while preserving frame count. */
+body.isometrico-animation .left-column, body.isometrico-animation .preview-container { display: block !important; }
+body.isometrico-animation .add-frame-action, body.isometrico-animation .delete-frame-action,
+body.isometrico-animation .duplicate-frame-action { display: none !important; }
