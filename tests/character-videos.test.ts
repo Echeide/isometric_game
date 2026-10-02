@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { createVideoService, videoMediaUrl, videoStatus } from '../src/lib/server/character-videos';
 import { validateVideoRequest, type VideoRequest } from '../packages/character-generator/src/video';
 import { pngUrl } from '../packages/character-generator/src/generation';
@@ -63,7 +64,22 @@ describe('Magnific video integration', () => {
     expect(result.status).toBe('uncertain'); expect(result.message).not.toContain('private upstream');
     await createVideoService(dir, transport).create(request(), config);
     expect(transport).toHaveBeenCalledTimes(1);
-    expect(await service.list()).toEqual([result]);
+    expect(await service.list('explorador')).toEqual([result]);
+  });
+  it('recovers only the exact character ID before limiting results, keeping all its views and actions', async () => {
+    const transport = vi.fn(); const { service, dir } = await setup(transport);
+    const saved = [
+      { projectId: 'explorador', action: 'walk', direction: 'ne', createdAt: '2025-01-01T00:00:00Z' },
+      { projectId: 'explorador', action: 'idle', direction: 'se', createdAt: '2025-01-02T00:00:00Z' },
+      ...Array.from({ length: 55 }, () => ({ projectId: 'explorador-otro', action: 'walk', direction: 'ne', createdAt: '2026-01-01T00:00:00Z' }))
+    ].map(job => ({ ...job, id: randomUUID(), profile: 'game', status: 'completed' }));
+    await Promise.all(saved.map(job => writeFile(join(dir, `${job.id}.json`), JSON.stringify(job))));
+    const jobs = await service.list('explorador');
+    expect(jobs.map(job => job.id)).toEqual([saved[1].id, saved[0].id]);
+    expect(await service.list('nuevo')).toEqual([]);
+    expect(await service.list('')).toEqual([]);
+    expect((await service.list('explorador-otro')).length).toBe(50);
+    expect(transport).not.toHaveBeenCalled();
   });
   it('recovers an interrupted submission without pretending the job can be resubmitted', async () => {
     const { service, dir } = await setup(vi.fn());

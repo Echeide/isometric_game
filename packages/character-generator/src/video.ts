@@ -23,7 +23,7 @@ export interface VideoJob {
 }
 export interface VideoProvider {
   status(): Promise<{ available: boolean; message: string }>;
-  list(): Promise<VideoJob[]>;
+  list(projectId: string): Promise<VideoJob[]>;
   create(request: VideoRequest): Promise<VideoJob>;
   poll(id: string): Promise<VideoJob>;
   video(id: string): Promise<Blob>;
@@ -50,7 +50,7 @@ export function httpVideoProvider(endpoint: string): VideoProvider {
   }
   return {
     async status() { return (await response()).json(); },
-    async list() { return (await response('?jobs=1')).json(); },
+    async list(projectId) { return (await response(`?jobs=1&projectId=${encodeURIComponent(projectId)}`)).json(); },
     async create(request) { return (await response('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) })).json(); },
     async poll(id) { return (await response(`/${encodeURIComponent(id)}`)).json(); },
     async video(id) { return (await response(`/${encodeURIComponent(id)}?video=1`)).blob(); }

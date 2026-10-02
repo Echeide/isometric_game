@@ -8,7 +8,7 @@ import { VideoServiceError, videoStatus } from '$lib/server/character-videos';
 const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 export const GET: RequestHandler = async ({ url, getClientAddress, locals }) => {
   if (!allowCharacterApi(dev, dev ? getClientAddress() : '', url, undefined, locals.characterWorkshopAuthorized)) return json({ available: false, message: 'El vídeo por API solo está disponible en el taller local.' }, { headers });
-  try { return json(url.searchParams.has('jobs') ? await characterVideos.list() : videoStatus({ apiKey: env.MAGNIFIC_API_KEY }), { headers }); }
+  try { return json(url.searchParams.has('jobs') ? await characterVideos.list(url.searchParams.get('projectId') ?? '') : videoStatus({ apiKey: env.MAGNIFIC_API_KEY }), { headers }); }
   catch { return json({ error: 'No se pudo leer el registro local de vídeos.' }, { status: 500, headers }); }
 };
 export const POST: RequestHandler = async ({ request, url, getClientAddress, locals }) => {

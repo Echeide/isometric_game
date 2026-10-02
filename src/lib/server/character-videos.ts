@@ -134,11 +134,12 @@ export function createVideoService(directory: string, fetcher: typeof fetch = fe
     }
     throw new VideoServiceError(502, 'No se pudo seguir el enlace del vídeo.');
   }
-  async function list() {
+  async function list(projectId: string) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,79}$/i.test(projectId)) return [];
     let files: string[];
     try { files = await readdir(directory); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e; }
     const jobs = await Promise.all(files.filter(f => idPattern.test(f.replace(/\.json$/, '')) && f.endsWith('.json')).map(async f => publicJob(await read(f.slice(0, -5)))));
-    return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50);
+    return jobs.filter(job => job.projectId === projectId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50);
   }
   return { create, poll, video, list };
 }

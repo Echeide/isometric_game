@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import type { Direction, Profile } from './types';
   import type { VideoJob, VideoProvider } from './video';
   import { validateVideoRequest } from './video';
@@ -10,19 +10,26 @@
   let submitting = $state(false), checking = $state(false), importing = $state(false), imported = $state('');
   let download = $state(''), downloadedId = '', downloadBlob: Blob | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined, destroyed = false, autoImport = false, checks = 0, generatedRevision = -1;
+  let refreshVersion = 0;
   const labels = { submitting: 'Enviando', pending: 'Generando', completed: 'Vídeo listo', failed: 'No se pudo generar', uncertain: 'Respuesta sin confirmar' };
   const matching = $derived(!!current && current.projectId === projectId && current.profile === profile && current.action === action && current.direction === direction);
+  const projectJobs = $derived(jobs.filter(job => job.projectId === projectId));
   const working = $derived(submitting || checking || importing);
   const generating = $derived(current?.status === 'pending' || current?.status === 'submitting');
   const videoBusy = $derived(submitting || generating || importing);
   const buttonLabel = $derived(submitting ? 'Enviando a Kling…' : importing ? 'Importando vídeo…' : generating ? 'Generando en Kling…' : `Generar vídeo · ${action}/${direction.toUpperCase()}`);
   $effect(() => { prompt = suggestedPrompt; });
-  function update(job: VideoJob) { current = job; jobs = [job, ...jobs.filter(j => j.id !== job.id)].slice(0, 50); }
+  function update(job: VideoJob) { if (job.projectId !== projectId) return; current = job; jobs = [job, ...projectJobs.filter(j => j.id !== job.id)].slice(0, 50); }
   function releaseVideo() { if (download) URL.revokeObjectURL(download); download = ''; downloadedId = ''; downloadBlob = undefined; }
-  async function refresh() {
+  async function refresh(targetProjectId = projectId) {
+    const version = ++refreshVersion;
     error = '';
-    try { const status = await provider.status(); if (destroyed) return; available = status.available; statusMessage = status.message; jobs = await provider.list(); }
-    catch { if (!destroyed) error = 'No se pudo comprobar Magnific. Comprueba que el servidor local sigue activo.'; }
+    try {
+      const [status, savedJobs] = await Promise.all([provider.status(), provider.list(targetProjectId)]);
+      if (destroyed || targetProjectId !== projectId || version !== refreshVersion) return;
+      available = status.available; statusMessage = status.message; jobs = savedJobs;
+    }
+    catch { if (!destroyed && targetProjectId === projectId && version === refreshVersion) error = 'No se pudo comprobar Magnific. Comprueba que el servidor sigue activo.'; }
   }
   async function importVideo() {
     if (!current || !matching || working) return;
@@ -50,7 +57,7 @@
         if (++checks < 160) timer = setTimeout(() => void check(), 7500);
         else error = 'La generación sigue pendiente. Puedes consultar de nuevo; no hace falta volver a generar.';
       }
-    } catch (e) { if (!destroyed) error = e instanceof Error ? e.message : 'Consulta interrumpida. Puedes consultar de nuevo sin generar otro vídeo.'; }
+    } catch (e) { if (!destroyed && current?.id === id) error = e instanceof Error ? e.message : 'Consulta interrumpida. Puedes consultar de nuevo sin generar otro vídeo.'; }
     finally { checking = false; }
     if (!destroyed && current?.id === id && current.status === 'completed' && autoImport) {
       autoImport = false;
@@ -65,18 +72,24 @@
     submitting = true; onbusy('Enviando referencia a Kling 2.6…'); clearTimeout(timer); releaseVideo(); imported = ''; checks = 0;
     try {
       const job = await provider.create(request);
-      if (destroyed) return;
+      if (destroyed || request.projectId !== projectId) return;
       update(job); autoImport = !hasSource; generatedRevision = revision;
     } catch (e) {
-      if (!destroyed) { await refresh(); error = `${e instanceof Error ? e.message : 'La conexión se interrumpió.'} Revisa las solicitudes guardadas antes de generar otra vez.`; }
+      if (!destroyed && request.projectId === projectId) { await refresh(); if (request.projectId === projectId) error = `${e instanceof Error ? e.message : 'La conexión se interrumpió.'} Revisa las solicitudes guardadas antes de generar otra vez.`; }
     } finally { submitting = false; onbusy(''); }
     if (!destroyed && current?.id === request.requestId) await check();
   }
   function recover(job: VideoJob) {
-    if (working) return;
+    if (working || job.projectId !== projectId) return;
     clearTimeout(timer); releaseVideo(); imported = ''; checks = 0; autoImport = false; update(job); void check();
   }
-  onMount(() => { void refresh(); });
+  $effect(() => {
+    const id = projectId;
+    untrack(() => {
+      clearTimeout(timer); releaseVideo(); current = null; jobs = []; imported = ''; checks = 0; autoImport = false;
+      void refresh(id);
+    });
+  });
   onDestroy(() => { destroyed = true; clearTimeout(timer); releaseVideo(); });
 </script>
 
@@ -113,8 +126,8 @@
       {#if download}<a href={download} download={`${current.projectId}-${current.action}-${current.direction}.mp4`}>Descargar vídeo original</a>{/if}
     </div>
   {/if}
-  <details><summary>Recuperar solicitudes de vídeo ({jobs.length})</summary><p class="hint">Se guardan en este servidor local. Abrir una solicitud no genera otro vídeo. Descarga o importa los resultados pronto: los enlaces de Magnific caducan.</p><button disabled={working} onclick={refresh}>Actualizar solicitudes</button>
-    {#each jobs as job}<button class="saved" disabled={working} onclick={() => recover(job)}>{job.projectId} · {job.action}/{job.direction.toUpperCase()} · {new Date(job.createdAt).toLocaleString()}</button>{/each}
+  <details><summary>Recuperar solicitudes de vídeo ({projectJobs.length})</summary><p class="hint">Solo se muestran las solicitudes del identificador «{projectId}», guardadas en este servidor. Abrir una solicitud no genera otro vídeo. Descarga o importa los resultados pronto: los enlaces de Magnific caducan.</p><button disabled={working} onclick={() => refresh()}>Actualizar solicitudes</button>
+    {#each projectJobs as job}<button class="saved" disabled={working} onclick={() => recover(job)}>{job.projectId} · {job.action}/{job.direction.toUpperCase()} · {new Date(job.createdAt).toLocaleString()}</button>{:else}<p class="hint">No hay solicitudes de vídeo guardadas para este identificador.</p>{/each}
   </details>
 </div>
 
