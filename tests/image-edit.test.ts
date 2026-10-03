@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {graphics} from '../src/lib/demo/pixelart';
 import {office} from '../src/lib/demo/scenes';
 import {createAdventure} from '../src/lib/demo/adventure';
-import {validateEditedImage,withEditedImage} from '../src/lib/workshop/image-edit';
+import {editorRevision,validateEditorLoaded,validateEditedImage,withEditedImage} from '../src/lib/workshop/image-edit';
 import {validateGraphics} from '../packages/world/src/graphics-validation';
 import {exportAdventure,unpackAdventure,pngSize} from '../src/lib/storage/adventure-package';
 import {mapImages,imageUrls} from '../src/lib/storage/local-adventures';
@@ -64,5 +64,24 @@ it('keeps the deployed bridge identical to its source adapter',()=>{
  expect(readFileSync('static/tools/piskel/bridge.js','utf8')).toBe(readFileSync('vendor/piskel/bridge.js','utf8'));
  expect(readFileSync('static/tools/piskel/embed.css','utf8')).toBe(readFileSync('vendor/piskel/embed.css','utf8'));
  // Piskel has a nested HTML template; the real document must load the adapter stylesheet.
- expect(readFileSync('static/tools/piskel/index.html','utf8')).toMatch(/<link rel="stylesheet" href="embed.css">\s*<\/body>\s*<\/html>\s*$/);
+ expect(readFileSync('static/tools/piskel/index.html','utf8')).toMatch(/<link rel="stylesheet" href="embed\.css\?v=frames-2">\s*<\/body>\s*<\/html>\s*$/);
+});
+
+
+it('requires Piskel to confirm each frame instead of accepting the full strip as one image',()=>{
+ const expected={blob:new Blob(),name:'walk/SE',width:512,height:96,frames:8,fps:10};
+ expect(()=>validateEditorLoaded({frames:8,width:64,height:96},expected)).not.toThrow();
+ expect(()=>validateEditorLoaded({frames:1,width:512,height:96},expected)).toThrow('fotogramas');
+ expect(()=>validateEditorLoaded({},expected)).toThrow('fotogramas');
+ expect(()=>validateEditorLoaded({frames:8,width:64,height:64},expected)).toThrow('fotogramas');
+ expect(()=>validateEditorLoaded({frames:1,width:512,height:96},{...expected,frames:undefined})).not.toThrow();
+});
+
+it('versions the iframe and its adapter resources together',()=>{
+ const html=readFileSync('static/tools/piskel/index.html','utf8');
+ const script=readFileSync('scripts/vendor-piskel.mjs','utf8');
+ for(const source of [html,script]) {
+  expect(source).toContain(`bridge.js?v=${editorRevision}`);
+  expect(source).toContain(`embed.css?v=${editorRevision}`);
+ }
 });

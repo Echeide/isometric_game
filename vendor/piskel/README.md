@@ -36,3 +36,5 @@ outside this first integration. Piskel's tools retain their upstream English lab
 ### Ciclos del generador
 
 El mensaje `open` admite `frames` y `fps` opcionales. El PNG recibido contiene una fila con celdas iguales. En modo ciclo, la integración permite navegar y previsualizar los fotogramas; `apply` conserva cantidad, orden y dimensiones y devuelve una única fila PNG con las capas combinadas. Los mensajes que omiten esos campos conservan el comportamiento de una imagen. El FPS de Piskel controla solo la vista previa.
+
+El padre valida la respuesta `loaded` (`frames`, ancho de celda y alto) antes de permitir editar o aplicar. Una versión antigua que abra toda la tira como una imagen se rechaza. La URL del iframe y las de `bridge.js`/`embed.css` llevan la revisión `frames-2`; al cambiar el protocolo o sus recursos, mantenerla sincronizada con `editorRevision` y el script de vendorización.

@@ -59,7 +59,7 @@
       $.publish(Events.PISKEL_SAVED);
       width = data.width; height = data.height; frameCount = count; loaded = true;
       window.document.body.classList.toggle('isometrico-animation', count > 1);
-      send('loaded');
+      send('loaded', {frames: document.getFrameCount(), width: document.getWidth(), height: document.getHeight()});
     } finally { importing = false; URL.revokeObjectURL(url); }
   }
 
