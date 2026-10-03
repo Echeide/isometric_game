@@ -1,5 +1,5 @@
 import { pngData } from './generation';
-import { PROFILES, type Direction, type Profile } from './types';
+import { availableActions, PROFILES, type Direction, type Profile } from './types';
 
 export interface VideoRequest {
   requestId: string;
@@ -30,7 +30,7 @@ export interface VideoProvider {
 }
 export function validateVideoRequest(value: unknown): VideoRequest {
   const r = value as VideoRequest;
-  if (!r || !/^[a-f0-9-]{36}$/i.test(r.requestId) || !/^[a-z0-9][a-z0-9_-]{0,79}$/i.test(r.projectId) || !Object.hasOwn(PROFILES, r.profile) || !PROFILES[r.profile].directions.includes(r.direction) || !PROFILES[r.profile].actions.some(a => a.action === r.action)) throw new Error('Personaje, acción u orientación no válidos para el vídeo.');
+  if (!r || !/^[a-f0-9-]{36}$/i.test(r.requestId) || !/^[a-z0-9][a-z0-9_-]{0,79}$/i.test(r.projectId) || !Object.hasOwn(PROFILES, r.profile) || !PROFILES[r.profile].directions.includes(r.direction) || !availableActions(r.profile).some(a => a.action === r.action)) throw new Error('Personaje, acción u orientación no válidos para el vídeo.');
   if (typeof r.prompt !== 'string' || !r.prompt.trim() || r.prompt.length > 2500 || typeof r.negative !== 'string' || r.negative.length > 2500) throw new Error('El prompt de vídeo debe tener entre 1 y 2500 caracteres.');
   const data = pngData(r.reference), view = new DataView(data.buffer);
   const width = view.getUint32(16), height = view.getUint32(20);

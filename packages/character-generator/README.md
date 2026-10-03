@@ -194,3 +194,11 @@ En **01 · Personaje → Subir foto o referencia** puedes cargar PNG, JPG o WebP
 Con una imagen importada, **Descripción o cambios** es opcional. Elige el estilo y escribe solo lo que quieres modificar; **Generar vista** envía la imagen y esas indicaciones a OpenAI mediante el servicio de imágenes existente. Subir la foto no llama a ninguna API ni crea una descripción textual automática. Sin API puedes conservarla como guía y continuar con las importaciones manuales.
 
 La foto es un punto de partida, sin una orientación aprobada. La primera propuesta debe revisarse y aprobarse; después las vistas aprobadas tienen prioridad para mantener el diseño. Puedes marcar **Usar la foto original para esta propuesta** para volver al referente. Cambiar o quitar la foto no elimina vistas aprobadas ni ciclos existentes. Kling sigue usando exclusivamente la vista aprobada para la orientación seleccionada.
+
+### Acciones por personaje
+
+En «Define la referencia → Acciones del personaje» se seleccionan las acciones con checks dentro de un bloque plegable. Están disponibles idle, walk, work, talk, celebrate, sit, attack, hurt y run. Los proyectos anteriores conservan la selección predeterminada de su perfil. `settings.actions` guarda la selección; desmarcar conserva las fuentes y los retoques en el proyecto editable.
+
+El flujo, los prompts, las vistas pendientes y el ZIP final solo incluyen las acciones seleccionadas. Al aprobar el último ciclo se construyen las hojas seleccionadas. Hurt usa tres fotogramas y puede generarse con el proveedor de imágenes; attack y run usan ocho. La importación manual sigue disponible. Esto no envía generaciones de pago en lote.
+
+El jugador del motor actual requiere idle, walk, work, talk, celebrate y sit. Los paquetes parciales y las acciones adicionales se exportan para otros usos o una integración posterior del motor.

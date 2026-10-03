@@ -1,6 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { validateSettings } from './pipeline';
-import { PROFILES, type BuildResult, type ClipInput, type Frame, type GeneratorSettings, type Sources } from './types';
+import { availableActions, selectedActions, PROFILES, type BuildResult, type ClipInput, type Frame, type GeneratorSettings, type Sources } from './types';
 import { createPrompts, type CharacterBrief } from './prompts';
 import { DIRECTIONS, emptyArt, pngData, pngUrl, type ArtProject } from './generation';
 
@@ -86,13 +86,13 @@ export function download(data: Uint8Array, name: string, type = 'application/zip
 }
 export async function exportCharacter(result: BuildResult, brief: CharacterBrief) {
   const settings = result.metadata.settings;
-  if (PROFILES[settings.profile].actions.some(a => !result.character.animations[a.action])) throw new Error('Construye todas las acciones antes de exportar el personaje.');
+  if (result.character.directions.length !== PROFILES[settings.profile].directions.length || selectedActions(settings).some(a => !result.character.animations[a.action])) throw new Error('Construye todas las acciones antes de exportar el personaje.');
   const files: Record<string, Uint8Array> = {};
   for (const sheet of result.sheets) files[`${sheet.action}.png`] = await encodePNG(sheet.image);
   files['character.json'] = strToU8(JSON.stringify(result.character, null, 2));
   files['processing.json'] = strToU8(JSON.stringify(result.metadata, null, 2));
-  files['prompts.json'] = strToU8(JSON.stringify({ brief, recipes: createPrompts(brief, settings.profile, settings.mirror) }, null, 2));
-  files['LEEME.txt'] = strToU8(`Personaje: ${settings.id}\nPerfil: ${settings.profile}\nCopia los PNG a static${settings.baseUrl}.\n${settings.profile === 'game' ? 'character.json cumple el contrato CharacterPack. Asígnalo a graphics.character en el anfitrión.\n' : 'Este perfil tiene ocho direcciones y acciones run/attack. El motor actual del juego usa cuatro direcciones y no puede consumirlo directamente.\n'}Revisa visualmente orientación, accesorios, apoyo, cortes y cierre de cada ciclo.\nprocessing.json conserva la paleta, las muestras y velocidades por orientación.\n`);
+  files['prompts.json'] = strToU8(JSON.stringify({ brief, recipes: createPrompts(brief, settings.profile, settings.mirror, settings.actions) }, null, 2));
+  files['LEEME.txt'] = strToU8(`Personaje: ${settings.id}\nPerfil: ${settings.profile}\nCopia los PNG a static${settings.baseUrl}.\n${settings.profile === 'game' ? 'Para importar como jugador en el juego actual se requieren idle, walk, work, talk, celebrate y sit. Las acciones attack, hurt y run se exportan, pero su reproducción requiere soporte en el juego.\n' : 'Este perfil tiene ocho direcciones y acciones run/attack. El motor actual del juego usa cuatro direcciones y no puede consumirlo directamente.\n'}Revisa visualmente orientación, accesorios, apoyo, cortes y cierre de cada ciclo.\nprocessing.json conserva la paleta, las muestras y velocidades por orientación.\n`);
   return zipSync(files, { level: 6 });
 }
 export async function saveProject(settings: GeneratorSettings, brief: CharacterBrief, sources: Sources, art: ArtProject = emptyArt()) {
@@ -140,7 +140,7 @@ export async function loadProject(file: File): Promise<{ settings: GeneratorSett
   if (!raw.brief || !['description', 'style', 'props'].every(k => typeof raw.brief[k] === 'string') || !raw.brief.notes || Object.values(raw.brief.notes).some(n => typeof n !== 'string')) throw new Error('Descripción del personaje no válida.');
   const profile = PROFILES[raw.settings.profile as GeneratorSettings['profile']], sources: Sources = {};
   let pixels = 0;
-  for (const recipe of profile.actions) {
+  for (const recipe of availableActions(raw.settings.profile)) {
     sources[recipe.action] = {};
     for (const direction of profile.directions) {
       const input = raw.sources?.[recipe.action]?.[direction];

@@ -1,4 +1,4 @@
-import { MIRRORS, PROFILES, type Direction, type Profile } from './types';
+import { selectedActions, MIRRORS, PROFILES, type Direction, type Profile } from './types';
 
 export interface CharacterBrief { description: string; style: string; props: string; notes: Partial<Record<Direction, string>> }
 export const angles: Record<Direction, string> = {
@@ -19,15 +19,16 @@ export const motions: Record<string, string> = {
   talk: 'A standing conversational gesture, moving hands naturally and returning to the initial pose.',
   celebrate: 'A brief joyful celebration, raising both arms and returning to the initial standing pose.',
   sit: 'One still seated pose, hands at rest. No furniture. Preserve the seated hip height.',
+  hurt: 'React to one hit: initial standing pose, brief recoil with a readable impact pose, then recovery. Keep the same facing. No attacker, gore or scene changes.',
   attack: 'One complete attack in the facing direction, followed by recovery to the starting pose.'
 };
-export function createPrompts(brief: CharacterBrief, profile: Profile, mirror = true) {
+export function createPrompts(brief: CharacterBrief, profile: Profile, mirror = true, actions?: string[]) {
   const directions = PROFILES[profile].directions.filter(d => !mirror || !MIRRORS[d]);
   const identity = `${brief.description.trim()} Style: ${brief.style.trim()}. Equipment: ${brief.props.trim() || 'none'}.`;
   return directions.map(direction => ({
     direction,
     still: `${identity} Create a single full-body character pose using the approved character reference to preserve identity, costume, proportions and equipment. Fixed orthographic isometric camera, no perspective change. ${angles[direction]} ${brief.notes[direction] || ''} Solid uniform magenta (#ff00ff) background, no floor, shadow or scenery. Leave clear padding around every limb and accessory.`,
-    clips: PROFILES[profile].actions.map(({ action, frames }) => ({
+    clips: selectedActions({ profile, actions }).map(({ action, frames }) => ({
       action,
       prompt: frames < 4
         ? `${identity} Use the approved character reference to create ${frames === 1 ? 'exactly one full-body still pose' : `exactly ${frames} full-body poses in equal-width cells in one horizontal row, ordered in time from left to right`}. ACTION: ${action}. ${motions[action]} ${angles[direction]} ${brief.notes[direction] || ''} Fixed orthographic isometric camera, consistent scale and alignment. Uniform magenta (#ff00ff) background. No furniture, floor, shadows, labels or borders. Leave padding around every limb.`

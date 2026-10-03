@@ -1,4 +1,4 @@
-import { MIRRORS, PROFILES, type BuildResult, type ClipInput, type Direction, type Frame, type GeneratorSettings, type LoopInfo, type RGB, type Sheet, type Sources } from './types';
+import { availableActions, selectedActions, MIRRORS, PROFILES, type BuildResult, type ClipInput, type Direction, type Frame, type GeneratorSettings, type LoopInfo, type RGB, type Sheet, type Sources } from './types';
 
 export function emptyFrame(width: number, height: number): Frame {
   return { width, height, data: new Uint8ClampedArray(width * height * 4) };
@@ -144,6 +144,7 @@ function paste(sheet: Frame, frame: Frame, x: number, y: number) {
 }
 export function validateSettings(s: GeneratorSettings) {
   if (!s || !Object.hasOwn(PROFILES, s.profile) || typeof s.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(s.id)) throw new Error('Usa un identificador corto con letras minúsculas, números y guiones.');
+  if (s.actions !== undefined && (!Array.isArray(s.actions) || !s.actions.length || new Set(s.actions).size !== s.actions.length || s.actions.some(a => !availableActions(s.profile).some(r => r.action === a)))) throw new Error('Selecciona al menos una acción válida, sin duplicados.');
   for (const n of [s.width, s.height]) if (!Number.isInteger(n) || n < 16 || n > 256) throw new Error('Las celdas deben medir entre 16 y 256 píxeles.');
   if (!Array.isArray(s.anchor) || s.anchor.length !== 2 || !s.anchor.every(Number.isInteger) || s.anchor[0] <= 0 || s.anchor[0] >= s.width || s.anchor[1] <= 0 || s.anchor[1] > s.height) throw new Error('El apoyo debe estar dentro de la celda.');
   if (!Number.isFinite(s.targetHeight) || s.targetHeight < 4 || s.targetHeight > s.anchor[1]) throw new Error('La altura del personaje debe caber encima del apoyo.');
@@ -161,14 +162,14 @@ function validateClip(input: ClipInput) {
   for (const frame of input.frames) if (!Number.isInteger(frame.width) || !Number.isInteger(frame.height) || frame.width < 1 || frame.height < 1 || frame.width > 512 || frame.height > 512 || frame.data.length !== frame.width * frame.height * 4) throw new Error('Fotograma RGBA no válido (máximo 512 × 512).');
   if (input.frames.some(f => f.width !== input.frames[0].width || f.height !== input.frames[0].height)) throw new Error('Todas las muestras de un clip deben tener la misma resolución y encuadre.');
 }
-export function missingSources(settings: GeneratorSettings, sources: Sources, actions = PROFILES[settings.profile].actions.map(a => a.action)): string[] {
+export function missingSources(settings: GeneratorSettings, sources: Sources, actions = selectedActions(settings).map(a => a.action)): string[] {
   return actions.flatMap(action => PROFILES[settings.profile].directions.filter(d => !sources[action]?.[d] && !(settings.mirror && MIRRORS[d] && sources[action]?.[MIRRORS[d]!])).map(d => `${action}/${d.toUpperCase()}`));
 }
-/** Passing actions creates a preview subset. Full exports must contain every profile action. */
+/** Passing actions creates a preview subset. Full exports contain the selected actions. */
 export function buildCharacter(settings: GeneratorSettings, sources: Sources, actions?: string[], previewDirections?: Direction[]): BuildResult {
   validateSettings(settings);
-  const profile = PROFILES[settings.profile], recipes = profile.actions.filter(a => !actions || actions.includes(a.action));
-  if (!recipes.length || actions?.some(a => !profile.actions.some(r => r.action === a))) throw new Error('Acciones desconocidas.');
+  const profile = PROFILES[settings.profile], recipes = selectedActions(settings).filter(a => !actions || actions.includes(a.action));
+  if (!recipes.length || actions?.some(a => !selectedActions(settings).some(r => r.action === a))) throw new Error('Acciones desconocidas.');
   const outputDirections = previewDirections ?? profile.directions;
   if (!outputDirections.length || new Set(outputDirections).size !== outputDirections.length || outputDirections.some(d => !profile.directions.includes(d))) throw new Error('Orientaciones de vista previa no válidas.');
   const sourceDirections = new Set(outputDirections);

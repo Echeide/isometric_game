@@ -15,6 +15,18 @@ export const PROFILES: Record<Profile, { label: string; directions: Direction[];
     actions: ['idle', 'walk', 'run', 'attack'].map(action => ({ action, frames: 8, fps: 8 }))
   }
 };
+export const ACTION_LABELS: Record<string, string> = { idle: 'Reposo', walk: 'Caminar', work: 'Trabajar', talk: 'Conversar', celebrate: 'Celebrar', sit: 'Sentarse', attack: 'Ataque', hurt: 'Daño', run: 'Correr' };
+/** Available actions are separate from each profile's legacy default selection. */
+export function availableActions(profile: Profile): Recipe[] {
+  const defaults = PROFILES[profile].actions;
+  const all = [...PROFILES.game.actions, { action: 'attack', frames: 8, fps: 10 }, { action: 'hurt', frames: 3, fps: 6 }, { action: 'run', frames: 8, fps: 12 }];
+  return all.map(recipe => defaults.find(r => r.action === recipe.action) ?? recipe);
+}
+export function selectedActions(settings: Pick<GeneratorSettings, 'profile' | 'actions'>): Recipe[] {
+  const names = settings.actions ?? PROFILES[settings.profile].actions.map(r => r.action);
+  const available = availableActions(settings.profile);
+  return names.flatMap(name => available.find(recipe => recipe.action === name) ?? []);
+}
 export const MIRRORS: Partial<Record<Direction, Direction>> = { sw: 'se', nw: 'ne', w: 'e' };
 export interface ClipInput {
   /** Final-resolution retouches; keep source frames intact for restoration. */
@@ -36,6 +48,8 @@ export type Sources = Record<string, Partial<Record<Direction, ClipInput>>>;
 export interface GeneratorSettings {
   id: string;
   profile: Profile;
+  /** Omitted in old projects: use the profile defaults. */
+  actions?: string[];
   width: number;
   height: number;
   anchor: [number, number];

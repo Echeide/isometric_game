@@ -1,5 +1,5 @@
 import { angles, motions, type CharacterBrief } from './prompts';
-import { PROFILES, type Direction, type Profile } from './types';
+import { availableActions, PROFILES, type Direction, type Profile } from './types';
 
 export interface ImageRequest {
   brief: CharacterBrief;
@@ -51,7 +51,7 @@ export interface ImageProvider {
 export const emptyArt = (): ArtProject => ({ references: {} });
 /** Direct images are only for short actions; longer cycles stay on the video path. */
 export function shortActionRecipe(profile: Profile, action: string) {
-  return PROFILES[profile].actions.find(recipe => recipe.action === action && recipe.frames >= 1 && recipe.frames < 4);
+  return availableActions(profile).find(recipe => recipe.action === action && recipe.frames >= 1 && recipe.frames < 4);
 }
 export const DIRECTIONS: Direction[] = ['ne', 'se', 'sw', 'nw', 'e', 'w', 's', 'n'];
 const MAX_REFERENCE_BYTES = 2_000_000;
@@ -73,7 +73,7 @@ export function pngUrl(bytes: Uint8Array) {
 }
 export function validateImageRequest(value: unknown): ImageRequest {
   const r = value as ImageRequest;
-  if (!r || !Object.hasOwn(PROFILES, r.profile) || !PROFILES[r.profile].directions.includes(r.direction) || !PROFILES[r.profile].actions.some(a => a.action === r.action) || !['reference', 'action'].includes(r.kind) || !['low', 'medium', 'high'].includes(r.quality)) throw new Error('Solicitud de imagen no válida.');
+  if (!r || !Object.hasOwn(PROFILES, r.profile) || !PROFILES[r.profile].directions.includes(r.direction) || !availableActions(r.profile).some(a => a.action === r.action) || !['reference', 'action'].includes(r.kind) || !['low', 'medium', 'high'].includes(r.quality)) throw new Error('Solicitud de imagen no válida.');
   if (r.kind === 'action' && (!shortActionRecipe(r.profile, r.action) || !r.reference || !r.referenceDirection || r.referenceKind)) throw new Error('Las acciones por imagen necesitan una referencia aprobada y entre 1 y 3 fotogramas.');
   if (!r.brief || !['description', 'style', 'props'].every(k => typeof r.brief[k as keyof CharacterBrief] === 'string' && (r.brief[k as keyof CharacterBrief] as string).length <= 2000) || (!r.brief.description.trim() && !r.reference) || !r.brief.style.trim()) throw new Error('Añade una descripción o una imagen de referencia y elige un estilo visual (hasta 2000 caracteres por campo).');
   if (!r.brief.notes || typeof r.brief.notes !== 'object' || Object.entries(r.brief.notes).some(([d, note]) => !DIRECTIONS.includes(d as Direction) || typeof note !== 'string' || note.length > 1000)) throw new Error('Notas por orientación no válidas.');

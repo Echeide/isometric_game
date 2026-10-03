@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { strToU8 } from 'fflate';
-  import { defaultSettings, MIRRORS, PROFILES, type BuildResult, type ClipInput, type PixelEditorProvider, type Direction, type Profile, type Sources } from './types';
+  import { ACTION_LABELS, availableActions, selectedActions, defaultSettings, MIRRORS, PROFILES, type BuildResult, type ClipInput, type PixelEditorProvider, type Direction, type Profile, type Sources } from './types';
   import { buildCharacter, missingSources } from './pipeline';
   import { createPrompts, type CharacterBrief } from './prompts';
   import { encodePNG, exportCharacter, importCharacterReference, loadProject, readImages, readSheet, readVideo, saveProject } from './browser';
@@ -29,17 +29,19 @@
   let aborter = $state<AbortController | undefined>();
   let destroyed = false;
   const profile = $derived(PROFILES[settings.profile]);
+  const actions = $derived(selectedActions(settings));
+  const actionOptions = $derived(availableActions(settings.profile));
   const active = $derived(sources[action]?.[direction]);
   const shortAction = $derived(shortActionRecipe(settings.profile, action));
   const mirrored = $derived(!active && settings.mirror && MIRRORS[direction] ? sources[action]?.[MIRRORS[direction]!] : undefined);
   const missing = $derived(missingSources(settings, sources));
-  const recipes = $derived(createPrompts(brief, settings.profile, false));
+  const recipes = $derived(createPrompts(brief, settings.profile, false, settings.actions));
   const prompt = $derived(recipes.find(r => r.direction === direction)!);
   const selectedSheet = $derived(result?.sheets.find(s => s.action === action));
   const tasks = $derived(workflowTasks(settings, sources, art, !!imageProvider));
   const nextTask = $derived(tasks[0]);
   const viewReady = $derived(!!(active || mirrored));
-  const fullResult = $derived(result && result.character.directions.length === profile.directions.length && profile.actions.every(a => result!.character.animations[a.action]));
+  const fullResult = $derived(result && result.character.directions.length === profile.directions.length && actions.every(a => result!.character.animations[a.action]));
 
   function clearResult() { Object.values(urls).forEach(URL.revokeObjectURL); urls = {}; result = null; }
   function clearDownload() { if (downloadLink) URL.revokeObjectURL(downloadLink.url); downloadLink = null; }
@@ -89,7 +91,15 @@
     });
     if (!destroyed) await process(false, true);
   }
-  function setProfile(value: Profile) { settings.profile = value; chooseView('idle', 'se'); changed(); }
+  function toggleAction(name: string, checked: boolean) {
+    const names = actions.map(r => r.action);
+    const next = checked ? [...names, name] : names.filter(a => a !== name);
+    if (!next.length) return;
+    settings.actions = next;
+    if (!next.includes(action)) chooseView(next[0], direction);
+    changed();
+  }
+  function setProfile(value: Profile) { settings.profile = value; settings.actions = undefined; chooseView('idle', 'se'); changed(); }
   function newCharacter() {
     changed(); settings = defaultSettings(); sources = {}; art = emptyArt(); assistantRevision++;
     brief = { description: '', style: 'Pixel art, readable silhouette, soft earthy palette, large head, compact body', props: '', notes: {} };
@@ -183,7 +193,7 @@
     await run('Abriendo proyecto…', async () => {
       const project = await loadProject(file);
       if (destroyed) return;
-      clearResult(); clearDownload(); settings = project.settings; brief = project.brief; sources = project.sources; art = project.art; assistantRevision++; chooseView('idle', 'se'); notice = 'Proyecto recuperado con sus imágenes fuente y referencias.';
+      clearResult(); clearDownload(); settings = project.settings; brief = project.brief; sources = project.sources; art = project.art; assistantRevision++; chooseView(selectedActions(settings)[0].action, 'se'); notice = 'Proyecto recuperado con sus imágenes fuente y referencias.';
     });
   }
   $effect(() => {
@@ -215,7 +225,7 @@
   {#if busy && aborter}<button onclick={() => aborter?.abort()}>Cancelar importación</button>{/if}
   <section class="guide" aria-label="Flujo del personaje">
     <div><span class="step">REFERENCIA → IMAGEN O VÍDEO → RETOQUE → EXPORTACIÓN</span><h2>{nextTask ? 'Tu siguiente paso' : 'Personaje revisado'}</h2>
-    <p>{nextTask ? `${nextTask.step === 'reference' ? 'Crear la referencia' : nextTask.step === 'import' ? shortActionRecipe(settings.profile, nextTask.action) ? 'Crear o importar la imagen' : 'Importar la animación' : 'Revisar y retocar el ciclo'} ${nextTask.action} · ${nextTask.direction.toUpperCase()}` : 'Todos los ciclos están aprobados. Ya puedes construir las hojas finales.'}</p>
+    <p>{nextTask ? `${nextTask.step === 'reference' ? 'Crear la referencia' : nextTask.step === 'import' ? shortActionRecipe(settings.profile, nextTask.action) ? 'Crear o importar la imagen' : 'Importar la animación' : 'Revisar y retocar el ciclo'} ${nextTask.action} · ${nextTask.direction.toUpperCase()}` : 'Todos los ciclos seleccionados están aprobados. Ya puedes construir las hojas finales.'}</p>
     <p class="hint">Revisa un ciclo cada vez. Las vistas por reflejo se completan automáticamente. {tasks.length} pasos de ciclo pendientes.</p></div>
     <button class="primary" disabled={!!busy} onclick={continueWorkflow}>{nextTask ? 'Ir al siguiente paso' : 'Construir hojas finales'}</button>
   </section>
@@ -227,7 +237,13 @@
         <label>Formato de salida<select value={settings.profile} onchange={e => setProfile(e.currentTarget.value as Profile)}>{#each Object.entries(PROFILES) as [id, p]}<option value={id}>{p.label}</option>{/each}</select></label>
         {#if settings.profile === 'iso-eight'}<p class="notice">Este perfil exporta ocho orientaciones y run/attack. El motor actual del juego requiere el perfil de cuatro direcciones.</p>{/if}
         <div class="inspiration">
-          <h3>Foto o imagen de referencia</h3>
+          <details class="action-selection"><summary>Acciones del personaje · {actions.length} seleccionadas</summary>
+          <p class="hint">Marca las acciones que necesita este personaje. Solo tendrás que completar esas acciones para construir y exportar sus hojas.</p>
+          <div class="action-checks">{#each actionOptions as recipe}<label class="check"><input type="checkbox" checked={actions.some(a => a.action === recipe.action)} disabled={actions.length === 1 && actions[0].action === recipe.action} onchange={e => toggleAction(recipe.action, e.currentTarget.checked)}/><span>{ACTION_LABELS[recipe.action]} <small>({recipe.action}) · {recipe.frames} fotogramas</small></span></label>{/each}</div>
+          <p class="hint">Las fuentes de acciones desmarcadas se conservan en el proyecto. Daño y sentarse pueden crearse con ChatGPT; las demás usan vídeo o importación manual.</p>
+          <p class="hint">El jugador del juego actual necesita las seis acciones básicas. Ataque, daño y correr se exportan para su integración posterior en el juego.</p>
+        </details>
+        <h3>Foto o imagen de referencia</h3>
           <p class="hint">Parte de una foto, un dibujo o un personaje de referencia. Una imagen de cuerpo entero ayuda a definir ropa y accesorios.</p>
           <label class="button">{art.inspiration ? 'Cambiar imagen de referencia' : 'Subir foto o referencia'}<input type="file" accept="image/png,image/jpeg,image/webp" onchange={importInspiration}/></label>
           {#if art.inspiration}<img src={art.inspiration.image} alt="Foto o referente del personaje"/><p class="hint">{art.inspiration.name}</p><button onclick={() => { art = { ...art, inspiration: undefined }; assistantRevision++; clearDownload(); }}>Quitar foto de referencia</button>{/if}
@@ -239,7 +255,7 @@
         <label>Accesorios y lado del cuerpo<textarea rows="2" bind:value={brief.props} placeholder="Mochila azul, herramienta en la mano derecha…"></textarea></label>
         <label class="check"><input type="checkbox" bind:checked={settings.mirror} onchange={changed}/> Completar SW, NW y W con reflejos</label>
         <p class="hint">Para diseños asimétricos, desactiva los reflejos o importa una vista propia. La vista importada tiene prioridad.</p>
-        <button onclick={() => offerDownload(strToU8(JSON.stringify({ brief: $state.snapshot(brief), recipes: createPrompts($state.snapshot(brief), settings.profile, settings.mirror) }, null, 2)), `${settings.id}-prompts.json`, 'application/json')}>Descargar todos los prompts</button>
+        <button onclick={() => offerDownload(strToU8(JSON.stringify({ brief: $state.snapshot(brief), recipes: createPrompts($state.snapshot(brief), settings.profile, settings.mirror, settings.actions) }, null, 2)), `${settings.id}-prompts.json`, 'application/json')}>Descargar todos los prompts</button>
       </section>
       <section>
         <span class="step">02 · PROCESAMIENTO</span><h2>Cuadrícula y acabado</h2>
@@ -257,7 +273,7 @@
     <div class="main">
       <section id="character-cycle">
         <div class="section-heading"><div><span class="step">03 · FUENTES</span><h2>Una acción, varias vistas</h2></div>{#if onexample}<button onclick={() => run('Cargando ejemplo…', async () => { const sample = await onexample!(); if (destroyed) return; clearResult(); clearDownload(); art = emptyArt(); assistantRevision++; settings = defaultSettings(); settings.id = 'ejemplo-grey'; settings.baseUrl = '/pixelart/characters/ejemplo-grey'; settings.background = null; settings.outline = false; sources = sample; action = 'idle'; direction = 'se'; brief = { description: 'Personaje Grey de ejemplo, ya incluido en el juego', style: 'Pixel art', props: '', notes: {} }; notice = 'Ejemplo cargado desde los recursos existentes del juego. No se ha generado arte nuevo.'; })}>Cargar ejemplo del juego</button>{/if}</div>
-        <div class="actions" aria-label="Acción">{#each profile.actions as recipe}<button class:selected={action === recipe.action} aria-pressed={action === recipe.action} onclick={() => chooseView(recipe.action, direction)}>{recipe.action}<small>{recipe.frames} frames</small></button>{/each}</div>
+        <div class="actions" aria-label="Acción">{#each actions as recipe}<button class:selected={action === recipe.action} aria-pressed={action === recipe.action} onclick={() => chooseView(recipe.action, direction)}>{recipe.action}<small>{recipe.frames} frames</small></button>{/each}</div>
         <div class="facings" aria-label="Orientación">{#each profile.directions as d}{@const own = sources[action]?.[d]}{@const reflected = !own && settings.mirror && MIRRORS[d] && sources[action]?.[MIRRORS[d]!]}<button class:selected={direction === d} aria-pressed={direction === d} onclick={() => chooseView(action, d)}>{d.toUpperCase()}<small>{own?.reviewed ? 'Aprobada' : own ? 'Por revisar' : reflected ? 'Reflejo' : 'Pendiente'}</small></button>{/each}</div>
         <div class="cycle-review">
           <h3>{action} · {orientationLabels[direction]}</h3>
@@ -299,6 +315,7 @@
 
 <style>
   .inspiration{border:1px dashed #bdcbb0;border-radius:8px;padding:12px;margin:16px 0}.inspiration h3{font-size:13px;margin:0 0 8px}.inspiration img{display:block;max-width:100%;max-height:220px;object-fit:contain;margin:12px auto;border-radius:6px}
+  .action-selection{border-block:1px solid #dce3d4;padding:14px 0;margin:14px 0}.action-checks{display:grid;gap:5px}.action-checks small{display:block;color:#687561;font-size:10px}
   .guide{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#e8efdf}.guide h2{margin-bottom:8px}.cycle-review{border:1px solid #c4d1b7;border-radius:8px;padding:16px;margin:18px 0}.cycle-review h3{margin-top:0}.manual-import,.source-options{margin:18px 0}@media(max-width:600px){.guide{align-items:stretch;flex-direction:column}}
   .style-options{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 16px}.style-options button{font-size:10px;padding:6px 8px}
   .ready-file{position:sticky;top:8px;z-index:2;background:#e1eacd;border:1px solid #698849;padding:14px;border-radius:8px;overflow-wrap:anywhere}.ready-file a{color:#304535;font-weight:600;text-decoration:underline}
