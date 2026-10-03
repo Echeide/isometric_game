@@ -1,4 +1,4 @@
-import { availableActions, selectedActions, MIRRORS, PROFILES, type BuildResult, type ClipInput, type Direction, type Frame, type GeneratorSettings, type LoopInfo, type RGB, type Sheet, type Sources } from './types';
+import { availableActions, selectedActions, validateActionOptions, MIRRORS, PROFILES, type BuildResult, type ClipInput, type Direction, type Frame, type GeneratorSettings, type LoopInfo, type RGB, type Sheet, type Sources } from './types';
 
 export function emptyFrame(width: number, height: number): Frame {
   return { width, height, data: new Uint8ClampedArray(width * height * 4) };
@@ -62,6 +62,13 @@ export function selectLoop(frames: Frame[], sourceFps: number, count: number, ra
   }
   const indices = Array.from({ length: count }, (_, i) => start + Math.min(end - start - 1, Math.floor(i * (end - start) / count)));
   return { start, end, indices, score };
+}
+/** A one-shot keeps both endpoints; it must never search for a repeating seam. */
+export function selectSequence(frames: Frame[], sourceFps: number, count: number, range?: [number, number]) {
+  if (!frames.length || !Number.isFinite(sourceFps) || sourceFps <= 0 || !Number.isInteger(count) || count < 1) throw new Error('Secuencia no válida.');
+  const [start,end] = range ?? [0,frames.length];
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > frames.length || end <= start) throw new Error('El intervalo manual debe estar dentro del clip y contener al menos un fotograma.');
+  return {start,end,score:0,indices:Array.from({length:count},(_,i)=>start+(count===1 ? 0 : Math.round(i*(end-start-1)/(count-1))))};
 }
 function normalize(frame: Frame, settings: GeneratorSettings, scale: number, footX: number, footY: number, offset: [number, number] = [0, 0]): { frame: Frame; clipped: boolean } {
   const output = emptyFrame(settings.width, settings.height), box = bounds(frame)!;
@@ -145,6 +152,14 @@ function paste(sheet: Frame, frame: Frame, x: number, y: number) {
 export function validateSettings(s: GeneratorSettings) {
   if (!s || !Object.hasOwn(PROFILES, s.profile) || typeof s.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(s.id)) throw new Error('Usa un identificador corto con letras minúsculas, números y guiones.');
   if (s.actions !== undefined && (!Array.isArray(s.actions) || !s.actions.length || new Set(s.actions).size !== s.actions.length || s.actions.some(a => !availableActions(s.profile).some(r => r.action === a)))) throw new Error('Selecciona al menos una acción válida, sin duplicados.');
+  if (s.exportFormat !== undefined && !['game','generic'].includes(s.exportFormat)) throw new Error('Formato de exportación no válido.');
+  if (s.actionOptions !== undefined) {
+    if (!s.actionOptions || typeof s.actionOptions !== 'object' || Array.isArray(s.actionOptions)) throw new Error('Ajustes de acciones no válidos.');
+    for (const [action,options] of Object.entries(s.actionOptions)) {
+      if (!availableActions(s.profile).some(a=>a.action===action)) throw new Error('Ajustes de acción desconocida.');
+      validateActionOptions(options);
+    }
+  }
   for (const n of [s.width, s.height]) if (!Number.isInteger(n) || n < 16 || n > 256) throw new Error('Las celdas deben medir entre 16 y 256 píxeles.');
   if (!Array.isArray(s.anchor) || s.anchor.length !== 2 || !s.anchor.every(Number.isInteger) || s.anchor[0] <= 0 || s.anchor[0] >= s.width || s.anchor[1] <= 0 || s.anchor[1] > s.height) throw new Error('El apoyo debe estar dentro de la celda.');
   if (!Number.isFinite(s.targetHeight) || s.targetHeight < 4 || s.targetHeight > s.anchor[1]) throw new Error('La altura del personaje debe caber encima del apoyo.');
@@ -189,25 +204,30 @@ export function buildCharacter(settings: GeneratorSettings, sources: Sources, ac
       if (!input || !sourceDirections.has(direction)) continue;
       const frames = input.frames.map(f => removeBackground(f, settings.background, settings.tolerance));
       if (frames.some(f => !bounds(f))) throw new Error(`${recipe.action}/${direction}: algún fotograma queda vacío; ajusta el fondo o recorta el clip.`);
-      const loop = selectLoop(frames, input.sourceFps, recipe.frames, input.range);
+      const loop = (recipe.playback === 'once' ? selectSequence : selectLoop)(frames, input.sourceFps, recipe.frames, input.range);
       const chosen = loop.indices.map(i => frames[i]), boxes = chosen.map(f => bounds(f)!);
-      const referenceInput = ['work', 'sit', 'celebrate', 'attack', 'talk'].includes(recipe.action) ? sources.idle?.[direction] : undefined;
+      const referenceInput = (settings.profile === 'platformer' && recipe.action !== 'idle') || ['work', 'sit', 'celebrate', 'attack', 'talk'].includes(recipe.action) ? sources.idle?.[direction] : undefined;
       const referenceHeights = referenceInput?.frames.map(f => bounds(removeBackground(f, settings.background, settings.tolerance))?.height).filter((h): h is number => h !== undefined);
       const sameResolution = referenceInput && referenceInput.frames[0].height === input.frames[0].height && referenceInput.frames[0].width === input.frames[0].width;
-      const referenceHeight = sameResolution && referenceHeights?.length ? median(referenceHeights) : median(boxes.map(b => b.height));
+      const referenceHeight = sameResolution && referenceHeights?.length ? median(referenceHeights) : recipe.preserveMotion ? boxes[0].height : median(boxes.map(b => b.height));
       if (['work', 'sit'].includes(recipe.action) && !(sameResolution && referenceHeights?.length)) warnings.push(`${recipe.action}/${direction}: sin idle con la misma resolución; comprueba la escala de la pose sentada.`);
+      if (recipe.preserveMotion && !sameResolution) warnings.push(`${recipe.action}/${direction}: sin idle del mismo encuadre, se usa la primera muestra como apoyo y escala. Revisa la posición de la última pose.`);
       const scale = settings.targetHeight / referenceHeight * (input.scaleBias ?? 1);
-      const footX = median(boxes.map(b => b.center)), footY = median(boxes.map(b => b.bottom + 1));
+      const referenceBoxes = sameResolution ? referenceInput!.frames.map(f=>bounds(removeBackground(f,settings.background,settings.tolerance))).filter((b): b is NonNullable<ReturnType<typeof bounds>> => !!b) : [];
+      const baseline = recipe.preserveMotion ? (referenceBoxes.length ? referenceBoxes : [boxes[0]]) : boxes;
+      const footX = median(baseline.map(b => b.center)), footY = median(baseline.map(b => b.bottom + 1));
+      const stabilize = settings.stabilize && !recipe.preserveMotion;
+      if (settings.stabilize && recipe.preserveMotion) warnings.push(`${recipe.action}/${direction}: se conserva el desplazamiento de la acción; no se fija cada fotograma por los pies.`);
       let clipped = false;
       const normalized = chosen.map((f, i) => {
-        const out = normalize(f, settings, scale, settings.stabilize ? boxes[i].center : footX, settings.stabilize ? boxes[i].bottom + 1 : footY, input.offset);
+        const out = normalize(f, settings, scale, stabilize ? boxes[i].center : footX, stabilize ? boxes[i].bottom + 1 : footY, input.offset);
         clipped ||= out.clipped; return out.frame;
       });
       if (clipped) warnings.push(`${recipe.action}/${direction}: la silueta toca o sale de la celda. Reduce la altura o amplía la celda antes de usarla.`);
       if (settings.stabilize && ['run', 'celebrate'].includes(recipe.action)) warnings.push(`${recipe.action}/${direction}: estabilizar cada fotograma elimina desplazamientos verticales y saltos.`);
       if (new Set(loop.indices).size < recipe.frames && recipe.frames > 1) warnings.push(`${recipe.action}/${direction}: hay muestras repetidas; importa un ciclo con más fotogramas.`);
-      if (!input.range && loop.score > .75 && input.frames.length > 2) warnings.push(`${recipe.action}/${direction}: cierre automático poco claro; revisa o selecciona un intervalo manual.`);
-      const rawFps = input.playbackFps ?? (input.frames.length === 1 ? recipe.fps : recipe.frames * input.sourceFps / (loop.end - loop.start));
+      if (recipe.playback !== 'once' && !input.range && loop.score > .75 && input.frames.length > 2) warnings.push(`${recipe.action}/${direction}: cierre automático poco claro; revisa o selecciona un intervalo manual.`);
+      const rawFps = input.playbackFps ?? settings.actionOptions?.[recipe.action]?.fps ?? (settings.profile === 'platformer' ? recipe.fps : undefined) ?? (input.frames.length === 1 ? recipe.fps : recipe.frames * input.sourceFps / (loop.end - loop.start));
       const fps = Math.round(Math.max(1, Math.min(30, rawFps)) * 100) / 100;
       if (Math.abs(rawFps - fps) > .1) warnings.push(`${recipe.action}/${direction}: velocidad limitada a ${fps} fps.`);
       prepared.push({ action: recipe.action, direction, frames: normalized, loop: { ...loop, fps, sourceFps: input.sourceFps, sourceName: input.name, scale, scaleBias: input.scaleBias ?? 1, offset: [...(input.offset ?? [0, 0])] } });
@@ -228,7 +248,7 @@ export function buildCharacter(settings: GeneratorSettings, sources: Sources, ac
     const color: RGB = [f.data[i], f.data[i + 1], f.data[i + 2]]; actualColors.set(color.join(','), color);
   }
   const sheets: Sheet[] = recipes.map(recipe => {
-    const sheet: Sheet = { action: recipe.action, image: emptyFrame(settings.width * recipe.frames, settings.height * outputDirections.length), frames: recipe.frames, directions: [...outputDirections], loops: {} };
+    const sheet: Sheet = { action: recipe.action, playback: recipe.playback ?? 'loop', image: emptyFrame(settings.width * recipe.frames, settings.height * outputDirections.length), frames: recipe.frames, directions: [...outputDirections], loops: {} };
     outputDirections.forEach((direction, row) => {
       const direct = prepared.find(p => p.action === recipe.action && p.direction === direction);
       const source = direct || prepared.find(p => p.action === recipe.action && p.direction === MIRRORS[direction]);

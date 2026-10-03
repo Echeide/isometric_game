@@ -4,27 +4,29 @@
   let { sheet, url, settings }: { sheet: Sheet; url: string; settings: GeneratorSettings } = $props();
   let playing = $state(false), elapsed = $state(0), frame = $state(0), speed = $state(1);
   const fps = $derived(sheet.loops[sheet.directions[0]]!.fps);
-  const currentFrame = $derived(playing ? Math.floor(elapsed * fps) % sheet.frames : frame);
+  const frameAt = (time:number, rate:number) => sheet.playback === 'once' ? Math.min(sheet.frames-1,Math.floor(time*rate)) : Math.floor(time*rate)%sheet.frames;
+  const currentFrame = $derived(playing ? frameAt(elapsed,fps) : frame);
   function seek(index: number) { playing = false; frame = index; elapsed = index / fps; }
   function toggle() {
     if (playing) seek(currentFrame);
-    else { elapsed = frame / fps; playing = true; }
+    else { if(sheet.playback === 'once' && frame === sheet.frames-1) frame=0; elapsed = frame / fps; playing = true; }
   }
   onMount(() => { playing = !matchMedia('(prefers-reduced-motion: reduce)').matches; });
   $effect(() => { sheet; elapsed = 0; frame = 0; });
   $effect(() => {
     if (!playing) return;
     let previous = performance.now();
-    const timer = setInterval(() => { const now = performance.now(); elapsed += (now - previous) / 1000 * speed; previous = now; }, 40);
+    const timer = setInterval(() => { const now = performance.now(); elapsed += (now - previous) / 1000 * speed; previous = now; if(sheet.playback === 'once' && sheet.directions.every(d=>elapsed*sheet.loops[d]!.fps>=sheet.frames)){frame=sheet.frames-1;playing=false;} }, 40);
     return () => clearInterval(timer);
   });
 </script>
+<p class="playback-note">{sheet.playback === 'once' ? 'Una vez · mantiene la última pose' : 'En bucle'}</p>
 <div class="controls"><button onclick={toggle}>{playing ? 'Pausar' : 'Reproducir'}</button><label>Fotograma <input type="range" min="0" max={sheet.frames - 1} value={currentFrame} oninput={e => seek(e.currentTarget.valueAsNumber)}/></label><span>{currentFrame + 1} / {sheet.frames}</span><label>Velocidad de revisión <select bind:value={speed}><option value={1}>Normal</option><option value={0.5}>Media velocidad</option></select></label></div>
 
 <div class="directions">
   {#each sheet.directions as direction, row}
     {@const loop = sheet.loops[direction]!}
-    {@const index = playing ? Math.floor(elapsed * loop.fps) % sheet.frames : frame}
+    {@const index = playing ? frameAt(elapsed,loop.fps) : frame}
     <div class="direction"><div class="stage" style:height={`${settings.height * 2}px`}>
       <div class="sprite" style:width={`${settings.width}px`} style:height={`${settings.height}px`} style:background-image={`url("${url}")`} style:background-position={`${-index * settings.width}px ${-row * settings.height}px`}>
         <span class="pivot" style:left={`${settings.anchor[0]}px`} style:top={`${settings.anchor[1]}px`}></span>

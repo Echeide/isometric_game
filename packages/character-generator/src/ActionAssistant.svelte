@@ -2,24 +2,24 @@
   import { onDestroy, onMount } from 'svelte';
   import { orientationLabels, selectImageReference, shortActionRecipe, type ArtProject, type ImageProvider, type ImageRequest, type ImageResult } from './generation';
   import type { CharacterBrief } from './prompts';
-  import type { Direction, Profile } from './types';
+  import type { Direction, Profile, ActionOptions } from './types';
 
-  let { provider, art, brief, profile, action, direction, hasSource, onaccept, onbusy, onerror }:
-    { provider: ImageProvider; art: ArtProject; brief: CharacterBrief; profile: Profile; action: string; direction: Direction; hasSource: boolean;
+  let { provider, art, brief, profile, action, direction, options, hasSource, onaccept, onbusy, onerror }:
+    { provider: ImageProvider; art: ArtProject; brief: CharacterBrief; profile: Profile; options?: ActionOptions; action: string; direction: Direction; hasSource: boolean;
       onaccept: (result: ImageResult, request: ImageRequest) => Promise<boolean>; onbusy: (label: string) => void; onerror: (message: string) => void } = $props();
   let available = $state(false), generating = $state(false), accepting = $state(false);
   let statusMessage = $state('Comprobando configuración…'), quality = $state<'low' | 'medium' | 'high'>('medium');
   let candidate = $state.raw<{ result: ImageResult; request: ImageRequest } | null>(null);
   let alive = true, aborter: AbortController | undefined;
   const reference = $derived(selectImageReference(art, direction));
-  const recipe = $derived(shortActionRecipe(profile, action));
+  const recipe = $derived(shortActionRecipe(profile, action, options));
   async function check() {
     try { const status = await provider.status(); if (alive) { available = status.available; statusMessage = status.message || ''; } }
     catch { if (alive) { available = false; statusMessage = 'No se pudo comprobar OpenAI. Puedes importar imágenes manualmente.'; } }
   }
   async function generate() {
     if (!available || !reference || !recipe || generating || accepting) return;
-    const request: ImageRequest = { kind: 'action', profile, action, direction, quality, brief: structuredClone($state.snapshot(brief)), reference: reference.asset.image, referenceDirection: reference.direction };
+    const request: ImageRequest = { kind: 'action', profile, action, direction, quality, recipe: options ? structuredClone($state.snapshot(options)) : undefined, brief: structuredClone($state.snapshot(brief)), reference: reference.asset.image, referenceDirection: reference.direction };
     generating = true; aborter = new AbortController(); onerror(''); onbusy(`Generando ${action}/${direction.toUpperCase()} con OpenAI…`);
     try { const result = await provider.generate(request, aborter.signal); if (alive) candidate = { result, request }; }
     catch (e) { if (alive) onerror(e instanceof Error ? e.message : 'No se pudo generar la acción.'); }

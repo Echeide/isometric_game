@@ -54,9 +54,10 @@ describe('image generation recipes', () => {
     expect(transport).not.toHaveBeenCalled();
     expect(() => validateImageRequest({ ...request(), reference: image, referenceDirection: 'invalid' })).toThrow();
   });
-  it('routes actions with fewer than four frames to images, leaving four-frame and longer cycles on video', () => {
+  it('supports images through four frames and keeps longer cycles on video', () => {
     expect(shortActionRecipe('game', 'sit')?.frames).toBe(1);
-    for (const action of ['idle', 'work', 'talk', 'walk', 'celebrate']) expect(shortActionRecipe('game', action)).toBeUndefined();
+    for (const action of ['idle', 'work', 'talk']) expect(shortActionRecipe('game', action)?.frames).toBe(4);
+    for (const action of ['walk', 'celebrate', 'attack', 'run']) expect(shortActionRecipe('game', action)).toBeUndefined();
     for (const { action } of PROFILES['iso-eight'].actions) expect(shortActionRecipe('iso-eight', action)).toBeUndefined();
     const plan = imagePlan({ ...request(), kind: 'action', action: 'sit', reference: image, referenceDirection: 'se', direction: 'ne' });
     expect([plan.frames, plan.columns, plan.rows]).toEqual([1, 1, 1]);
@@ -64,10 +65,10 @@ describe('image generation recipes', () => {
     expect(plan.prompt).toContain('No furniture');
     expect(plan.prompt).toContain('TARGET ORIENTATION: NE');
   });
-  it('prepares two or three short frames as one evenly divided row when a recipe requests them', () => {
+  it('prepares two to four short frames as one evenly divided row when a recipe requests them', () => {
     const recipe = PROFILES.game.actions.find(a => a.action === 'sit')!, previous = recipe.frames;
     try {
-      for (const frames of [2, 3]) {
+      for (const frames of [2, 3, 4]) {
         recipe.frames = frames;
         const plan = imagePlan({ ...request(), kind: 'action', action: 'sit', reference: image, referenceDirection: 'se' });
         expect([plan.frames, plan.columns, plan.rows, plan.size]).toEqual([frames, frames, 1, '1536x1024']);
@@ -78,7 +79,7 @@ describe('image generation recipes', () => {
   it('rejects long action sheets or unapproved references before a paid request', async () => {
     const transport = vi.fn(async () => reply()), generate = createImageService(transport);
     const base = { ...request(), kind: 'action', action: 'sit', reference: image, referenceDirection: 'se' };
-    for (const override of [{ action: 'walk' }, { action: 'idle' }, { reference: undefined }, { referenceKind: 'inspiration' }]) {
+    for (const override of [{ action: 'walk' }, { action: 'celebrate' }, { reference: undefined }, { referenceKind: 'inspiration' }]) {
       await expect(generate({ ...base, ...override }, config)).rejects.toMatchObject({ status: 400 });
     }
     expect(transport).not.toHaveBeenCalled();
@@ -95,6 +96,14 @@ describe('private OpenAI image service', () => {
     expect((options.body as FormData).get('n')).toBe('1');
     expect((options.body as FormData).get('prompt')).toContain('One still seated pose');
     expect(result).toMatchObject({ frames: 1, columns: 1, rows: 1 });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it('creates a four-frame idle sheet through one image edit with correct import metadata', async () => {
+    const transport = vi.fn(async () => reply());
+    const result = await createImageService(transport)({ ...request(), kind: 'action', action: 'idle', reference: image, referenceDirection: 'se' }, config);
+    expect(result).toMatchObject({ frames: 4, columns: 4, rows: 1 });
+    const [, options] = transport.mock.calls[0] as unknown as [string, RequestInit];
+    expect((options.body as FormData).get('prompt')).toContain('exactly 4 equal-width cells');
     expect(transport).toHaveBeenCalledTimes(1);
   });
   it('shows optional configuration without exposing credentials or making a request', async () => {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { strToU8 } from 'fflate';
-  import { ACTION_LABELS, availableActions, selectedActions, defaultSettings, MIRRORS, PROFILES, type BuildResult, type ClipInput, type PixelEditorProvider, type Direction, type Profile, type Sources } from './types';
+  import { ACTION_LABELS, availableActions, actionRecipe, validateActionOptions, type ActionOptions, type ExportFormat, selectedActions, defaultSettings, MIRRORS, PROFILES, type BuildResult, type ClipInput, type PixelEditorProvider, type Direction, type Profile, type Sources } from './types';
   import { buildCharacter, missingSources } from './pipeline';
   import { createPrompts, type CharacterBrief } from './prompts';
   import { encodePNG, exportCharacter, importCharacterReference, loadProject, readImages, readSheet, readVideo, saveProject } from './browser';
@@ -23,6 +23,7 @@
   let urls = $state<Record<string, string>>({}), rawUrl = $state('');
   let downloadLink = $state<{ url: string; name: string } | null>(null);
   let action = $state('idle'), direction = $state<Direction>('se'), rawFrame = $state(0);
+  let generationMethod = $state<'image' | 'video'>('image');
   let mode = $state('video'), sourceFps = $state(24), seconds = $state(5), start = $state(0);
   let columns = $state(8), rows = $state(4), sourceRow = $state(1);
   let busy = $state(''), error = $state(''), notice = $state(''), progress = $state(0);
@@ -30,13 +31,20 @@
   let destroyed = false;
   const profile = $derived(PROFILES[settings.profile]);
   const actions = $derived(selectedActions(settings));
-  const actionOptions = $derived(availableActions(settings.profile));
+  const actionChoices = $derived(availableActions(settings.profile).map(r=>actionRecipe(settings.profile,r.action,settings.actionOptions?.[r.action])!));
+  const activeRecipe = $derived(actionRecipe(settings.profile,action,settings.actionOptions?.[action])!);
+  const hasProfileAssets = $derived(Object.values(sources).some(d=>Object.values(d).some(Boolean)) || Object.keys(art.references).length>0);
+  const exportFormat = $derived(settings.exportFormat ?? (settings.profile === 'game' ? 'game' : 'generic'));
+  const canExportGame = $derived(settings.profile === 'game' && actions.every(r=>r.playback !== 'once'));
   const active = $derived(sources[action]?.[direction]);
-  const shortAction = $derived(shortActionRecipe(settings.profile, action));
+  const shortAction = $derived(shortActionRecipe(settings.profile, action, settings.actionOptions?.[action]));
+  const useImage = $derived(!!shortAction && !!imageProvider && (generationMethod === 'image' || !videoProvider));
   const mirrored = $derived(!active && settings.mirror && MIRRORS[direction] ? sources[action]?.[MIRRORS[direction]!] : undefined);
   const missing = $derived(missingSources(settings, sources));
-  const recipes = $derived(createPrompts(brief, settings.profile, false, settings.actions));
+  const recipes = $derived(createPrompts(brief, settings.profile, false, settings.actions, 'auto', settings.actionOptions));
   const prompt = $derived(recipes.find(r => r.direction === direction)!);
+  const videoPrompt = $derived(createPrompts(brief, settings.profile, false, settings.actions, 'video', settings.actionOptions).find(r => r.direction === direction)!.clips.find(c => c.action === action)!);
+  const actionPrompt = $derived(useImage ? prompt.clips.find(c => c.action === action)! : videoPrompt);
   const selectedSheet = $derived(result?.sheets.find(s => s.action === action));
   const tasks = $derived(workflowTasks(settings, sources, art, !!imageProvider));
   const nextTask = $derived(tasks[0]);
@@ -53,7 +61,7 @@
   }
   function changed() { clearResult(); clearDownload(); error = ''; notice = ''; }
   function chooseView(pose: string, facing: Direction) {
-    if (!!shortActionRecipe(settings.profile, pose) !== !!shortAction) mode = shortActionRecipe(settings.profile, pose) ? 'images' : 'video';
+    if (!!shortActionRecipe(settings.profile, pose, settings.actionOptions?.[pose]) !== !!shortAction) mode = shortActionRecipe(settings.profile, pose, settings.actionOptions?.[pose]) ? 'images' : 'video';
     action = pose; direction = facing; rawFrame = 0;
   }
   function continueWorkflow() {
@@ -61,7 +69,7 @@
     if (!task) { void process(true); return; }
     chooseView(task.action, task.direction);
     if (task.step === 'review') void process(false, true);
-    document.getElementById(task.step === 'import' && !shortActionRecipe(settings.profile, task.action) ? 'character-import' : 'character-cycle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById(task.step === 'import' && !shortActionRecipe(settings.profile, task.action, settings.actionOptions?.[task.action]) ? 'character-import' : 'character-cycle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function approveCycle() {
     if (!active) return;
@@ -99,7 +107,23 @@
     if (!next.includes(action)) chooseView(next[0], direction);
     changed();
   }
-  function setProfile(value: Profile) { settings.profile = value; settings.actions = undefined; chooseView('idle', 'se'); changed(); }
+  function setProfile(value: Profile) {
+    if (hasProfileAssets) return;
+    settings.profile = value; settings.actions = undefined; settings.actionOptions = undefined;
+    settings.exportFormat = value === 'game' ? 'game' : 'generic';
+    assistantRevision++; chooseView('idle', PROFILES[value].initialDirection); changed();
+  }
+  function hasEdits(name:string) { return Object.values(sources[name] ?? {}).some(c=>!!c?.edits); }
+  function configureAction(name:string, update:ActionOptions) {
+    const current=actionRecipe(settings.profile,name,settings.actionOptions?.[name])!;
+    if (update.frames !== undefined && hasEdits(name)) return;
+    const options={frames:current.frames,fps:current.fps,playback:current.playback,...update};
+    try { validateActionOptions(options); } catch(e) { error=(e as Error).message; return; }
+    settings.actionOptions={...settings.actionOptions,[name]:options};
+    if(options.playback==='once') settings.exportFormat='generic';
+    sources={...sources,[name]:Object.fromEntries(Object.entries(sources[name] ?? {}).map(([d,c])=>[d,c ? {...c,reviewed:false} : c]))};
+    assistantRevision++; changed();
+  }
   function newCharacter() {
     changed(); settings = defaultSettings(); sources = {}; art = emptyArt(); assistantRevision++;
     brief = { description: '', style: 'Pixel art, readable silhouette, soft earthy palette, large head, compact body', props: '', notes: {} };
@@ -152,7 +176,7 @@
     return imported;
   }
   async function importGeneratedAction(image: ImageResult, request: ImageRequest) {
-    const recipe = shortActionRecipe(request.profile, request.action);
+    const recipe = shortActionRecipe(request.profile, request.action, request.recipe);
     if (busy || request.kind !== 'action' || !recipe || request.profile !== settings.profile || request.action !== action || request.direction !== direction) return false;
     let imported = false;
     await run('Preparando los fotogramas de OpenAI…', async () => {
@@ -193,7 +217,7 @@
     await run('Abriendo proyecto…', async () => {
       const project = await loadProject(file);
       if (destroyed) return;
-      clearResult(); clearDownload(); settings = project.settings; brief = project.brief; sources = project.sources; art = project.art; assistantRevision++; chooseView(selectedActions(settings)[0].action, 'se'); notice = 'Proyecto recuperado con sus imágenes fuente y referencias.';
+      clearResult(); clearDownload(); settings = project.settings; brief = project.brief; sources = project.sources; art = project.art; assistantRevision++; chooseView(selectedActions(settings)[0].action, PROFILES[settings.profile].initialDirection); notice = 'Proyecto recuperado con sus imágenes fuente y referencias.';
     });
   }
   $effect(() => {
@@ -225,7 +249,7 @@
   {#if busy && aborter}<button onclick={() => aborter?.abort()}>Cancelar importación</button>{/if}
   <section class="guide" aria-label="Flujo del personaje">
     <div><span class="step">REFERENCIA → IMAGEN O VÍDEO → RETOQUE → EXPORTACIÓN</span><h2>{nextTask ? 'Tu siguiente paso' : 'Personaje revisado'}</h2>
-    <p>{nextTask ? `${nextTask.step === 'reference' ? 'Crear la referencia' : nextTask.step === 'import' ? shortActionRecipe(settings.profile, nextTask.action) ? 'Crear o importar la imagen' : 'Importar la animación' : 'Revisar y retocar el ciclo'} ${nextTask.action} · ${nextTask.direction.toUpperCase()}` : 'Todos los ciclos seleccionados están aprobados. Ya puedes construir las hojas finales.'}</p>
+    <p>{nextTask ? `${nextTask.step === 'reference' ? 'Crear la referencia' : nextTask.step === 'import' ? shortActionRecipe(settings.profile, nextTask.action, settings.actionOptions?.[nextTask.action]) ? 'Crear o importar la imagen' : 'Importar la animación' : 'Revisar y retocar el ciclo'} ${nextTask.action} · ${nextTask.direction.toUpperCase()}` : 'Todos los ciclos seleccionados están aprobados. Ya puedes construir las hojas finales.'}</p>
     <p class="hint">Revisa un ciclo cada vez. Las vistas por reflejo se completan automáticamente. {tasks.length} pasos de ciclo pendientes.</p></div>
     <button class="primary" disabled={!!busy} onclick={continueWorkflow}>{nextTask ? 'Ir al siguiente paso' : 'Construir hojas finales'}</button>
   </section>
@@ -234,14 +258,22 @@
       <section>
         <span class="step">01 · PERSONAJE</span><h2>Define la referencia</h2>
         <label>Identificador<input value={settings.id} oninput={e => { settings.id = e.currentTarget.value; settings.baseUrl = `/pixelart/characters/${settings.id}`; changed(); }} placeholder="mi-personaje"/></label>
-        <label>Formato de salida<select value={settings.profile} onchange={e => setProfile(e.currentTarget.value as Profile)}>{#each Object.entries(PROFILES) as [id, p]}<option value={id}>{p.label}</option>{/each}</select></label>
-        {#if settings.profile === 'iso-eight'}<p class="notice">Este perfil exporta ocho orientaciones y run/attack. El motor actual del juego requiere el perfil de cuatro direcciones.</p>{/if}
+        <label>Tipo de juego<select disabled={hasProfileAssets} value={settings.profile} onchange={e => setProfile(e.currentTarget.value as Profile)}>{#each Object.entries(PROFILES) as [id, p]}<option value={id}>{p.label}</option>{/each}</select></label>
+        {#if hasProfileAssets}<p class="hint">El tipo de juego se elige antes de generar las vistas. Para otro tipo, guarda este proyecto y crea un personaje nuevo.</p>{/if}
+        {#if settings.profile !== 'game'}<p class="notice">{settings.profile === 'platformer' ? 'Cámara lateral: derecha e izquierda. Saltar, caer y morir conservan su desplazamiento vertical; deja margen en la celda para todo el movimiento.' : 'Cámara isométrica con ocho orientaciones.'} Exporta como hojas genéricas para integrarlas en otro juego.</p>{/if}
         <div class="inspiration">
           <details class="action-selection"><summary>Acciones del personaje · {actions.length} seleccionadas</summary>
           <p class="hint">Marca las acciones que necesita este personaje. Solo tendrás que completar esas acciones para construir y exportar sus hojas.</p>
-          <div class="action-checks">{#each actionOptions as recipe}<label class="check"><input type="checkbox" checked={actions.some(a => a.action === recipe.action)} disabled={actions.length === 1 && actions[0].action === recipe.action} onchange={e => toggleAction(recipe.action, e.currentTarget.checked)}/><span>{ACTION_LABELS[recipe.action]} <small>({recipe.action}) · {recipe.frames} fotogramas</small></span></label>{/each}</div>
-          <p class="hint">Las fuentes de acciones desmarcadas se conservan en el proyecto. Daño y sentarse pueden crearse con ChatGPT; las demás usan vídeo o importación manual.</p>
-          <p class="hint">El jugador del juego actual necesita las seis acciones básicas. Ataque, daño y correr se exportan para su integración posterior en el juego.</p>
+          <div class="action-checks">{#each actionChoices as recipe}<label class="check"><input type="checkbox" checked={actions.some(a => a.action === recipe.action)} disabled={actions.length === 1 && actions[0].action === recipe.action} onchange={e => toggleAction(recipe.action, e.currentTarget.checked)}/><span>{ACTION_LABELS[recipe.action]} <small>({recipe.action}) · {recipe.frames} fotogramas</small></span></label>
+          {#if actions.some(a=>a.action===recipe.action)}<details class="action-config"><summary>Ajustar {ACTION_LABELS[recipe.action]}</summary>
+            <div class="pair"><label>Fotogramas · {recipe.action}<input type="number" min="1" max="16" value={recipe.frames} disabled={hasEdits(recipe.action)} onchange={e=>configureAction(recipe.action,{frames:e.currentTarget.valueAsNumber})}/></label>
+            <label>FPS · {recipe.action}<input type="number" min="1" max="30" step="0.1" value={recipe.fps} onchange={e=>configureAction(recipe.action,{fps:e.currentTarget.valueAsNumber})}/></label></div>
+            <label>Reproducción · {recipe.action}<select value={recipe.playback ?? 'loop'} onchange={e=>configureAction(recipe.action,{playback:e.currentTarget.value as 'loop'|'once'})}><option value="loop">En bucle</option><option value="once">Una vez · mantener última pose</option></select></label>
+            <p class="hint">Un FPS ajustado en una vista concreta tiene prioridad sobre el de la acción.</p>
+            {#if hasEdits(recipe.action)}<p class="hint">La cantidad de fotogramas está bloqueada para conservar los retoques de Piskel. Restaura las fuentes retocadas de esta acción si necesitas cambiarla.</p>{/if}
+          </details>{/if}{/each}</div>
+          <p class="hint">Las fuentes de acciones desmarcadas se conservan en el proyecto. Las acciones de hasta 4 fotogramas admiten ChatGPT o Kling. Las demás usan vídeo. También puedes importar tus archivos.</p>
+          {#if settings.profile === 'game'}<p class="hint">El jugador del juego actual necesita las seis acciones básicas. Las acciones adicionales se exportan para su integración posterior.</p>{/if}
         </details>
         <h3>Foto o imagen de referencia</h3>
           <p class="hint">Parte de una foto, un dibujo o un personaje de referencia. Una imagen de cuerpo entero ayuda a definir ropa y accesorios.</p>
@@ -251,11 +283,11 @@
         </div>
         <label>{art.inspiration ? 'Descripción o cambios (opcional)' : 'Descripción'}<textarea rows="3" bind:value={brief.description} placeholder={art.inspiration ? 'Qué mantener o cambiar: misma ropa, añadir una mochila…' : 'Exploradora con chaqueta verde, pelo corto y botas…'}></textarea></label>
         <label>Estilo visual<textarea rows="2" bind:value={brief.style}></textarea></label>
-        <div class="style-options"><button onclick={() => brief.style = 'Pixel art, crisp pixels, limited earthy palette, dark inner outline, large head, compact body'}>Píxel clásico</button><button onclick={() => brief.style = 'Soft illustrated game character, clean shapes, warm pastel palette, gentle shading, readable silhouette'}>Ilustrado suave</button><button onclick={() => brief.style = 'Isometric low-poly game character, faceted shapes, matte colors, consistent soft lighting'}>Low poly</button></div>
+        <div class="style-options"><button onclick={() => brief.style = 'Pixel art, crisp pixels, limited earthy palette, dark inner outline, large head, compact body'}>Píxel clásico</button><button onclick={() => brief.style = 'Soft illustrated game character, clean shapes, warm pastel palette, gentle shading, readable silhouette'}>Ilustrado suave</button><button onclick={() => brief.style = 'Low-poly game character, faceted shapes, matte colors, consistent soft lighting'}>Low poly</button></div>
         <label>Accesorios y lado del cuerpo<textarea rows="2" bind:value={brief.props} placeholder="Mochila azul, herramienta en la mano derecha…"></textarea></label>
-        <label class="check"><input type="checkbox" bind:checked={settings.mirror} onchange={changed}/> Completar SW, NW y W con reflejos</label>
+        <label class="check"><input type="checkbox" bind:checked={settings.mirror} onchange={changed}/> {settings.profile === 'platformer' ? 'Crear izquierda por reflejo de derecha' : 'Completar las vistas opuestas con reflejos'}</label>
         <p class="hint">Para diseños asimétricos, desactiva los reflejos o importa una vista propia. La vista importada tiene prioridad.</p>
-        <button onclick={() => offerDownload(strToU8(JSON.stringify({ brief: $state.snapshot(brief), recipes: createPrompts($state.snapshot(brief), settings.profile, settings.mirror, settings.actions) }, null, 2)), `${settings.id}-prompts.json`, 'application/json')}>Descargar todos los prompts</button>
+        <button onclick={() => offerDownload(strToU8(JSON.stringify({ brief: $state.snapshot(brief), recipes: createPrompts($state.snapshot(brief), settings.profile, settings.mirror, settings.actions, 'auto', settings.actionOptions) }, null, 2)), `${settings.id}-prompts.json`, 'application/json')}>Descargar todos los prompts</button>
       </section>
       <section>
         <span class="step">02 · PROCESAMIENTO</span><h2>Cuadrícula y acabado</h2>
@@ -266,13 +298,13 @@
         {#if settings.background}<label>Tolerancia de fondo · {settings.tolerance}<input type="range" min="0" max="255" bind:value={settings.tolerance} oninput={changed}/></label>{/if}
         <label class="check"><input type="checkbox" bind:checked={settings.outline} onchange={changed}/> Contorno interior de 1 píxel</label>
         <label class="check"><input type="checkbox" bind:checked={settings.stabilize} onchange={changed}/> Fijar el apoyo de cada fotograma</label>
-        <p class="hint">El apoyo se estima por la silueta. Fijarlo corrige desplazamientos, pero también elimina saltos. Usa fuentes con el mismo encuadre para conservar la escala de poses sentadas.</p>
+        <p class="hint">El apoyo se estima por la silueta. Saltar, caer y morir conservan el movimiento vertical aunque marques esta opción. En las demás acciones, fijar el apoyo corrige desplazamientos y elimina saltos. Usa fuentes con el mismo encuadre para conservar la escala entre poses.</p>
         <label>Carpeta pública de los PNG<input bind:value={settings.baseUrl} onchange={changed}/></label>
       </section>
     </div>
     <div class="main">
       <section id="character-cycle">
-        <div class="section-heading"><div><span class="step">03 · FUENTES</span><h2>Una acción, varias vistas</h2></div>{#if onexample}<button onclick={() => run('Cargando ejemplo…', async () => { const sample = await onexample!(); if (destroyed) return; clearResult(); clearDownload(); art = emptyArt(); assistantRevision++; settings = defaultSettings(); settings.id = 'ejemplo-grey'; settings.baseUrl = '/pixelart/characters/ejemplo-grey'; settings.background = null; settings.outline = false; sources = sample; action = 'idle'; direction = 'se'; brief = { description: 'Personaje Grey de ejemplo, ya incluido en el juego', style: 'Pixel art', props: '', notes: {} }; notice = 'Ejemplo cargado desde los recursos existentes del juego. No se ha generado arte nuevo.'; })}>Cargar ejemplo del juego</button>{/if}</div>
+        <div class="section-heading"><div><span class="step">03 · FUENTES</span><h2>Una acción, varias vistas</h2></div>{#if onexample && settings.profile === 'game'}<button onclick={() => run('Cargando ejemplo…', async () => { const sample = await onexample!(); if (destroyed) return; clearResult(); clearDownload(); art = emptyArt(); assistantRevision++; settings = defaultSettings(); settings.id = 'ejemplo-grey'; settings.baseUrl = '/pixelart/characters/ejemplo-grey'; settings.background = null; settings.outline = false; sources = sample; action = 'idle'; direction = 'se'; brief = { description: 'Personaje Grey de ejemplo, ya incluido en el juego', style: 'Pixel art', props: '', notes: {} }; notice = 'Ejemplo cargado desde los recursos existentes del juego. No se ha generado arte nuevo.'; })}>Cargar ejemplo del juego</button>{/if}</div>
         <div class="actions" aria-label="Acción">{#each actions as recipe}<button class:selected={action === recipe.action} aria-pressed={action === recipe.action} onclick={() => chooseView(recipe.action, direction)}>{recipe.action}<small>{recipe.frames} frames</small></button>{/each}</div>
         <div class="facings" aria-label="Orientación">{#each profile.directions as d}{@const own = sources[action]?.[d]}{@const reflected = !own && settings.mirror && MIRRORS[d] && sources[action]?.[MIRRORS[d]!]}<button class:selected={direction === d} aria-pressed={direction === d} onclick={() => chooseView(action, d)}>{d.toUpperCase()}<small>{own?.reviewed ? 'Aprobada' : own ? 'Por revisar' : reflected ? 'Reflejo' : 'Pendiente'}</small></button>{/each}</div>
         <div class="cycle-review">
@@ -284,29 +316,31 @@
               {#if active}<button class="primary" onclick={approveCycle}>Aprobar ciclo y continuar</button>{/if}
             {/if}
             {#if active?.edits}<p class="hint">Este ciclo tiene retoques finales: conserva sus colores y posición. Los reflejos usan también esos retoques.</p><button onclick={() => { if (active) setSource({ ...active, edits: undefined }); }}>Restaurar desde la fuente original</button>{/if}
-          {:else}<p class="hint">{shortAction ? 'Genera esta acción con ChatGPT o importa una imagen. Podrás revisarla y retocarla en Piskel.' : 'Importa el vídeo de esta vista desde Kling u otra herramienta. En cuanto esté listo podrás reproducirla y retocarla aquí, sin esperar a las otras orientaciones.'}</p>{/if}
+          {:else}<p class="hint">{shortAction ? 'Elige ChatGPT o Kling para crear este ciclo, o importa tus archivos. Después podrás retocarlo en Piskel.' : 'Importa el vídeo de esta vista desde Kling u otra herramienta. En cuanto esté listo podrás reproducirla y retocarla aquí, sin esperar a las otras orientaciones.'}</p>{/if}
         </div>
         {#if imageProvider}{#key `${assistantRevision}:${settings.profile}`}<ImageAssistant provider={imageProvider} {brief} profile={settings.profile} {action} {direction} bind:art onbusy={label => busy = label} onerror={message => error = message}/>{/key}{/if}
-        {#if shortAction}
-          {#if imageProvider}{#key `${assistantRevision}:${settings.id}:${settings.profile}:${action}:${direction}`}<ActionAssistant provider={imageProvider} {art} {brief} profile={settings.profile} {action} {direction} hasSource={!!active} onaccept={importGeneratedAction} onbusy={label => busy = label} onerror={message => error = message}/>{/key}{/if}
-        {:else if videoProvider}<VideoAssistant provider={videoProvider} reference={art.references[direction]?.image} projectId={settings.id} profile={settings.profile} {action} {direction} suggestedPrompt={prompt.clips.find(c => c.action === action)!.prompt} negative={prompt.clips.find(c => c.action === action)!.negative} hasSource={!!active} revision={assistantRevision} onaccept={importGeneratedVideo} onbusy={label => busy = label}/>{/if}
-        <details class="prompts"><summary>Prompts para {direction.toUpperCase()} / {action}</summary><p class="hint">Genera primero una vista aprobada. Usa esa imagen como referencia al crear las demás vistas y al animar. Los prompts están en inglés; puedes usarlos con cualquier proveedor.</p><label>Nota específica de esta orientación<textarea rows="2" value={brief.notes[direction] || ''} oninput={e => brief.notes[direction] = e.currentTarget.value} placeholder="Qué accesorio se ve, hacia dónde apunta…"></textarea></label><h3>Imagen de referencia</h3><textarea rows="5" readonly value={prompt.still}></textarea><button onclick={() => copy(prompt.still)}>Copiar prompt de imagen</button><h3>{shortAction ? 'Imagen de la acción' : 'Animación'}</h3><textarea rows="6" readonly value={prompt.clips.find(c => c.action === action)!.prompt}></textarea><button onclick={() => copy(prompt.clips.find(c => c.action === action)!.prompt)}>{shortAction ? 'Copiar prompt de la acción' : 'Copiar prompt de animación'}</button><h3>Evitar</h3><textarea rows="3" readonly value={prompt.clips.find(c => c.action === action)!.negative}></textarea><p class="hint">Sugerencia: clips de 5 segundos. Para sit basta una pose. Si tu herramienta lo permite, fija la misma referencia al inicio y al final.</p></details>
+        {#if shortAction && imageProvider && videoProvider}<div class="generation-choice" role="group" aria-label="Generar ciclo con"><button aria-pressed={useImage} onclick={() => generationMethod = 'image'}>ChatGPT · imágenes</button><button aria-pressed={!useImage} onclick={() => generationMethod = 'video'}>Kling · vídeo</button></div><p class="hint">Este ciclo admite las dos opciones. Cambiar de opción conserva las propuestas y no genera nada hasta que pulses Generar.</p>{/if}
+        {#if shortAction && imageProvider}<div hidden={!useImage}>
+          {#key `${assistantRevision}:${settings.id}:${settings.profile}:${action}:${direction}`}<ActionAssistant provider={imageProvider} {art} {brief} profile={settings.profile} {action} {direction} options={settings.actionOptions?.[action]} hasSource={!!active} onaccept={importGeneratedAction} onbusy={label => busy = label} onerror={message => error = message}/>{/key}</div>{/if}
+        {#if videoProvider}<div hidden={useImage}><VideoAssistant provider={videoProvider} reference={art.references[direction]?.image} projectId={settings.id} profile={settings.profile} {action} {direction} suggestedPrompt={videoPrompt.prompt} negative={videoPrompt.negative} hasSource={!!active} revision={assistantRevision} onaccept={importGeneratedVideo} onbusy={label => busy = label}/></div>{/if}
+        <details class="prompts"><summary>Prompts para {direction.toUpperCase()} / {action}</summary><p class="hint">Genera primero una vista aprobada. Usa esa imagen como referencia al crear las demás vistas y al animar. Los prompts están en inglés; puedes usarlos con cualquier proveedor.</p><label>Nota específica de esta orientación<textarea rows="2" value={brief.notes[direction] || ''} oninput={e => brief.notes[direction] = e.currentTarget.value} placeholder="Qué accesorio se ve, hacia dónde apunta…"></textarea></label><h3>Imagen de referencia</h3><textarea rows="5" readonly value={prompt.still}></textarea><button onclick={() => copy(prompt.still)}>Copiar prompt de imagen</button><h3>{useImage ? 'Imagen de la acción' : 'Animación'}</h3><textarea rows="6" readonly value={actionPrompt.prompt}></textarea><button onclick={() => copy(actionPrompt.prompt)}>{useImage ? 'Copiar prompt de la acción' : 'Copiar prompt de animación'}</button><h3>Evitar</h3><textarea rows="3" readonly value={prompt.clips.find(c => c.action === action)!.negative}></textarea><p class="hint">Sugerencia: clips de 5 segundos. {activeRecipe.playback === 'once' ? 'Conserva la acción completa y su última pose; no fijes la misma imagen al inicio y al final.' : 'Para sit basta una pose. En acciones repetidas puedes fijar la misma referencia al inicio y al final.'}</p></details>
         {#if mirrored}<p class="notice">Esta dirección usa un reflejo de {MIRRORS[direction]!.toUpperCase()}. Puedes importar una vista para reemplazarlo.</p>{/if}
-        <details id="character-import" class="manual-import" open><summary>{shortAction ? 'Importar imagen o secuencia corta' : 'Importar vídeo de Kling u otra herramienta'}</summary><p class="hint">{shortAction ? 'Puedes cargar la pose o los fotogramas de esta acción desde cualquier herramienta. No necesitas generar un vídeo.' : 'Usa la referencia aprobada para crear el vídeo y carga aquí el resultado. Conserva un ciclo completo con un paso de cada pierna. También puedes importar imágenes o una hoja existente.'}</p><div class="import-box"><label>Tipo de fuente<select bind:value={mode}><option value="video">Vídeo</option><option value="images">Imágenes ordenadas por nombre</option><option value="sheet">Una fila de una hoja PNG</option></select></label>
+        <details id="character-import" class="manual-import" open><summary>{shortAction ? 'Importar imágenes, hoja o vídeo' : 'Importar vídeo de Kling u otra herramienta'}</summary><p class="hint">{shortAction ? 'Puedes cargar imágenes, una hoja o un vídeo para esta acción desde cualquier herramienta.' : activeRecipe.playback === 'once' ? 'Importa la acción completa, desde el inicio hasta la última pose. Puedes recortar el intervalo antes de revisarla.' : 'Usa la referencia aprobada para crear el vídeo y carga aquí el resultado. Conserva un ciclo completo. También puedes importar imágenes o una hoja existente.'}</p><div class="import-box"><label>Tipo de fuente<select bind:value={mode}><option value="video">Vídeo</option><option value="images">Imágenes ordenadas por nombre</option><option value="sheet">Una fila de una hoja PNG</option></select></label>
           <div class="pair"><label>{mode === 'video' ? 'Muestras por segundo' : 'FPS de la secuencia'}<input type="number" min="1" max="30" bind:value={sourceFps}/></label>{#if mode === 'video'}<label>Desde el segundo<input type="number" min="0" step="0.1" bind:value={start}/></label>{:else if mode === 'sheet'}<label>Columnas<input type="number" min="1" max="180" bind:value={columns}/></label>{/if}</div>
           {#if mode === 'video'}<label>Segundos a importar<input type="number" min="0.1" max="10" step="0.1" bind:value={seconds}/></label>{:else if mode === 'sheet'}<div class="pair"><label>Filas totales<input type="number" min="1" max="180" bind:value={rows}/></label><label>Fila a importar (desde 1)<input type="number" min="1" max={rows} bind:value={sourceRow}/></label></div>{/if}
           <label class="button primary">{active ? 'Reemplazar fuente' : 'Importar fuente'} · {action}/{direction.toUpperCase()}<input type="file" accept={mode === 'video' ? 'video/mp4,video/webm,video/quicktime' : 'image/png,image/webp,image/jpeg'} multiple={mode === 'images'} onchange={importFiles}/></label>
-          <p class="hint">Hasta 180 muestras por clip; se reducen a 192 px de lado mayor al importar. Vídeos: hasta 100 MB. Las secuencias conservan su ciclo completo; los vídeos buscan un cierre automáticamente.</p>
+          <p class="hint">Hasta 180 muestras por clip; se reducen a 192 px de lado mayor al importar. Vídeos: hasta 100 MB. {activeRecipe.playback === 'once' ? 'Se conserva la secuencia completa, sin buscar un cierre repetitivo.' : 'Las secuencias conservan su ciclo completo; los vídeos buscan un cierre automáticamente.'}</p>
         </div></details>
         {#if active}<details class="source-options"><summary>Ajustes de la fuente original</summary><div class="source-review"><div>{#if rawUrl}<img src={rawUrl} alt={`Muestra ${rawFrame + 1} de la fuente ${action}/${direction}`}/>{/if}<label>Muestra {rawFrame + 1} / {active.frames.length}<input type="range" min="0" max={active.frames.length - 1} bind:value={rawFrame}/></label></div><div><p class="filename">{active.name}</p><p class="hint">{active.frames.length} muestras · {active.sourceFps} fps de origen</p><label class="check"><input type="checkbox" checked={!!active.range} onchange={e => setSource({ ...active, range: e.currentTarget.checked ? [0, active.frames.length] : undefined })}/> Elegir intervalo manual</label>{#if active.range}<div class="pair"><label>Primera muestra<input type="number" min="1" max={active.frames.length} value={active.range[0] + 1} onchange={e => crop('start', e.currentTarget.valueAsNumber)}/></label><label>Última muestra (incluida)<input type="number" min="1" max={active.frames.length} value={active.range[1]} onchange={e => crop('end', e.currentTarget.valueAsNumber)}/></label></div>{/if}<label>FPS de salida · 0 = automático<input type="number" min="0" max="30" step="0.1" value={active.playbackFps || 0} onchange={e => setSource({ ...active, playbackFps: e.currentTarget.valueAsNumber || undefined })}/></label><details><summary>Ajustar tamaño y apoyo de esta vista</summary><label>Multiplicador de escala<input type="number" min="0.5" max="2" step="0.01" value={active.scaleBias ?? 1} onchange={e => setSource({ ...active, scaleBias: e.currentTarget.valueAsNumber })}/></label><div class="pair"><label>Desplazar X (px)<input type="number" min="-256" max="256" value={active.offset?.[0] ?? 0} onchange={e => setSource({ ...active, offset: [e.currentTarget.valueAsNumber, active.offset?.[1] ?? 0] })}/></label><label>Desplazar Y (px)<input type="number" min="-256" max="256" value={active.offset?.[1] ?? 0} onchange={e => setSource({ ...active, offset: [active.offset?.[0] ?? 0, e.currentTarget.valueAsNumber] })}/></label></div></details><button onclick={() => setSource()}>Quitar esta fuente</button></div></div></details>{/if}
       </section>
       <section>
         <span class="step">04 · HOJAS</span><h2>Revisa y exporta</h2>
         <p class="hint">{missing.length ? `Pendientes: ${missing.join(', ')}` : 'Todas las orientaciones están cubiertas.'}</p>
-        <div class="export-actions"><button disabled={!!missingSources(settings, sources, [action]).length} onclick={() => process(false)}>Ver todas las vistas de {action}</button><button class="primary" disabled={!!missing.length} onclick={() => process(true)}>Construir todas las hojas</button><button disabled={!fullResult} onclick={() => run('Exportando personaje…', async () => offerDownload(await exportCharacter(result!, $state.snapshot(brief)), `${settings.id}.zip`))}>Descargar personaje ZIP</button></div>
+        <label>Formato de exportación<select value={exportFormat} onchange={e=>{settings.exportFormat=e.currentTarget.value as ExportFormat;clearDownload();}}><option value="game" disabled={!canExportGame}>Nuestro juego · character.json</option><option value="generic">Genérico · PNG + sprites.json</option></select></label>
+        <div class="export-actions"><button disabled={!!missingSources(settings, sources, [action]).length} onclick={() => process(false)}>Ver todas las vistas de {action}</button><button class="primary" disabled={!!missing.length} onclick={() => process(true)}>Construir todas las hojas</button><button disabled={!fullResult} onclick={() => run('Exportando personaje…', async () => offerDownload(await exportCharacter(result!, $state.snapshot(brief), exportFormat), `${settings.id}.zip`))}>Descargar personaje ZIP</button></div>
         {#if selectedSheet && result && selectedSheet.directions.length === profile.directions.length}<div class="result"><SheetPreview sheet={selectedSheet} url={urls[action]} settings={result.metadata.settings}/></div>{:else}<div class="empty">Importa las vistas necesarias y previsualiza el ciclo para comprobar el apoyo y la orientación.</div>{/if}
         {#if result?.metadata.warnings.length}<div class="notice"><strong>Revisar antes de usar</strong><ul>{#each result.metadata.warnings as warning}<li>{warning}</li>{/each}</ul></div>{/if}
-        <p class="hint">El ZIP incluye un PNG por acción, character.json, el registro de procesamiento y los prompts. Para cambiar el personaje activo, copia los PNG a la carpeta indicada y conecta character.json con el catálogo del juego.</p>
+        <p class="hint">{exportFormat === 'generic' ? 'El ZIP incluye un PNG transparente por acción y sprites.json con los rectángulos, orientaciones, FPS, punto de apoyo y repetición. Es un formato neutral para adaptar a tu motor.' : 'El ZIP incluye un PNG por acción y character.json para el catálogo de nuestro juego.'} También conserva los ajustes y los prompts.</p>
       </section>
     </div>
   </fieldset>
@@ -315,7 +349,8 @@
 
 <style>
   .inspiration{border:1px dashed #bdcbb0;border-radius:8px;padding:12px;margin:16px 0}.inspiration h3{font-size:13px;margin:0 0 8px}.inspiration img{display:block;max-width:100%;max-height:220px;object-fit:contain;margin:12px auto;border-radius:6px}
-  .action-selection{border-block:1px solid #dce3d4;padding:14px 0;margin:14px 0}.action-checks{display:grid;gap:5px}.action-checks small{display:block;color:#687561;font-size:10px}
+  .generation-choice{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.generation-choice button[aria-pressed=true]{background:#526e37;color:white;border-color:#526e37}
+  .action-config{padding:8px 0 12px 20px}.action-config summary{margin-bottom:10px}.action-selection{border-block:1px solid #dce3d4;padding:14px 0;margin:14px 0}.action-checks{display:grid;gap:5px}.action-checks small{display:block;color:#687561;font-size:10px}
   .guide{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#e8efdf}.guide h2{margin-bottom:8px}.cycle-review{border:1px solid #c4d1b7;border-radius:8px;padding:16px;margin:18px 0}.cycle-review h3{margin-top:0}.manual-import,.source-options{margin:18px 0}@media(max-width:600px){.guide{align-items:stretch;flex-direction:column}}
   .style-options{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 16px}.style-options button{font-size:10px;padding:6px 8px}
   .ready-file{position:sticky;top:8px;z-index:2;background:#e1eacd;border:1px solid #698849;padding:14px;border-radius:8px;overflow-wrap:anywhere}.ready-file a{color:#304535;font-weight:600;text-decoration:underline}

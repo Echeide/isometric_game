@@ -6,3 +6,5 @@ export * from './prompts';
 export * from './browser';
 export * from './generation';
 export * from './video';
+
+export * from './sprite-export';

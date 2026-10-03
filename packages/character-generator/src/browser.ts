@@ -1,6 +1,7 @@
+import { spriteManifest } from './sprite-export';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { validateSettings } from './pipeline';
-import { availableActions, selectedActions, PROFILES, type BuildResult, type ClipInput, type Frame, type GeneratorSettings, type Sources } from './types';
+import { availableActions, actionRecipe, selectedActions, PROFILES, type ExportFormat, type BuildResult, type ClipInput, type Frame, type GeneratorSettings, type Sources } from './types';
 import { createPrompts, type CharacterBrief } from './prompts';
 import { DIRECTIONS, emptyArt, pngData, pngUrl, type ArtProject } from './generation';
 
@@ -84,15 +85,21 @@ export function download(data: Uint8Array, name: string, type = 'application/zip
   const link = document.createElement('a'); link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
-export async function exportCharacter(result: BuildResult, brief: CharacterBrief) {
+export async function exportCharacter(result: BuildResult, brief: CharacterBrief, format?: ExportFormat) {
   const settings = result.metadata.settings;
+  format ??= settings.exportFormat ?? (settings.profile === 'game' ? 'game' : 'generic');
+  if (format === 'game' && (settings.profile !== 'game' || result.sheets.some(s=>s.playback==='once'))) throw new Error('Para este perfil elige la exportación genérica.');
   if (result.character.directions.length !== PROFILES[settings.profile].directions.length || selectedActions(settings).some(a => !result.character.animations[a.action])) throw new Error('Construye todas las acciones antes de exportar el personaje.');
   const files: Record<string, Uint8Array> = {};
   for (const sheet of result.sheets) files[`${sheet.action}.png`] = await encodePNG(sheet.image);
-  files['character.json'] = strToU8(JSON.stringify(result.character, null, 2));
+  if (format === 'generic') files['sprites.json'] = strToU8(JSON.stringify(spriteManifest(result),null,2));
+  else files['character.json'] = strToU8(JSON.stringify(result.character, null, 2));
   files['processing.json'] = strToU8(JSON.stringify(result.metadata, null, 2));
-  files['prompts.json'] = strToU8(JSON.stringify({ brief, recipes: createPrompts(brief, settings.profile, settings.mirror, settings.actions) }, null, 2));
-  files['LEEME.txt'] = strToU8(`Personaje: ${settings.id}\nPerfil: ${settings.profile}\nCopia los PNG a static${settings.baseUrl}.\n${settings.profile === 'game' ? 'Para importar como jugador en el juego actual se requieren idle, walk, work, talk, celebrate y sit. Las acciones attack, hurt y run se exportan, pero su reproducción requiere soporte en el juego.\n' : 'Este perfil tiene ocho direcciones y acciones run/attack. El motor actual del juego usa cuatro direcciones y no puede consumirlo directamente.\n'}Revisa visualmente orientación, accesorios, apoyo, cortes y cierre de cada ciclo.\nprocessing.json conserva la paleta, las muestras y velocidades por orientación.\n`);
+  files['prompts.json'] = strToU8(JSON.stringify({ brief, recipes: createPrompts(brief, settings.profile, settings.mirror, settings.actions, 'auto', settings.actionOptions) }, null, 2));
+  files['LEEME.txt'] = strToU8(`Personaje: ${settings.id}\nPerfil: ${settings.profile}\n${format === 'generic'
+    ? 'Exportación genérica: PNG transparentes por acción y sprites.json. Cada vista define su fila, FPS y rectángulos en píxeles desde la esquina superior izquierda. anchor es el punto de apoyo en píxeles dentro de cada celda. loop=false indica reproducir una vez y mantener la última pose. Las rutas PNG son relativas al JSON. E/W son derecha/izquierda en plataformas. Este JSON es un formato neutral: cada motor requiere su importador.\n'
+    : `Copia los PNG a static${settings.baseUrl}.\nPara importar como jugador en el juego actual se requieren idle, walk, work, talk, celebrate y sit. Las acciones adicionales y reproducción no repetitiva requieren soporte en el juego.\n`}
+Revisa orientación, accesorios, apoyo y cortes. processing.json conserva los ajustes y muestras originales.\n`);
   return zipSync(files, { level: 6 });
 }
 export async function saveProject(settings: GeneratorSettings, brief: CharacterBrief, sources: Sources, art: ArtProject = emptyArt()) {
@@ -140,7 +147,8 @@ export async function loadProject(file: File): Promise<{ settings: GeneratorSett
   if (!raw.brief || !['description', 'style', 'props'].every(k => typeof raw.brief[k] === 'string') || !raw.brief.notes || Object.values(raw.brief.notes).some(n => typeof n !== 'string')) throw new Error('Descripción del personaje no válida.');
   const profile = PROFILES[raw.settings.profile as GeneratorSettings['profile']], sources: Sources = {};
   let pixels = 0;
-  for (const recipe of availableActions(raw.settings.profile)) {
+  for (const baseRecipe of availableActions(raw.settings.profile)) {
+    const recipe = actionRecipe(raw.settings.profile,baseRecipe.action,raw.settings.actionOptions?.[baseRecipe.action])!;
     sources[recipe.action] = {};
     for (const direction of profile.directions) {
       const input = raw.sources?.[recipe.action]?.[direction];

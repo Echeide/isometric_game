@@ -1,5 +1,5 @@
-import { angles, motions, type CharacterBrief } from './prompts';
-import { availableActions, PROFILES, type Direction, type Profile } from './types';
+import { angles, motions, playbackPrompt, type CharacterBrief } from './prompts';
+import { availableActions, actionRecipe, validateActionOptions, PROFILES, type ActionOptions, type Direction, type Profile } from './types';
 
 export interface ImageRequest {
   brief: CharacterBrief;
@@ -7,6 +7,7 @@ export interface ImageRequest {
   direction: Direction;
   action: string;
   kind: 'reference' | 'action';
+  recipe?: ActionOptions;
   quality: 'low' | 'medium' | 'high';
   reference?: string;
   referenceDirection?: Direction;
@@ -50,8 +51,9 @@ export interface ImageProvider {
 }
 export const emptyArt = (): ArtProject => ({ references: {} });
 /** Direct images are only for short actions; longer cycles stay on the video path. */
-export function shortActionRecipe(profile: Profile, action: string) {
-  return availableActions(profile).find(recipe => recipe.action === action && recipe.frames >= 1 && recipe.frames < 4);
+export function shortActionRecipe(profile: Profile, action: string, options?: ActionOptions) {
+  const recipe = actionRecipe(profile, action, options);
+  return recipe && recipe.frames >= 1 && recipe.frames <= 4 ? recipe : undefined;
 }
 export const DIRECTIONS: Direction[] = ['ne', 'se', 'sw', 'nw', 'e', 'w', 's', 'n'];
 const MAX_REFERENCE_BYTES = 2_000_000;
@@ -74,7 +76,8 @@ export function pngUrl(bytes: Uint8Array) {
 export function validateImageRequest(value: unknown): ImageRequest {
   const r = value as ImageRequest;
   if (!r || !Object.hasOwn(PROFILES, r.profile) || !PROFILES[r.profile].directions.includes(r.direction) || !availableActions(r.profile).some(a => a.action === r.action) || !['reference', 'action'].includes(r.kind) || !['low', 'medium', 'high'].includes(r.quality)) throw new Error('Solicitud de imagen no válida.');
-  if (r.kind === 'action' && (!shortActionRecipe(r.profile, r.action) || !r.reference || !r.referenceDirection || r.referenceKind)) throw new Error('Las acciones por imagen necesitan una referencia aprobada y entre 1 y 3 fotogramas.');
+  if (r.recipe !== undefined) validateActionOptions(r.recipe);
+  if (r.kind === 'action' && (!shortActionRecipe(r.profile, r.action, r.recipe) || !r.reference || !r.referenceDirection || r.referenceKind)) throw new Error('Las acciones por imagen necesitan una referencia aprobada y entre 1 y 4 fotogramas.');
   if (!r.brief || !['description', 'style', 'props'].every(k => typeof r.brief[k as keyof CharacterBrief] === 'string' && (r.brief[k as keyof CharacterBrief] as string).length <= 2000) || (!r.brief.description.trim() && !r.reference) || !r.brief.style.trim()) throw new Error('Añade una descripción o una imagen de referencia y elige un estilo visual (hasta 2000 caracteres por campo).');
   if (!r.brief.notes || typeof r.brief.notes !== 'object' || Object.entries(r.brief.notes).some(([d, note]) => !DIRECTIONS.includes(d as Direction) || typeof note !== 'string' || note.length > 1000)) throw new Error('Notas por orientación no válidas.');
   if (r.reference !== undefined) pngData(r.reference);
@@ -84,7 +87,8 @@ export function validateImageRequest(value: unknown): ImageRequest {
 }
 export function imagePlan(request: ImageRequest) {
   validateImageRequest(request);
-  const frames = request.kind === 'action' ? shortActionRecipe(request.profile, request.action)!.frames : 1;
+  const recipe = actionRecipe(request.profile, request.action, request.recipe)!;
+  const frames = request.kind === 'action' ? recipe.frames : 1;
   const columns = frames, rows = 1, size = frames === 1 ? '1024x1536' : '1536x1024';
   const { brief, direction } = request;
   const identity = `${brief.description.trim() || 'Use the supplied image as the visual description of the character.'} Style: ${brief.style.trim()}. Equipment: ${brief.props.trim() || (request.reference ? 'preserve visible character accessories from the reference' : 'none')}.`;
@@ -93,12 +97,12 @@ export function imagePlan(request: ImageRequest) {
       ? 'Use the supplied photo or illustration as the visual starting point. Preserve recognizable visible features, hair, clothing colors and accessories unless the written description asks to change them. Adapt the subject to the requested game-art style and proportions. Do not copy the photo background, lighting, camera angle, framing or pose. Infer any unseen body or costume details consistently. The source image has no approved game orientation.'
       : `Create the character using the supplied image to preserve identity, costume, proportions and equipment. SOURCE REFERENCE: ${request.referenceDirection?.toUpperCase() || 'orientation unspecified'}. The supplied image is an identity guide; its facing is not the target unless it matches the target below. Reconstruct hidden surfaces when turning the character. A front-to-back turn is not a horizontal mirror. Preserve anatomical equipment placement.`
     : 'Create the character from the character description, establishing a consistent identity, costume, proportions and equipment.';
-  const orientation = `TARGET ORIENTATION: ${direction.toUpperCase()}. ${angles[direction]} Keep a fixed orthographic isometric camera. Turn the character into this target orientation before depicting any pose; keep this facing throughout the output. This target overrides any conflicting facing in the source image or description.`;
+  const orientation = `TARGET ORIENTATION: ${direction.toUpperCase()}. ${angles[direction]} ${PROFILES[request.profile].camera} Turn the character into this target orientation before depicting any pose; keep this facing throughout the output. This target overrides any conflicting facing in the source image or description.`;
   const output = request.kind === 'reference'
     ? 'Create a single full-body character pose in the target orientation. Show only this one view.'
     : `ACTION: ${request.action}. ${motions[request.action]} ${frames === 1
       ? 'Create exactly one full-body still pose of this action, not a standing reference or a sequence of transitions.'
-      : `Create a sprite sheet with exactly ${frames} equal-width cells in one horizontal row, ordered in time from left to right. Show one distinct pose per cell for a short repeating action. Keep identical character scale, camera, horizontal centering and ground contact baseline in each cell. No extra poses and no duplicated closing frame.`} Preserve the requested facing and costume. Do not draw furniture, labels, cell borders or text.`;
+      : `Create a sprite sheet with exactly ${frames} equal-width cells in one horizontal row, ordered in time from left to right. Show one distinct pose per cell for this action. ${playbackPrompt(recipe)} Keep identical character scale, camera and horizontal centering in each cell. ${recipe.preserveMotion ? "Preserve vertical displacement relative to a fixed ground baseline; do not align each pose by its feet." : "Keep consistent ground contact baseline."} No extra poses and no duplicated closing frame.`} Preserve the requested facing and costume. Do not draw furniture, labels, cell borders or text.`;
   const prompt = `${identity}\n${reference}\n${orientation}\n${brief.notes[direction] || ''} Solid uniform magenta (#ff00ff) background, no floor, shadow or scenery. Leave clear padding around every limb and accessory.\n${output}`;
   return { prompt, columns, rows, frames, size };
 }

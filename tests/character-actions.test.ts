@@ -55,3 +55,17 @@ describe('selected character actions',()=>{
   for(const actions of [[],['no-such-action'],['walk','walk']])expect(()=>validateSettings({...settings,actions})).toThrow('acción válida');
  });
 });
+
+describe('dual providers for short cycles',()=>{
+ it('uses a pose row for images and continuous movement for Kling, including sit and hurt',()=>{
+  const actions=['idle','work','talk','sit','hurt'];
+  const images=createPrompts(brief,'game',true,actions);
+  const videos=createPrompts(brief,'game',true,actions,'video');
+  expect(images[0].clips.map(c=>c.suggestedSeconds)).toEqual([0,0,0,0,0]);
+  for(const clip of videos[0].clips){
+   expect(clip.suggestedSeconds).toBe(5);expect(clip.prompt).toContain('Animate the approved');
+   expect(clip.prompt).not.toContain('horizontal row');expect(clip.prompt).not.toContain('equal-width cells');
+  }
+  expect(images[0].clips[0].prompt).toContain('exactly 4');
+ });
+});

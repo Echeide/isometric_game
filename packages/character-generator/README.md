@@ -6,9 +6,9 @@ La aplicación de este repositorio lo monta en **`/characters`**, accesible desd
 
 ## Flujo de trabajo
 
-1. Elige **Nuestro juego** y sube una foto o imagen de referencia, o escribe una descripción; define el estilo y los accesorios. Da un identificador sin espacios al personaje.
-2. En **Prompts**, crea una primera vista SE en la herramienta de imágenes que prefieras. Aprueba su identidad y usa esa imagen como referencia para NE y las demás vistas necesarias. Genera una imagen por orientación para evitar cortes entre figuras de una misma imagen.
-3. Usa la vista aprobada como entrada de la herramienta de vídeo. Los prompts describen una cámara fija, movimiento en el sitio, fondo uniforme y acciones por orientación. Si el proveedor lo permite, fija la misma imagen al inicio y al final del clip. Para `sit` basta una imagen sentada.
+1. En **Tipo de juego**, elige **Isométrico · nuestro juego** o **Plataformas 2D · vista lateral** y sube una foto o imagen de referencia, o escribe una descripción; define el estilo y los accesorios. Da un identificador sin espacios al personaje.
+2. En **Prompts**, crea una primera vista SE para isométrico o E (derecha) para plataformas en la herramienta de imágenes que prefieras. Aprueba su identidad y usa esa imagen como referencia para NE y las demás vistas necesarias. Genera una imagen por orientación para evitar cortes entre figuras de una misma imagen.
+3. Usa la vista aprobada como entrada de la herramienta de vídeo. Los prompts describen una cámara fija, movimiento en el sitio, fondo uniforme y acciones por orientación. En acciones en bucle, si el proveedor lo permite, fija la misma imagen al inicio y al final del clip. En acciones de una vez, conserva la última pose sin regresar al inicio. Para `sit` basta una imagen sentada.
 4. Selecciona acción y orientación e importa el material. Para PNG secuenciales, los nombres se ordenan numéricamente (`frame2` antes de `frame10`). Para una hoja, indica columnas, filas totales y la fila desde 1. En vídeo, indica inicio, duración y frecuencia de muestreo.
 5. Ajusta transparencia, altura, paleta y apoyo. Previsualiza la acción y revisa cada orientación. Puedes seleccionar un intervalo manual, una velocidad de salida y correcciones de escala y posición por vista.
 6. **Construir todas las hojas** calcula una sola paleta para todo el personaje. **Descargar personaje ZIP** prepara el archivo y muestra un enlace para guardarlo; inspecciona los avisos antes de usar las hojas. **Guardar proyecto** prepara un segundo ZIP con las imágenes fuente y permite volver a abrir el trabajo.
@@ -20,21 +20,22 @@ Sin adaptador de imágenes, el módulo prepara los prompts y procesa material im
 | Perfil | Filas, en orden | Acciones | Salida |
 |---|---|---|---|
 | Nuestro juego | NE, SE, SW, NW | idle (4), walk (8), work (4), talk (4), celebrate (6), sit (1) | Compatible con `CharacterPack` |
-| Iso Cycles | SE, SW, NE, NW, E, W, S, N | idle, walk, run, attack; 8 muestras cada una | Intercambio para motores de 8 direcciones |
+| Isométrico · 8 direcciones | SE, SW, NE, NW, E, W, S, N | idle, walk, run, attack; 8 muestras cada una | PNG + JSON genérico |
+| Plataformas 2D | E (derecha), W (izquierda) | idle (4), walk (8), run (8), jump (4), fall (2), attack (6), hurt (3), die (6) | PNG + JSON genérico |
 
-Los valores entre paréntesis son fotogramas por fila. Por defecto, celdas de 64 × 96 y apoyo en (32, 80). El perfil de ocho direcciones **no se puede conectar directamente al motor actual**: también habría que ampliar orientación, navegación y poses de ese motor.
+Los valores entre paréntesis son los fotogramas iniciales por fila. Cada acción permite 1–16 fotogramas, 1–30 FPS y reproducción en bucle o una vez desde su bloque «Ajustar». En plataformas, jump/fall/attack/hurt/die se reproducen una vez por defecto. Cambiar el tipo de juego queda bloqueado cuando ya hay vistas o fuentes para no reinterpretar el material con otra cámara; guarda el proyecto y crea otro personaje. Por defecto, celdas de 64 × 96 y apoyo en (32, 80). El perfil de ocho direcciones **no se puede conectar directamente al motor actual**: también habría que ampliar orientación, navegación y poses de ese motor.
 
-Con reflejos activos hacen falta NE y SE en el perfil del juego. En el de ocho direcciones hacen falta SE, NE, E, S y N. Las vistas importadas prevalecen sobre los reflejos. Desactívalos o importa vistas propias para accesorios asimétricos. La reflexión no puede convertir una vista frontal en una trasera.
+Con reflejos activos basta E en plataformas y hacen falta NE y SE en el perfil del juego. En el de ocho direcciones hacen falta SE, NE, E, S y N. Las vistas importadas prevalecen sobre los reflejos. Desactívalos o importa vistas propias para accesorios asimétricos. La reflexión no puede convertir una vista frontal en una trasera.
 
 ## Qué hace el procesador
 
 - Respeta el alfa existente y elimina el color de fondo elegido por distancia RGB. La interfaz ofrece magenta, verde o transparencia; la API admite cualquier RGB. No segmenta fondos complejos. Un detalle del personaje del mismo color que el fondo también desaparecerá.
-- Busca ciclos de aproximadamente 0,35 a 1,8 segundos comparando firmas visuales normalizadas. Favorece extremos similares con movimiento intermedio. Es una heurística visual: no comprueba anatomía, pasos, identidad ni dirección. Los ciclos más largos o gestos de una sola ejecución necesitan intervalo manual.
-- Muestrea el intervalo sin incluir el extremo repetido. En recorte manual, primera y última muestra son inclusivas en la interfaz; la API usa `[start, end)` con índices desde cero.
+- Busca ciclos de aproximadamente 0,35 a 1,8 segundos comparando firmas visuales normalizadas. Favorece extremos similares con movimiento intermedio. Es una heurística visual: no comprueba anatomía, pasos, identidad ni dirección. Los ciclos más largos pueden necesitar intervalo manual. Las acciones «Una vez» conservan todo el intervalo (o el recorte manual) e incluyen su última muestra; nunca buscan un cierre repetitivo.
+- En bucles, muestrea el intervalo sin incluir el extremo repetido. En acciones de una vez, incluye ambos extremos cuando hay al menos dos fotogramas. En recorte manual, primera y última muestra son inclusivas en la interfaz; la API usa `[start, end)` con índices desde cero.
 - Igualará la altura mediana de cada ciclo a la altura solicitada, con escala constante dentro del clip. Para poses sentadas y gestos usa la altura de `idle` de la misma dirección cuando existe y comparte resolución. Esta referencia presupone el mismo encuadre de origen. El multiplicador por vista corrige diferencias perceptivas y referencias mal encuadradas.
-- Estima el apoyo con el centro y borde inferior de la silueta. Por defecto usa un apoyo fijo para todo el ciclo y conserva el movimiento. La estabilización por fotograma elimina deriva, pero también saltos. Los ajustes X/Y permiten corregir accesorios que desplacen el centro de la silueta.
+- Estima el apoyo con el centro y borde inferior de la silueta. Por defecto usa un apoyo fijo para todo el ciclo y conserva el movimiento. La estabilización por fotograma elimina deriva, pero también saltos. Se omite para jump/fall/die: usan un apoyo fijo y la escala de idle si comparte encuadre, o la primera muestra en su ausencia. Los ajustes X/Y permiten corregir accesorios que desplacen el centro de la silueta.
 - Reduce con promedio de área y alfa premultiplicado, aplica alfa binario, una paleta global de hasta 64 colores y contorno interior opcional. No añade píxeles fuera de la silueta para el contorno.
-- Refleja alrededor del apoyo, empaqueta una hoja por acción y calcula FPS por orientación según la duración del intervalo. El rango de reproducción es 1–30 fps; los límites y repeticiones quedan registrados como avisos.
+- Refleja alrededor del apoyo, empaqueta una hoja por acción y calcula FPS por orientación según la duración del intervalo. En plataformas usa los FPS de la receta; los FPS personalizados por acción tienen prioridad sobre el cálculo automático y los de cada vista sobre los de la acción. El rango de reproducción es 1–30 fps; los límites y repeticiones quedan registrados como avisos.
 
 La vista previa de una sola acción calcula una paleta provisional. La construcción completa vuelve a calcular la paleta compartida. Importar o editar opciones invalida las hojas anteriores.
 
@@ -43,7 +44,8 @@ La vista previa de una sola acción calcula una paleta provisional. La construcc
 El **ZIP del personaje** contiene:
 
 - `idle.png`, `walk.png`, etc.: RGBA, columnas de tiempo y filas de orientación.
-- `character.json`: rutas públicas, celdas, apoyo, filas, fotogramas y velocidades.
+- En formato **Nuestro juego**, `character.json`: rutas públicas, celdas, apoyo, filas, fotogramas y velocidades. Solo admite el perfil del juego y acciones en bucle.
+- En formato **Genérico**, `sprites.json`: versión 1 del formato neutral `character-sprites`, PNG relativos al JSON, proyección, celdas, apoyo en píxeles, orientaciones y rectángulos de cada fotograma por vista. Cada acción declara `playback` y `loop`; `loop: false` indica ejecutar una vez y mantener la última pose. Las coordenadas parten de la esquina superior izquierda. Este archivo necesita un adaptador para cada motor; no se presenta como un formato nativo de Unity o Godot.
 - `processing.json`: configuración, paleta, índices elegidos, puntuación del cierre, escala, procedencia, reflejos, velocidades y avisos. Las puntuaciones automáticas son relativas al movimiento; las manuales son diferencias absolutas, no son directamente comparables.
 - `prompts.json`: descripción del personaje y recetas de generación.
 - `LEEME.txt`: carpeta destino y compatibilidad del perfil.
@@ -129,12 +131,12 @@ La ayuda opcional permite:
 
 1. **Vista de referencia**: genera una propuesta para la orientación seleccionada. Sin referencia previa usa el texto; con una aprobada reutiliza su aspecto.
 2. **Aprobar como referencia**: conserva esa vista para peticiones posteriores. Las referencias aprobadas se guardan en el `.project.zip`, incluso si aún no hay animaciones. Los proyectos anteriores siguen siendo compatibles. Una propuesta sin aprobar no se guarda: puedes descargar su PNG original.
-3. **Acciones de 1–3 fotogramas**: genera la imagen con ChatGPT y revísala directamente, sin crear un vídeo. Para las acciones más largas, **Descargar PNG**: guarda la referencia aprobada de la orientación que quieras animar y úsala en Kling u otra herramienta de vídeo.
+3. **Acciones de 1–4 fotogramas**: genera la imagen con ChatGPT y revísala directamente, sin crear un vídeo. Para las acciones más largas, **Descargar PNG**: guarda la referencia aprobada de la orientación que quieras animar y úsala en Kling u otra herramienta de vídeo.
 4. **Importar vídeo de Kling u otra herramienta**: carga el clip, revisa un ciclo completo y retoca sus fotogramas en Piskel antes de exportar la hoja final. La importación de secuencias e imágenes existentes sigue disponible.
 
 Comprueba la orientación antes de aprobar: SE muestra cara y pecho en tres cuartos hacia abajo/derecha; NE muestra nuca y espalda hacia arriba/derecha. Si una referencia NE antigua es frontal, quítala y genera una nueva vista NE antes de animarla.
 
-La API de imágenes crea referencias y acciones de 1–3 fotogramas. Para estas acciones aparece **Crear con ChatGPT** en lugar de Kling: usa una referencia aprobada, revisa la propuesta y pulsa **Usar imagen y revisar ciclo** (o reemplazar si ya existe una fuente). Actualmente se aplica a `sit`, de un fotograma; las acciones de 4 o más siguen usando vídeo. La imagen aceptada se convierte en una fuente normal, se puede retocar en Piskel y se conserva en el ZIP del proyecto. Las propuestas descartadas no sustituyen la fuente anterior. Las hojas, fuentes, retoques y referencias guardadas en proyectos anteriores siguen cargándose; no se modifica el formato del proyecto. El taller conserva la reproducción a media velocidad y el ajuste manual del intervalo y los FPS para revisar el vídeo importado.
+La API de imágenes crea referencias y acciones de 1–4 fotogramas. Para estas acciones puedes elegir **ChatGPT · imágenes** o **Kling · vídeo**: usa una referencia aprobada, revisa la propuesta y pulsa **Usar imagen y revisar ciclo** (o reemplazar si ya existe una fuente). Incluye `sit`, `hurt`, `idle`, `work` y `talk` en el perfil del juego. Las acciones de más de 4 fotogramas usan vídeo. Cambiar de opción conserva la propuesta de imagen y el seguimiento del vídeo; cada proveedor recibe un prompt adaptado a su formato. La imagen aceptada se convierte en una fuente normal, se puede retocar en Piskel y se conserva en el ZIP del proyecto. Las propuestas descartadas no sustituyen la fuente anterior. Las hojas, fuentes, retoques y referencias guardadas en proyectos anteriores siguen cargándose; no se modifica el formato del proyecto. El taller conserva la reproducción a media velocidad y el ajuste manual del intervalo y los FPS para revisar el vídeo importado.
 
 ### Activación local
 
@@ -197,8 +199,14 @@ La foto es un punto de partida, sin una orientación aprobada. La primera propue
 
 ### Acciones por personaje
 
-En «Define la referencia → Acciones del personaje» se seleccionan las acciones con checks dentro de un bloque plegable. Están disponibles idle, walk, work, talk, celebrate, sit, attack, hurt y run. Los proyectos anteriores conservan la selección predeterminada de su perfil. `settings.actions` guarda la selección; desmarcar conserva las fuentes y los retoques en el proyecto editable.
+En «Define la referencia → Acciones del personaje» se seleccionan las acciones con checks dentro de un bloque plegable. Los perfiles isométricos ofrecen idle, walk, work, talk, celebrate, sit, attack, hurt y run; plataformas ofrece las acciones de su tabla anterior. Los proyectos anteriores conservan la selección predeterminada de su perfil. `settings.actions` guarda la selección; desmarcar conserva las fuentes y los retoques en el proyecto editable.
 
 El flujo, los prompts, las vistas pendientes y el ZIP final solo incluyen las acciones seleccionadas. Al aprobar el último ciclo se construyen las hojas seleccionadas. Hurt usa tres fotogramas y puede generarse con el proveedor de imágenes; attack y run usan ocho. La importación manual sigue disponible. Esto no envía generaciones de pago en lote.
 
 El jugador del motor actual requiere idle, walk, work, talk, celebrate y sit. Los paquetes parciales y las acciones adicionales se exportan para otros usos o una integración posterior del motor.
+
+### Configuración extensible y proyectos anteriores
+
+`PROFILES` define cámara, orientación inicial, vistas y recetas. `GeneratorSettings.actionOptions` permite ajustar `frames`, `fps` y `playback` por acción, y `exportFormat` selecciona el contrato de salida. Son campos opcionales: los `.project.zip` anteriores mantienen sus perfiles, selecciones y comportamiento repetitivo. Se conserva la versión 1 del proyecto y todos los datos fuente y retoques. Cambiar el número de fotogramas de una acción con retoques está bloqueado hasta restaurar sus fuentes; FPS y repetición se pueden ajustar sin borrar píxeles.
+
+Los prompts manuales y las solicitudes OpenAI comparten la cámara y las recetas del perfil. Las acciones de hasta cuatro fotogramas conservan tanto imágenes como vídeo, además de importación manual. No se han añadido formatos nativos de otros motores ni el perfil de vista superior en esta primera ampliación.
