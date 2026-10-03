@@ -3,7 +3,7 @@ import { allowLocalImages } from './character-images';
 
 export interface WorkshopAccess { user?: string; password?: string; origin?: string }
 export function workshopAccessConfigured(config: WorkshopAccess) {
-  if (!config.user || config.user.includes(':') || !config.password || config.password.length < 24 || !config.origin) return false;
+  if (!config.user || config.user.includes(':') || !config.password || config.password.length < 10 || !config.origin) return false;
   try { const origin = new URL(config.origin); return origin.protocol === 'https:' && origin.origin === config.origin && !origin.username && !origin.password; }
   catch { return false; }
 }

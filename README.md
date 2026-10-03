@@ -209,7 +209,7 @@ Configura como variables privadas del servicio, nunca en Git:
 
 - `OPENAI_API_KEY`, `OPENAI_IMAGE_MODEL` y `MAGNIFIC_API_KEY` para las ayudas opcionales; `MAGNIFIC_API_KEY_NAME` y `MAGNIFIC_WEBHOOK_SECRET` pueden conservarse como configuración del proveedor.
 - `ORIGIN`: URL HTTPS canónica, sin barra final.
-- `CHARACTER_WORKSHOP_USER` y `CHARACTER_WORKSHOP_PASSWORD`: acceso al taller; contraseña de al menos 24 caracteres. Sin estos valores el taller de producción permanece cerrado.
+- `CHARACTER_WORKSHOP_USER` y `CHARACTER_WORKSHOP_PASSWORD`: acceso al taller; contraseña de al menos 10 caracteres. Sin estos valores el taller de producción permanece cerrado.
 - `BODY_SIZE_LIMIT=3000000`: permite enviar las referencias PNG normalizadas.
 - `CHARACTER_VIDEO_JOBS_DIR=/data/character-video-jobs`: montar un volumen persistente en `/data` para conservar solicitudes y vídeos recuperados entre despliegues.
 

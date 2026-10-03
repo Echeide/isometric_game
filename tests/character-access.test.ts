@@ -4,9 +4,16 @@ const config = { user: 'artist', password: 'long-test-password-not-a-real-secret
 const auth = `Basic ${Buffer.from(`${config.user}:${config.password}`).toString('base64')}`;
 const url = new URL(`${config.origin}/api/characters/images`);
 describe('production character workshop access', () => {
-  it('requires a strong configured password and a canonical HTTPS origin', () => {
+  it('requires a configured password of at least ten characters and a canonical HTTPS origin', () => {
     expect(workshopAccessConfigured(config)).toBe(true);
-    for (const change of [{password:''},{password:'short'},{origin:'http://game.example'},{origin:'https://game.example/path'},{origin:'https://user:pass@game.example'},{user:'a:b'}]) expect(workshopAccessConfigured({...config,...change})).toBe(false);
+    for (const change of [{password:''},{password:'short'},{password:'123456789'},{origin:'http://game.example'},{origin:'https://game.example/path'},{origin:'https://user:pass@game.example'},{user:'a:b'}]) expect(workshopAccessConfigured({...config,...change})).toBe(false);
+  });
+  it('accepts a ten-character password including a literal asterisk', () => {
+    const shortConfig = { ...config, password: 'Sample123*' };
+    const header = `Basic ${Buffer.from(`${shortConfig.user}:${shortConfig.password}`).toString('base64')}`;
+    expect(workshopAccessConfigured(shortConfig)).toBe(true);
+    expect(authorizeWorkshop(shortConfig, url, header)).toBe(true);
+    expect(authorizeWorkshop(shortConfig, url, header + '?')).toBe(false);
   });
   it('accepts only correct credentials for the configured deployment', () => {
     expect(authorizeWorkshop(config,url,auth)).toBe(true);
