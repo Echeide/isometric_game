@@ -7,7 +7,7 @@ export {isCustomVisual,validateCustomCatalog,validateCatalogOverrides,resolveVis
 export type {VisualAsset,ObjectCategory,VisualCatalogOverrides} from './scene';
 export type {ObjectSprite,NpcClip} from './pixelart';
 export {actorPoses} from './character';
-export {validateGraphics} from './graphics-validation';
+export {validateGraphics,validateCharacterGraphics} from './graphics-validation';
 export type {ImageSize} from './graphics-validation';
 export type { Facing, ActorPose, WorldEditor } from './types';
 

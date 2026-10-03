@@ -13,11 +13,23 @@
  let panMode=$state(false);
  import { graphics as defaultGraphics } from '$lib/demo/pixelart';
  import {resolveGraphics,localAdventures} from '$lib/storage/local-adventures';
+ import {selectMainPlayer} from '$lib/storage/player-selection';
  import {onDestroy} from 'svelte';
  let graphics=$state.raw(defaultGraphics);
+ let playerChanging=$state(false),graphicsReady=$state(false);
  const resourceReleases:Array<()=>void>=[];
  let disposed=false;
- async function loadGraphics(id:string){const resolved=await resolveGraphics(id);if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;}
+ async function loadGraphics(id:string){graphicsReady=false;const resolved=await resolveGraphics(id);if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;graphicsReady=true;}
+ async function chooseMainPlayer(id:string){
+  if(playerChanging||!graphicsReady||id===(graphics.activePlayer??'default'))return;
+  playerChanging=true;error='';const adventureId=adventure.id;
+  try{const name=await selectMainPlayer(adventureId,id);if(disposed||adventure.id!==adventureId)return;await loadGraphics(adventureId);revision++;notice=`${name} es el personaje principal de esta aventura. Selección guardada.`;}
+  catch(e){error=(e as Error).message;}finally{playerChanging=false;}
+ }
+ async function refreshPlayers(){
+  if(playerChanging)return;playerChanging=true;error='';
+  try{await loadGraphics(adventure.id);revision++;notice='Jugadores actualizados desde el taller.';}catch(e){error=(e as Error).message;}finally{playerChanging=false;}
+ }
  onDestroy(()=>{disposed=true;resourceReleases.forEach(release=>release());});
  import { untrack, onMount } from 'svelte';
  import { goto } from '$app/navigation';
@@ -26,11 +38,11 @@
  import { World, parseScene as validateScene, resolveVisualCatalog, type WorldScene, type WorldEntity, type WorldAdapter, type WorldEditor, type WorldController, type Facing, type TileKind, type Cell } from '@isometrico/world';
  import { insertEntity, moveEntity, flipEntity, paintTiles } from '$lib/demo/editor';
  import { office, outdoors } from '$lib/demo/scenes';
- import { Backpack, ArrowLeft, Download, Upload, Plus, Trash2, Undo2, Redo2, Play, Check, Minus, Scan, Hand, MousePointer2, Layers, Paintbrush, Link, List, MoreHorizontal, Settings2, X, Search, ChevronUp, ChevronDown } from 'lucide-svelte';
+ import { UserRound, Backpack, ArrowLeft, Download, Upload, Plus, Trash2, Undo2, Redo2, Play, Check, Minus, Scan, Hand, MousePointer2, Layers, Paintbrush, Link, List, MoreHorizontal, Settings2, X, Search, ChevronUp, ChevronDown } from 'lucide-svelte';
  import {createAdventure,parseAdventure as validateAdventure,connectMaps,travel,type Adventure,type MapExit} from '$lib/demo/adventure';
  const parseScene=(value:unknown)=>validateScene(value,{allowUnreachable:true});
  const parseAdventure=(value:unknown)=>validateAdventure(value,{allowUnreachable:true});
- type ToolPanel='inventory'|'adventures'|'maps'|'objects'|'catalog'|'paint';
+ type ToolPanel='player'|'inventory'|'adventures'|'maps'|'objects'|'catalog'|'paint';
  let inventorySelection=$state('');
  function addInventoryArticle(){snapshot();const id=crypto.randomUUID();adventure={...adventure,items:[...(adventure.items??[]),{id,name:'Nuevo artículo',description:'',stackable:false}]};inventorySelection=id;}
  function editInventoryArticle(values:Partial<NonNullable<Adventure['items']>[number]>){snapshot();adventure={...adventure,items:adventure.items?.map(i=>i.id===inventorySelection?{...i,...values}:i)};}
@@ -90,7 +102,7 @@
   }catch(e){error=`No se pudo cargar la aventura: ${(e as Error).message}`;}
  })();});
  function syncUrl(){const url=new URL(location.href);url.search='';url.searchParams.set('adventure',adventure.id);url.searchParams.set('map',draft.id);window.history.replaceState(null,'',url);}
- async function persist(){try{const library=await storeAdventure(bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en este navegador.';return true;}catch(e){error=(e as Error).message;return false;}}
+ async function persist(){if(playerChanging)return false;try{const library=await storeAdventure(bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en este navegador.';return true;}catch(e){error=(e as Error).message;return false;}}
  async function playSaved(){if(await persist())await goto(`/?adventure=${encodeURIComponent(adventure.id)}`);}
  async function switchAdventure(id:string){
   if(id===adventure.id||!(await persist()))return;
@@ -200,7 +212,7 @@
  import {exportAdventure,importAdventure,downloadBlob} from '$lib/storage/adventure-package';
  let transferring=$state(false);
  async function download(){if(transferring)return;transferring=true;notice='Preparando el paquete con todos sus recursos…';try{downloadBlob(await exportAdventure(parseAdventure(bundle())),`${adventure.id}.zip`);error='';notice='Paquete exportado con mapas, catálogo e imágenes.';}catch(e){error=(e as Error).message;}finally{transferring=false;}}
- async function openResources(section?:'tile'){if(await persist())await goto(`/sprites?adventure=${encodeURIComponent(adventure.id)}${section?'&section='+section:''}`);}
+ async function openResources(section?:'tile'|'player'){if(await persist())await goto(`/sprites?adventure=${encodeURIComponent(adventure.id)}${section?'&section='+section:''}`);}
  async function duplicateAdventure(){if(!(await persist()))return;try{const copy={...parseAdventure(bundle()),id:crypto.randomUUID(),name:adventure.name+' (copia)'};const library=await localAdventures.save(copy,{pack:await localAdventures.pack(adventure.id),blobs:{}});availableAdventures=library.adventures;await loadGraphics(copy.id);adopt(copy,copy.startMap);syncUrl();history=[];future=[];notice='Copia creada con sus recursos. El progreso del juego es independiente.';}catch(e){error=(e as Error).message;}}
  async function upload(event:Event,adventureOnly=false){const input=event.currentTarget as HTMLInputElement;const file=input.files?.[0];if(!file||transferring)return;transferring=true;try{if(file.name.toLowerCase().endsWith('.zip')){if(!(await persist()))return;const imported=await importAdventure(file);availableAdventures=(await localAdventures.load()).adventures;await loadGraphics(imported.id);adopt(imported,imported.startMap);syncUrl();history=[];future=[];notice='Aventura importada y guardada con todos sus recursos.';error='';return;}if(file.size>10_000_000)throw new Error('El archivo no puede superar 10 MB.');const data=JSON.parse(await file.text());if(adventureOnly&&data?.kind!=='isometric-adventure')throw new Error('Selecciona un JSON de aventura completa. Para importar un mapa suelto, usa Más opciones → Importar JSON.');let a:Adventure;let mapId:string;
   if(data.kind==='isometric-adventure'){a=parseAdventure(data);if(!(await persist()))return;if(availableAdventures.some(item=>item.id===a.id))a={...a,id:crypto.randomUUID(),name:`${a.name} (importada)`};mapId=a.startMap;}
@@ -220,12 +232,20 @@
   <button aria-pressed={toolPanel==='paint'||!!brush} onclick={()=>showTool('paint')}><Paintbrush size={18}/>Mapa</button>
   <button aria-pressed={toolPanel==='catalog'||!!pendingAsset} onclick={()=>showTool('catalog')}><Plus size={18}/>Añadir</button>
   <span class="tool-divider"></span>
+  <button aria-pressed={toolPanel==='player'} onclick={()=>showTool('player')}><UserRound size={18}/>Jugador</button>
   <button aria-pressed={toolPanel==='inventory'} onclick={()=>showTool('inventory')}><Backpack size={18}/>Inventario</button>
   <button aria-pressed={toolPanel==='objects'} onclick={()=>showTool('objects')}><List size={18}/>Objetos</button>
  </nav>
  <div class="editor-body">
-  {#if toolPanel}<aside use:draggablePanel={{key:"tools",positions:panelPositions}} class="editor-objects" class:collapsed={toolCollapsed} aria-label="Herramienta activa"><div class="panel-heading"><h2>{toolPanel==='inventory'?'Inventario de la aventura':toolPanel==='adventures'?'Aventuras':toolPanel==='maps'?'Mapas de la aventura':toolPanel==='objects'?'Objetos del mapa':toolPanel==='catalog'?'Añadir objeto':toolPanel==='paint'?'Editar mapa':'Conectar mapas'}</h2><div class="panel-actions"><button aria-label={toolCollapsed?"Expandir herramienta":"Minimizar herramienta"} aria-expanded={!toolCollapsed} onclick={()=>toolCollapsed=!toolCollapsed}>{#if toolCollapsed}<ChevronDown size={18}/>{:else}<ChevronUp size={18}/>{/if}</button><button aria-label="Cerrar herramienta" onclick={()=>showTool(null)}><X size={18}/></button></div></div><div hidden={toolCollapsed}>
-   {#if toolPanel==='inventory'}
+  {#if toolPanel}<aside use:draggablePanel={{key:"tools",positions:panelPositions}} class="editor-objects" class:collapsed={toolCollapsed} aria-label="Herramienta activa"><div class="panel-heading"><h2>{toolPanel==='player'?'Personaje principal':toolPanel==='inventory'?'Inventario de la aventura':toolPanel==='adventures'?'Aventuras':toolPanel==='maps'?'Mapas de la aventura':toolPanel==='objects'?'Objetos del mapa':toolPanel==='catalog'?'Añadir objeto':toolPanel==='paint'?'Editar mapa':'Conectar mapas'}</h2><div class="panel-actions"><button aria-label={toolCollapsed?"Expandir herramienta":"Minimizar herramienta"} aria-expanded={!toolCollapsed} onclick={()=>toolCollapsed=!toolCollapsed}>{#if toolCollapsed}<ChevronDown size={18}/>{:else}<ChevronUp size={18}/>{/if}</button><button aria-label="Cerrar herramienta" onclick={()=>showTool(null)}><X size={18}/></button></div></div><div hidden={toolCollapsed}>
+   {#if toolPanel==='player'}
+    <p class="environment-note">Elige el personaje que controlarás en todos los mapas de esta aventura.</p>
+    <label>Personaje principal<select aria-label="Personaje principal" value={graphics.activePlayer??'default'} disabled={playerChanging||!graphicsReady} onchange={e=>chooseMainPlayer(e.currentTarget.value)}><option value="default">Explorador original</option>{#each Object.entries(graphics.players??{}) as [id,player]}<option value={id}>{player.name}</option>{/each}</select></label>
+    <p class="environment-note">{playerChanging?'Actualizando personaje…':'La selección se guarda automáticamente en este navegador.'}</p>
+    {#if !Object.keys(graphics.players??{}).length}<p class="environment-note">Aún no hay jugadores propios guardados. Importa el ZIP de tu personaje en el taller para añadirlo aquí.</p>{/if}
+    <button class="panel-primary" disabled={playerChanging} onclick={refreshPlayers}>Actualizar jugadores</button>
+    <button class="panel-primary" disabled={playerChanging} onclick={()=>openResources('player')}>Importar o gestionar jugadores</button>
+   {:else if toolPanel==='inventory'}
     <p class="environment-note">Artículos compartidos por todos los mapas. Asígnalos a objetos recogibles desde sus propiedades.</p>
     <button class="panel-primary" onclick={addInventoryArticle}><Plus size={16}/> Nuevo artículo</button>
     <label>Artículo<select bind:value={inventorySelection}><option value="">Seleccionar…</option>{#each adventure.items??[] as item}<option value={item.id}>{item.name}</option>{/each}</select></label>
