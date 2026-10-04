@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import type { Sheet, GeneratorSettings, Direction } from './types';
   let { sheet, url, settings, onlyDirection }: { sheet: Sheet; url: string; settings: GeneratorSettings; onlyDirection?: Direction } = $props();
-  let playing = $state(false), elapsed = $state(0), frame = $state(0), speed = $state(1);
+  let playing = $state(false), elapsed = $state(0), frame = $state(0), speed = $state(1), zoom = $state(2);
   const visibleDirections = $derived(onlyDirection ? sheet.directions.filter(d=>d===onlyDirection) : sheet.directions);
   const fps = $derived(sheet.loops[visibleDirections[0] ?? sheet.directions[0]]!.fps);
   const frameAt = (time:number, rate:number) => sheet.playback === 'once' ? Math.min(sheet.frames-1,Math.floor(time*rate)) : Math.floor(time*rate)%sheet.frames;
@@ -22,15 +22,16 @@
     return () => clearInterval(timer);
   });
 </script>
+<div class="view-scale"><span>Salida {settings.width} × {settings.height} px · altura objetivo {settings.targetHeight} px</span><label>Zoom <select aria-label="Zoom de revisión" bind:value={zoom}><option value={1}>1× · tamaño real</option><option value={2}>2×</option><option value={3}>3×</option></select></label></div>
 <div class="directions">
   {#each sheet.directions as direction, row}
     {#if !onlyDirection || onlyDirection===direction}
     {@const loop = sheet.loops[direction]!}
     {@const index = playing ? frameAt(elapsed,loop.fps) : frame}
-    <div class="direction"><div class="stage" style:height={`${settings.height * 2}px`}>
-      <div class="sprite" style:width={`${settings.width}px`} style:height={`${settings.height}px`} style:background-image={`url("${url}")`} style:background-position={`${-index * settings.width}px ${-row * settings.height}px`}>
+    <div class="direction"><div class="stage" style:height={`${settings.height * Math.max(2, zoom)}px`}>
+      <div class="sprite-space" style:width={`${settings.width * zoom}px`} style:height={`${settings.height * zoom}px`}><div class="sprite" style:transform={`scale(${zoom})`} style:width={`${settings.width}px`} style:height={`${settings.height}px`} style:background-image={`url("${url}")`} style:background-position={`${-index * settings.width}px ${-row * settings.height}px`}>
         <span class="pivot" style:left={`${settings.anchor[0]}px`} style:top={`${settings.anchor[1]}px`}></span>
-      </div>
+      </div></div>
     </div><strong>{direction.toUpperCase()}</strong><small>{loop.fps} fps{loop.mirroredFrom ? ` · reflejo ${loop.mirroredFrom.toUpperCase()}` : ''}</small></div>
     {/if}
   {/each}
@@ -46,11 +47,12 @@
 
 <details><summary>Ver hoja completa · {sheet.image.width} × {sheet.image.height} px</summary><div class="full"><img src={url} alt={`Hoja de ${sheet.action}, ${sheet.frames} columnas y ${sheet.directions.length} orientaciones`}/></div></details>
 <style>
+  .view-scale{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:12px;color:#60705c}.view-scale label{display:flex;align-items:center;gap:6px}.view-scale select{font:inherit;padding:5px;border:1px solid #bdcbb0;border-radius:4px;background:white;color:#304535}.sprite-space{flex-shrink:0;margin:auto;}
   .controls{display:grid;grid-template-columns:36px minmax(0,1fr) 5ch;grid-template-rows:36px 32px;gap:8px;align-items:center;font-size:12px;margin-top:12px}
   .controls input{width:100%;min-width:0;margin:0;accent-color:#526e37}.counter{width:5ch;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   .play{display:grid;place-items:center;width:36px;height:36px;padding:0;background:#526e37;border:0;border-radius:6px;color:white;cursor:pointer}
   .playback{grid-column:1 / 3;display:flex;gap:6px;align-items:center;color:#60705c}.speed{grid-column:3;justify-self:end;display:flex;align-items:center;gap:6px;white-space:nowrap}
   .playback{max-width:calc(100% - 90px)}.controls select{font:inherit;padding:4px;border:1px solid #bdcbb0;border-radius:4px;background:white;color:#304535}
   button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #698849;outline-offset:3px}
-  .directions{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}.direction{text-align:center;min-width:0}.stage{display:flex;justify-content:center;align-items:center;overflow:auto;min-height:192px;background-color:#e8ece2;background-image:conic-gradient(#d8dfd1 25%,transparent 0 50%,#d8dfd1 0 75%,transparent 0);background-size:16px 16px;border-radius:8px}.sprite{position:relative;flex-shrink:0;transform:scale(2);image-rendering:pixelated;background-repeat:no-repeat}.pivot{position:absolute;width:5px;height:5px;transform:translate(-50%,-50%);border:1px solid #e26f39;border-radius:50%}strong,small{display:block;margin-top:7px}small{font-size:11px;color:#60705c}details{margin-top:14px;font-size:12px}summary{cursor:pointer}.full{overflow:auto;max-height:420px;margin-top:12px;background:#d8dfd1}.full img{display:block;max-width:none;image-rendering:pixelated}
+  .directions{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}.direction{text-align:center;min-width:0}.stage{display:flex;justify-content:flex-start;align-items:flex-start;overflow:auto;min-height:192px;background-color:#e8ece2;background-image:conic-gradient(#d8dfd1 25%,transparent 0 50%,#d8dfd1 0 75%,transparent 0);background-size:16px 16px;border-radius:8px}.sprite{position:relative;flex-shrink:0;transform-origin:top left;image-rendering:pixelated;background-repeat:no-repeat}.pivot{position:absolute;width:5px;height:5px;transform:translate(-50%,-50%);border:1px solid #e26f39;border-radius:50%}strong,small{display:block;margin-top:7px}small{font-size:11px;color:#60705c}details{margin-top:14px;font-size:12px}summary{cursor:pointer}.full{overflow:auto;max-height:420px;margin-top:12px;background:#d8dfd1}.full img{display:block;max-width:none;image-rendering:pixelated}
 </style>

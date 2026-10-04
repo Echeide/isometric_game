@@ -3,10 +3,11 @@
   import { animationProgress, invalidateReference, resumeCursor, WIZARD_STEPS, type WizardStep, type WizardCursor } from './wizard';
   import { readDraft, writeDraft, type CharacterDraft } from './draft';
   import { strToU8 } from 'fflate';
-  import { ACTION_LABELS, availableActions, actionRecipe, validateActionOptions, type ActionOptions, type ExportFormat, selectedActions, defaultSettings, MIRRORS, PROFILES, type BuildResult, type ClipInput, type PixelEditorProvider, type Direction, type Profile, type Sources } from './types';
-  import { buildCharacter, missingSources } from './pipeline';
+  import { ACTION_LABELS, availableActions, actionRecipe, validateActionOptions, type ActionOptions, type ExportFormat, selectedActions, defaultSettings, MIRRORS, PROFILES, type RGB, type BuildResult, type ClipInput, type PixelEditorProvider, type Direction, type Profile, type Sources } from './types';
+  import { missingSources } from './pipeline';
   import { createPrompts, type CharacterBrief } from './prompts';
-  import { encodePNG, exportCharacter, importCharacterReference, loadProject, readImages, readSheet, readVideo, saveProject } from './browser';
+  import { retouchReference, buildFromOriginals, encodePNG, exportCharacter, importCharacterReference, loadProject, readImages, readSheet, readVideo, saveProject } from './browser';
+  import { originalBytes } from './originals';
   import WorkshopIcon from './WorkshopIcon.svelte';
   import SheetPreview from './SheetPreview.svelte';
   import ImageAssistant from './ImageAssistant.svelte';
@@ -159,6 +160,13 @@
     notice = 'Archivo preparado. Pulsa el enlace para guardarlo en tu equipo.';
   }
   function processingChanged() { sources=Object.fromEntries(Object.entries(sources).map(([a,dirs])=>[a,Object.fromEntries(Object.entries(dirs).map(([d,c])=>[d,{...c,reviewed:false}]))])); changed(); }
+  const colorHex = (color: RGB) => '#'+color.map(n=>n.toString(16).padStart(2,'0')).join('');
+  function setPaletteColor(index:number, hex:string) {
+    if(!settings.palette)return;
+    settings.palette[index]=[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
+    processingChanged();
+  }
+  function resetPalette() { settings.palette=undefined; processingChanged(); }
   function changed() { clearResult(); clearDownload(); error = ''; notice = ''; }
   function chooseView(pose: string, facing: Direction) {
     if (!!shortActionRecipe(settings.profile, pose, settings.actionOptions?.[pose]) !== !!shortAction) mode = shortActionRecipe(settings.profile, pose, settings.actionOptions?.[pose]) ? 'images' : 'video';
@@ -175,6 +183,17 @@
     sources = { ...sources, [action]: { ...sources[action], [direction]: { ...active, reviewed: true } } };
     clearDownload(); notice = `Ciclo ${action}/${direction.toUpperCase()} aprobado. Guarda el proyecto para conservar los avances.`;
     continueWorkflow();
+  }
+  async function retouchView() {
+    const reference = art.references[direction], facing = direction;
+    if (!pixelEditor || !reference) return;
+    await run('Retocando la referencia en Piskel…', async () => {
+      const image = await retouchReference(reference.image, `${settings.id} · referencia ${facing.toUpperCase()}`, pixelEditor!);
+      if (!image || destroyed) return;
+      art = {...art, references: {...art.references, [facing]: {...reference, image}}};
+      assistantRevision++;
+      notice = 'Referencia retocada. Se usará en las próximas generaciones; revisa las animaciones existentes de esta orientación.';
+    });
   }
   async function retouch() {
     if (!pixelEditor || !active) return;
@@ -236,6 +255,7 @@
     if (input) next[action][direction] = { ...input, reviewed: false }; else delete next[action][direction];
     const pixels = Object.values(next).flatMap(dirs => Object.values(dirs)).reduce((sum, clip) => sum + [...clip.frames, ...(clip.edits || [])].reduce((n, f) => n + f.width * f.height, 0), 0);
     if (pixels > 64_000_000) throw new Error('Demasiadas muestras en memoria. Reduce duración o fps antes de importar.');
+    if (originalBytes(next)>150*1024*1024) throw new Error('Los originales superan 150 MB. Divide el personaje en varios proyectos.');
     sources = next; rawFrame = 0; changed();
   }
   async function run(label: string, task: () => Promise<void>) {
@@ -293,11 +313,16 @@
   async function process(all: boolean, oneView = false) {
     await run(all ? 'Construyendo todas las hojas…' : 'Preparando vista previa…', async () => {
       clearResult();
-      const built = buildCharacter($state.snapshot(settings), sources, all ? undefined : [action], oneView ? [direction] : undefined);
+      aborter = new AbortController();
+      const built = await buildFromOriginals($state.snapshot(settings), sources, all ? undefined : [action], oneView ? [direction] : undefined, aborter.signal);
       const next: Record<string, string> = {};
       try {
         for (const sheet of built.sheets) next[sheet.action] = URL.createObjectURL(new Blob([new Uint8Array(await encodePNG(sheet.image))], { type: 'image/png' }));
         if (destroyed) { Object.values(next).forEach(URL.revokeObjectURL); return; }
+        if(settings.paletteMode==='fixed' && !settings.palette?.length && built.metadata.processingPalette?.length) {
+          settings.palette=built.metadata.processingPalette.map(c=>[...c] as RGB);
+          built.metadata.settings.palette=structuredClone(built.metadata.processingPalette);
+        }
         urls = next; result = built;
         notice = '';
       } catch (e) { Object.values(next).forEach(URL.revokeObjectURL); throw e; }
@@ -360,10 +385,24 @@
         <h3>Estilo visual</h3>
         <div class="style-options"><button onclick={() => brief.style = 'Pixel art, crisp pixels, limited earthy palette, dark inner outline, large head, compact body'}>Píxel clásico</button><button onclick={() => brief.style = 'Soft illustrated game character, clean shapes, warm pastel palette, gentle shading, readable silhouette'}>Ilustrado suave</button><button onclick={() => brief.style = 'Low-poly game character, faceted shapes, matte colors, consistent soft lighting'}>Low poly</button></div><details class="style-detail"><summary>Personalizar estilo</summary><label>Descripción del estilo<textarea rows="3" bind:value={brief.style}></textarea></label></details>
         <h3>Tamaño de cada fotograma</h3>
-        <div class="pair"><label>Ancho (px)<input type="number" min="16" max="256" disabled={hasRetouchedFrames} bind:value={settings.width} onchange={processingChanged}/></label><label>Alto (px)<input type="number" min="16" max="256" disabled={hasRetouchedFrames} bind:value={settings.height} onchange={processingChanged}/></label></div>        <label>Altura del personaje (px)<input type="number" min="4" max={settings.anchor[1]} bind:value={settings.targetHeight} onchange={processingChanged}/></label>
-        {#if hasRetouchedFrames}<p class="hint">Tamaño bloqueado por retoques de Piskel. Puedes restaurar las fuentes en Revisar.</p>{/if}
-        <details class="advanced"><summary>Apoyo, paleta y fondo</summary>
-        <div class="pair"><label>Apoyo X<input type="number" bind:value={settings.anchor[0]} onchange={processingChanged}/></label><label>Apoyo Y<input type="number" bind:value={settings.anchor[1]} onchange={processingChanged}/></label></div><label>Colores de paleta<input type="number" min="4" max="64" bind:value={settings.colors} onchange={processingChanged}/></label>        <label>Fondo del material<select value={settings.background ? settings.background[1] === 255 ? 'green' : 'magenta' : 'alpha'} onchange={e => { settings.background = e.currentTarget.value === 'alpha' ? null : e.currentTarget.value === 'green' ? [0, 255, 0] : [255, 0, 255]; processingChanged(); }}><option value="magenta">Magenta</option><option value="green">Verde</option><option value="alpha">Ya tiene transparencia</option></select></label>
+        <div class="pair"><label>Ancho (px)<input type="number" min="16" max="256" disabled={hasRetouchedFrames} bind:value={settings.width} onchange={processingChanged}/></label><label>Alto (px)<input type="number" min="16" max="256" disabled={hasRetouchedFrames} bind:value={settings.height} onchange={processingChanged}/></label></div>        <label>Altura del personaje (px)<input type="number" min="4" max={settings.anchor[1]} disabled={hasRetouchedFrames} bind:value={settings.targetHeight} onchange={processingChanged}/></label>
+        {#if hasRetouchedFrames}<p class="hint">Tamaño y apoyo bloqueados por retoques de Piskel. Puedes restaurar las fuentes en Revisar.</p>{/if}
+        <p class="hint">Estos valores definen la salida. La resolución del original y el zoom de revisión no cambian esta escala.</p>
+        <details class="advanced"><summary>Paleta y reducción</summary>
+          <label>Paleta<select value={settings.paletteMode ?? 'auto'} onchange={e=>{settings.paletteMode=e.currentTarget.value as 'auto'|'fixed';processingChanged();}}><option value="fixed">Fija para todo el personaje</option><option value="auto">Automática por construcción</option></select></label>
+          <label>Máximo de colores<input type="number" min="4" max="64" bind:value={settings.colors} onchange={resetPalette}/></label>
+          {#if settings.paletteMode==='fixed'}
+            {#if settings.palette?.length}
+              <div class="palette-swatches">{#each settings.palette as color,index}<input type="color" value={colorHex(color)} aria-label={`Color ${index+1}${index===0 && settings.outline ? ' · contorno' : ''}`} title={`Color ${index+1} · ${colorHex(color)}${index===0 && settings.outline ? ' · contorno' : ''}`} onchange={e=>setPaletteColor(index,e.currentTarget.value)}/>{/each}</div>
+              <button onclick={resetPalette}>Recalcular con la próxima vista</button>
+              <p class="hint">{settings.palette.length} colores compartidos entre vistas y hojas.{settings.outline ? ' El primer color se usa para el contorno.' : ''}</p>
+            {:else}<p class="hint">Se fijará con la próxima vista que proceses. Empieza por una que muestre todos los colores del personaje.</p>{/if}
+          {:else}<p class="hint">Modo de proyectos anteriores: los colores pueden variar entre una vista aislada y la hoja completa.</p>{/if}
+          {#if hasRetouchedFrames}<p class="hint">Los colores retocados en Piskel se conservan aunque cambies la paleta.</p>{/if}
+          <label>Reducción<select value={settings.resampling ?? 'area'} onchange={e=>{settings.resampling=e.currentTarget.value as 'area'|'nearest';processingChanged();}}><option value="area">Área · imágenes IA y vídeo</option><option value="nearest">Píxel más cercano · pixel art existente</option></select></label>
+        </details>
+        <details class="advanced"><summary>Apoyo y fondo</summary>
+        <div class="pair"><label>Apoyo X<input type="number" disabled={hasRetouchedFrames} bind:value={settings.anchor[0]} onchange={processingChanged}/></label><label>Apoyo Y<input type="number" disabled={hasRetouchedFrames} bind:value={settings.anchor[1]} onchange={processingChanged}/></label></div>        <label>Fondo del material<select value={settings.background ? settings.background[1] === 255 ? 'green' : 'magenta' : 'alpha'} onchange={e => { settings.background = e.currentTarget.value === 'alpha' ? null : e.currentTarget.value === 'green' ? [0, 255, 0] : [255, 0, 255]; processingChanged(); }}><option value="magenta">Magenta</option><option value="green">Verde</option><option value="alpha">Ya tiene transparencia</option></select></label>
         {#if settings.background}<label>Tolerancia de fondo · {settings.tolerance}<input type="range" min="0" max="255" bind:value={settings.tolerance} oninput={processingChanged}/></label>{/if}
         <label class="check"><input type="checkbox" bind:checked={settings.outline} onchange={processingChanged}/> Contorno interior de 1 píxel</label>
         <label class="check"><input type="checkbox" bind:checked={settings.stabilize} onchange={processingChanged}/> Fijar el apoyo de cada fotograma</label>
@@ -402,7 +441,8 @@
       <div hidden={step!==2}><section><h2>El aspecto desde cada lado</h2><p class="hint">Una referencia por orientación, compartida por todas las acciones.</p>
         <div class="reference-grid">{#each profile.directions as d}{@const ref=art.references[d]}{@const mirror=!ref && settings.mirror && MIRRORS[d] ? art.references[MIRRORS[d]!] : undefined}<button aria-pressed={direction===d} class:selected={direction===d} onclick={()=>chooseView(action,d)}>{#if ref || mirror}<img class:flipped={!!mirror} src={(ref ?? mirror)!.image} alt={`Referencia ${d.toUpperCase()}`}/>{/if}<strong>{d.toUpperCase()}</strong><small>{ref ? 'Preparada' : mirror ? 'Por reflejo' : 'Pendiente'}</small></button>{/each}</div>
         <p class="hint">{orientationLabels[direction]}</p>
-        {#if art.references[direction]}<div class="reference-tools"><a class="button" href={art.references[direction]!.image} download={`referencia-${direction}.png`}><WorkshopIcon name="download" size={14}/> PNG</a><button onclick={()=>{const refs={...art.references};delete refs[direction];art={...art,references:refs};}}>Quitar referencia {direction.toUpperCase()}</button></div>{/if}
+        {#if art.references[direction]}<div class="reference-tools">{#if pixelEditor}<button onclick={retouchView}><WorkshopIcon name="edit" size={16}/> Retocar en Piskel</button>{/if}<a class="button" href={art.references[direction]!.image} download={`referencia-${direction}.png`}><WorkshopIcon name="download" size={14}/> PNG</a><button onclick={()=>{const refs={...art.references};delete refs[direction];art={...art,references:refs};}}>Quitar referencia {direction.toUpperCase()}</button></div>{/if}
+        {#if referenceMirrored}<p class="hint">Esta vista refleja {MIRRORS[direction]!.toUpperCase()}. Sus retoques se hacen en la referencia de origen.</p><button onclick={()=>chooseView(action,MIRRORS[direction]!)}>Ir a referencia {MIRRORS[direction]!.toUpperCase()}</button>{:else if art.references[direction] && pixelEditor}<p class="hint">Retoca la imagen de partida a su resolución actual. El tamaño final se aplica al procesar las animaciones.</p>{/if}
         <label class="button">Importar vista {direction.toUpperCase()}<input type="file" accept="image/png,image/jpeg,image/webp" onchange={importView}/></label>
                 {#if imageProvider}{#key `${assistantRevision}:${settings.profile}`}<ImageAssistant provider={imageProvider} {brief} profile={settings.profile} {action} {direction} bind:art onbusy={label => busy = label} onerror={message => error = message}/>{/key}{/if}
 
@@ -427,7 +467,7 @@
           <div class="pair"><label>{mode === 'video' ? 'Muestras por segundo' : 'FPS de la secuencia'}<input type="number" min="1" max="30" bind:value={sourceFps}/></label>{#if mode === 'video'}<label>Desde el segundo<input type="number" min="0" step="0.1" bind:value={start}/></label>{:else if mode === 'sheet'}<label>Columnas<input type="number" min="1" max="180" bind:value={columns}/></label>{/if}</div>
           {#if mode === 'video'}<label>Segundos a importar<input type="number" min="0.1" max="10" step="0.1" bind:value={seconds}/></label>{:else if mode === 'sheet'}<div class="pair"><label>Filas totales<input type="number" min="1" max="180" bind:value={rows}/></label><label>Fila a importar (desde 1)<input type="number" min="1" max={rows} bind:value={sourceRow}/></label></div>{/if}
           <label class="button primary">{active ? 'Reemplazar fuente' : 'Importar fuente'} · {action}/{direction.toUpperCase()}<input type="file" accept={mode === 'video' ? 'video/mp4,video/webm,video/quicktime' : 'image/png,image/webp,image/jpeg'} multiple={mode === 'images'} onchange={importFiles}/></label>
-          <p class="hint">Hasta 180 muestras por clip; se reducen a 192 px de lado mayor al importar. Vídeos: hasta 100 MB. {activeRecipe.playback === 'once' ? 'Se conserva la secuencia completa, sin buscar un cierre repetitivo.' : 'Las secuencias conservan su ciclo completo; los vídeos buscan un cierre automáticamente.'}</p>
+          <p class="hint">Hasta 180 muestras de análisis por clip. Conservamos el original para reducirlo directamente al tamaño de salida. Vídeos: hasta 100 MB; originales del proyecto: hasta 150 MB. {activeRecipe.playback === 'once' ? 'Se conserva la secuencia completa, sin buscar un cierre repetitivo.' : 'Las secuencias conservan su ciclo completo; los vídeos buscan un cierre automáticamente.'}</p>
         </div></details>
 </div>
                 <details class="prompts" hidden={inputMethod!=='manual'}><summary>Prompts para {direction.toUpperCase()} / {action}</summary><p class="hint">Genera primero una vista aprobada. Usa esa imagen como referencia al crear las demás vistas y al animar. Los prompts están en inglés; puedes usarlos con cualquier proveedor.</p><label>Nota específica de esta orientación<textarea rows="2" value={brief.notes[direction] || ''} oninput={e => brief.notes[direction] = e.currentTarget.value} placeholder="Qué accesorio se ve, hacia dónde apunta…"></textarea></label><h3>Imagen de referencia</h3><textarea rows="5" readonly value={prompt.still}></textarea><button onclick={() => copy(prompt.still)}>Copiar prompt de imagen</button><h3>{useImage ? 'Imagen de la acción' : 'Animación'}</h3><textarea rows="6" readonly value={actionPrompt.prompt}></textarea><button onclick={() => copy(actionPrompt.prompt)}>{useImage ? 'Copiar prompt de la acción' : 'Copiar prompt de animación'}</button><h3>Evitar</h3><textarea rows="3" readonly value={prompt.clips.find(c => c.action === action)!.negative}></textarea><p class="hint">Sugerencia: clips de 5 segundos. {activeRecipe.playback === 'once' ? 'Conserva la acción completa y su última pose; no fijes la misma imagen al inicio y al final.' : 'Para sit basta una pose. En acciones repetidas puedes fijar la misma referencia al inicio y al final.'}</p></details>
@@ -437,7 +477,7 @@
       <div hidden={step!==4}><section><h2>Revisa {ACTION_LABELS[action].toLowerCase()} · {direction.toUpperCase()}</h2>
         {#if viewReady}<p class="hint">Comprueba el movimiento y el apoyo antes de aprobar.</p><div class="export-actions"><button class="icon-button" aria-label="Actualizar vista previa" title="Actualizar vista previa" onclick={()=>process(false,true)}><WorkshopIcon name="refresh"/></button>{#if active && pixelEditor}<button onclick={retouch}><WorkshopIcon name="edit" size={16}/> Retocar en Piskel</button>{/if}</div>
           {#if active?.edits}<p class="hint">Los retoques conservan colores y posición; también se aplican a las vistas por reflejo.</p><button onclick={()=>{if(active)setSource({...active,edits:undefined});}}>Restaurar fuente original</button>{/if}
-                  {#if active}<details class="source-options"><summary>Intervalo, velocidad y posición</summary><div class="source-review"><div>{#if rawUrl}<img src={rawUrl} alt={`Muestra ${rawFrame + 1} de la fuente ${action}/${direction}`}/>{/if}<label>Muestra {rawFrame + 1} / {active.frames.length}<input type="range" min="0" max={active.frames.length - 1} bind:value={rawFrame}/></label></div><div><p class="filename">{active.name}</p><p class="hint">{active.frames.length} muestras · {active.sourceFps} fps de origen</p><label class="check"><input type="checkbox" checked={!!active.range} onchange={e => setSource({ ...active, range: e.currentTarget.checked ? [0, active.frames.length] : undefined })}/> Elegir intervalo manual</label>{#if active.range}<div class="pair"><label>Primera muestra<input type="number" min="1" max={active.frames.length} value={active.range[0] + 1} onchange={e => crop('start', e.currentTarget.valueAsNumber)}/></label><label>Última muestra (incluida)<input type="number" min="1" max={active.frames.length} value={active.range[1]} onchange={e => crop('end', e.currentTarget.valueAsNumber)}/></label></div>{/if}<label>FPS de salida · 0 = automático<input type="number" min="0" max="30" step="0.1" value={active.playbackFps || 0} onchange={e => setSource({ ...active, playbackFps: e.currentTarget.valueAsNumber || undefined })}/></label><details><summary>Ajustar tamaño y apoyo de esta vista</summary><label>Multiplicador de escala<input type="number" min="0.5" max="2" step="0.01" value={active.scaleBias ?? 1} onchange={e => setSource({ ...active, scaleBias: e.currentTarget.valueAsNumber })}/></label><div class="pair"><label>Desplazar X (px)<input type="number" min="-256" max="256" value={active.offset?.[0] ?? 0} onchange={e => setSource({ ...active, offset: [e.currentTarget.valueAsNumber, active.offset?.[1] ?? 0] })}/></label><label>Desplazar Y (px)<input type="number" min="-256" max="256" value={active.offset?.[1] ?? 0} onchange={e => setSource({ ...active, offset: [active.offset?.[0] ?? 0, e.currentTarget.valueAsNumber] })}/></label></div></details><button onclick={() => setSource()}>Quitar esta fuente</button></div></div></details>{/if}
+                  {#if active}<details class="source-options"><summary>Intervalo, velocidad y posición</summary><div class="source-review"><div>{#if rawUrl}<img src={rawUrl} alt={`Muestra ${rawFrame + 1} de la fuente ${action}/${direction}`}/>{/if}<label>Muestra {rawFrame + 1} / {active.frames.length}<input type="range" min="0" max={active.frames.length - 1} bind:value={rawFrame}/></label></div><div><p class="filename">{active.name}</p><p class="hint">{active.edits ? 'Retoques a resolución final: se conservan sin volver a escalar.' : active.original ? 'Original conservado: reducción directa al tamaño del paso 1.' : 'Fuente sin original: se usan las muestras guardadas. Reimporta el archivo para aprovechar su resolución completa.'}</p><p class="hint">{active.frames.length} muestras · {active.sourceFps} fps de origen</p><label class="check"><input type="checkbox" checked={!!active.range} onchange={e => setSource({ ...active, range: e.currentTarget.checked ? [0, active.frames.length] : undefined })}/> Elegir intervalo manual</label>{#if active.range}<div class="pair"><label>Primera muestra<input type="number" min="1" max={active.frames.length} value={active.range[0] + 1} onchange={e => crop('start', e.currentTarget.valueAsNumber)}/></label><label>Última muestra (incluida)<input type="number" min="1" max={active.frames.length} value={active.range[1]} onchange={e => crop('end', e.currentTarget.valueAsNumber)}/></label></div>{/if}<label>FPS de salida · 0 = automático<input type="number" min="0" max="30" step="0.1" value={active.playbackFps || 0} onchange={e => setSource({ ...active, playbackFps: e.currentTarget.valueAsNumber || undefined })}/></label><details><summary>Ajustar tamaño y apoyo de esta vista</summary><label>Multiplicador de escala<input type="number" min="0.5" max="2" step="0.01" value={active.scaleBias ?? 1} onchange={e => setSource({ ...active, scaleBias: e.currentTarget.valueAsNumber })}/></label><div class="pair"><label>Desplazar X (px)<input type="number" min="-256" max="256" value={active.offset?.[0] ?? 0} onchange={e => setSource({ ...active, offset: [e.currentTarget.valueAsNumber, active.offset?.[1] ?? 0] })}/></label><label>Desplazar Y (px)<input type="number" min="-256" max="256" value={active.offset?.[1] ?? 0} onchange={e => setSource({ ...active, offset: [active.offset?.[0] ?? 0, e.currentTarget.valueAsNumber] })}/></label></div></details><button onclick={() => setSource()}>Quitar esta fuente</button></div></div></details>{/if}
 
           {#if mirrored}<p class="notice">Esta vista refleja {MIRRORS[direction]!.toUpperCase()}. Revisa y aprueba la original.</p><button onclick={()=>{chooseView(action,MIRRORS[direction]!);void goStep(4);}}>Revisar original</button>{/if}
           <button class="text-button" onclick={()=>goStep(1)}><WorkshopIcon name="settings" size={14}/> Formato y dimensiones</button>
@@ -467,6 +507,7 @@
   </fieldset>
 </div>
 <style>
+  .palette-swatches{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}.palette-swatches input{width:30px;height:30px;padding:2px;margin:0;cursor:pointer}
   .format-panel h3{font-size:14px}.sheet-sizes{margin-top:20px;border-top:1px solid #dce3d4;padding-top:16px}.sizes-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid #dce3d4}thead th{color:#60705c}td{white-space:nowrap}
  .example{margin-bottom:18px}.example summary{font-weight:400}
   [hidden]{display:none!important}.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:16px 0}.steps button{display:flex;gap:8px;align-items:center;justify-content:center;min-height:48px}.steps button span{display:grid;place-items:center;border:1px solid #c4d1b7;border-radius:50%;width:24px;height:24px}.steps .current{background:#526e37;color:white;border-color:#526e37}.wizard-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}.wizard-heading h2{margin:8px 0}.wizard-heading>span{font-size:12px}.overall-progress{width:100%;height:6px;accent-color:#526e37;margin:0 0 14px}.wizard-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;border:0;padding:0;margin:0;min-width:0}.panels{min-width:0}.preview-panel{min-width:0}.preview-sticky{position:sticky;top:16px;border:1px solid #dce3d4;border-radius:12px;background:#fffdf5;padding:20px;}.preview-sticky h2{margin:0 0 8px}.preview-caption{font-size:12px}.portrait{display:block;width:100%;max-height:340px;object-fit:contain;background:repeating-conic-gradient(#d8dfd1 0% 25%,#eef1e8 0% 50%) 0/16px 16px;border-radius:8px}.flipped{transform:scaleX(-1)}.step-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:24px 0 8px}.step-footer button{min-height:44px}.save-status{font-size:12px;color:#506547}.advanced{margin-top:22px;border-top:1px solid #dce3d4;padding-top:16px}.advanced>summary{margin-bottom:18px}.reference-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin:20px 0}.reference-grid button{min-height:76px;display:grid;justify-items:center;gap:6px}.reference-grid img{width:80px;height:100px;object-fit:contain}.reference-grid small{font-size:11px}.recovery{background:#e8efdf}.recovery button{margin-right:8px}#wizard-title:focus{outline:2px solid #698849;outline-offset:4px}

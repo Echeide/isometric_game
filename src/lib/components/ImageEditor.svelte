@@ -48,7 +48,7 @@
 <dialog bind:this={dialog} class="image-editor" aria-labelledby="image-editor-title" oncancel={e=>{e.preventDefault();close();}}>
  <div class="editor-shell">
   <header><div><p>RETOQUE DE PÍXELES · PISKEL</p><h2 id="image-editor-title">{session.frames && session.frames > 1 ? 'Editar ciclo' : 'Editar imagen'} · {session.name}</h2></div><button class="close" aria-label="Cerrar editor de imagen" disabled={working} onclick={close}><X size={20}/></button></header>
-  <div class="toolbar"><span>{session.width / (session.frames || 1)} × {session.height} px{session.frames ? ` · ${session.frames} fotogramas` : ''} · Tamaño y apoyo conservados</span><div><button disabled={!ready||working} onclick={()=>send('undo')}><RotateCcw size={15}/> Deshacer</button><button disabled={!ready||working} onclick={()=>send('redo')}><RotateCw size={15}/> Rehacer</button></div></div>
+  <div class="toolbar"><span>{session.width / (session.frames || 1)} × {session.height} px{session.frames && session.frames > 1 ? ` · ${session.frames} fotogramas` : ''} · Tamaño y apoyo conservados</span><div><button disabled={!ready||working} onclick={()=>send('undo')}><RotateCcw size={15}/> Deshacer</button><button disabled={!ready||working} onclick={()=>send('redo')}><RotateCw size={15}/> Rehacer</button></div></div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if confirmClose}<div class="discard" role="alert"><span>Hay retoques sin aplicar.</span><button onclick={()=>confirmClose=false}>Seguir editando</button><button onclick={onclose}>Descartar retoques</button></div>{/if}
   <div class="canvas-area" class:working={working||!ready}>

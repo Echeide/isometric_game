@@ -49,7 +49,13 @@ export function selectedActions(settings: Pick<GeneratorSettings, 'profile' | 'a
   return names.flatMap(name => actionRecipe(settings.profile, name, settings.actionOptions?.[name]) ?? []);
 }
 export const MIRRORS: Partial<Record<Direction, Direction>> = { sw: 'se', nw: 'ne', w: 'e' };
+export type OriginalSource =
+  | { kind: 'images'; files: Blob[] }
+  | { kind: 'sheet'; files: Blob[]; columns: number; rows: number; row: number }
+  | { kind: 'video'; files: Blob[]; start: number };
 export interface ClipInput {
+  /** Compressed originals; frames remain lightweight samples for cycle analysis. */
+  original?: OriginalSource;
   /** Final-resolution retouches; keep source frames intact for restoration. */
   edits?: Frame[];
   reviewed?: boolean;
@@ -78,6 +84,10 @@ export interface GeneratorSettings {
   anchor: [number, number];
   targetHeight: number;
   colors: number;
+  /** Missing in legacy projects: preserve automatic palette behavior. */
+  paletteMode?: 'auto' | 'fixed';
+  palette?: RGB[];
+  resampling?: 'area' | 'nearest';
   background: RGB | null;
   tolerance: number;
   outline: boolean;
@@ -88,7 +98,7 @@ export interface GeneratorSettings {
 }
 export const defaultSettings = (): GeneratorSettings => ({
   id: 'mi-personaje', profile: 'game', width: 64, height: 96, anchor: [32, 80],
-  targetHeight: 60, colors: 28, background: [255, 0, 255], tolerance: 90,
+  targetHeight: 60, colors: 28, paletteMode: 'fixed', resampling: 'area', background: [255, 0, 255], tolerance: 90,
   outline: true, mirror: true, stabilize: false, baseUrl: '/pixelart/characters/mi-personaje'
 });
 export interface LoopInfo {
@@ -103,7 +113,7 @@ export interface BuildResult {
     image: string; frameWidth: number; frameHeight: number; anchor: [number, number]; directions: Direction[];
     animations: Record<string, { image: string; row: number; frames: number; fps: number; directionFps: Partial<Record<Direction, number>> }>;
   };
-  metadata: { version: 1; profile: Profile; settings: GeneratorSettings; palette: RGB[]; loops: Record<string, Sheet['loops']>; warnings: string[] };
+  metadata: { version: 1; profile: Profile; settings: GeneratorSettings; palette: RGB[]; processingPalette?: RGB[]; loops: Record<string, Sheet['loops']>; warnings: string[] };
 }
 
 export interface PixelEditRequest { blob: Blob; name: string; width: number; height: number; frames: number; fps: number }

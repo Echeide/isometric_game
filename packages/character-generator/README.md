@@ -11,7 +11,7 @@ La aplicación de este repositorio lo monta en **`/characters`**, accesible desd
 3. Usa la vista aprobada como entrada de la herramienta de vídeo. Los prompts describen una cámara fija, movimiento en el sitio, fondo uniforme y acciones por orientación. En acciones en bucle, si el proveedor lo permite, fija la misma imagen al inicio y al final del clip. En acciones de una vez, conserva la última pose sin regresar al inicio. Para `sit` basta una imagen sentada.
 4. Selecciona acción y orientación e importa el material. Para PNG secuenciales, los nombres se ordenan numéricamente (`frame2` antes de `frame10`). Para una hoja, indica columnas, filas totales y la fila desde 1. En vídeo, indica inicio, duración y frecuencia de muestreo.
 5. Ajusta transparencia, altura, paleta y apoyo. Previsualiza la acción y revisa cada orientación. Puedes seleccionar un intervalo manual, una velocidad de salida y correcciones de escala y posición por vista.
-6. **Construir todas las hojas** calcula una sola paleta para todo el personaje. **Descargar personaje ZIP** prepara el archivo y muestra un enlace para guardarlo; inspecciona los avisos antes de usar las hojas. **Guardar proyecto** prepara un segundo ZIP con las imágenes fuente y permite volver a abrir el trabajo.
+6. En proyectos nuevos, la primera vista procesada fija una paleta que comparten las revisiones y la exportación. Puedes editarla o recalcularla en **Personaje → Formato y dimensiones → Paleta y reducción**. **Construir todas las hojas** conserva esa paleta. **Descargar personaje ZIP** prepara el archivo y muestra un enlace para guardarlo; inspecciona los avisos antes de usar las hojas. **Guardar proyecto** prepara un segundo ZIP con las imágenes fuente y permite volver a abrir el trabajo.
 
 Sin adaptador de imágenes, el módulo prepara los prompts y procesa material importado. Con el adaptador opcional puede generar referencias del personaje; solo se conservan cuando el usuario las aprueba. Repetir una imagen no crea una animación; el procesador avisa cuando necesita repetir muestras.
 
@@ -34,10 +34,12 @@ Con reflejos activos basta E en plataformas y hacen falta NE y SE en el perfil d
 - En bucles, muestrea el intervalo sin incluir el extremo repetido. En acciones de una vez, incluye ambos extremos cuando hay al menos dos fotogramas. En recorte manual, primera y última muestra son inclusivas en la interfaz; la API usa `[start, end)` con índices desde cero.
 - Igualará la altura mediana de cada ciclo a la altura solicitada, con escala constante dentro del clip. Para poses sentadas y gestos usa la altura de `idle` de la misma dirección cuando existe y comparte resolución. Esta referencia presupone el mismo encuadre de origen. El multiplicador por vista corrige diferencias perceptivas y referencias mal encuadradas.
 - Estima el apoyo con el centro y borde inferior de la silueta. Por defecto usa un apoyo fijo para todo el ciclo y conserva el movimiento. La estabilización por fotograma elimina deriva, pero también saltos. Se omite para jump/fall/die: usan un apoyo fijo y la escala de idle si comparte encuadre, o la primera muestra en su ausencia. Los ajustes X/Y permiten corregir accesorios que desplacen el centro de la silueta.
-- Reduce con promedio de área y alfa premultiplicado, aplica alfa binario, una paleta global de hasta 64 colores y contorno interior opcional. No añade píxeles fuera de la silueta para el contorno.
+- Conserva originales comprimidos y muestras de análisis de hasta 192 px. En navegador, decodifica solo los fotogramas elegidos, elimina el fondo y reduce directamente desde el original a la celda configurada. Usa promedio de área y alfa premultiplicado (IA/vídeo) o píxel más cercano (pixel art existente), alfa binario, una paleta de hasta 64 colores y contorno interior opcional. No añade píxeles fuera de la silueta para el contorno.
 - Refleja alrededor del apoyo, empaqueta una hoja por acción y calcula FPS por orientación según la duración del intervalo. En plataformas usa los FPS de la receta; los FPS personalizados por acción tienen prioridad sobre el cálculo automático y los de cada vista sobre los de la acción. El rango de reproducción es 1–30 fps; los límites y repeticiones quedan registrados como avisos.
 
-La vista previa de una sola acción calcula una paleta provisional. La construcción completa vuelve a calcular la paleta compartida. Importar o editar opciones invalida las hojas anteriores.
+El ancho, alto, altura objetivo y apoyo del paso 1 definen la escala final. La resolución del original no cambia esa escala. El zoom 1×/2×/3× (2× por defecto) solo amplía la revisión; no cambia los PNG ni el tamaño de edición en Piskel. Con retoques se bloquean tamaño y apoyo hasta restaurar las fuentes.
+
+La paleta fija se obtiene de la primera vista procesada: conviene elegir una que muestre todos los colores. Su primer color se usa para el contorno cuando está activo. Cambiar la paleta invalida las aprobaciones; los píxeles retocados en Piskel conservan sus colores exactos aunque estén fuera de ella. Los proyectos anteriores sin `paletteMode` mantienen la paleta automática por construcción, y pueden optar por fijarla desde el paso 1.
 
 ## Archivos
 
@@ -50,9 +52,9 @@ El **ZIP del personaje** contiene:
 - `prompts.json`: descripción del personaje y recetas de generación.
 - `LEEME.txt`: carpeta destino y compatibilidad del perfil.
 
-El **ZIP del proyecto** contiene `project.json` y las muestras PNG anteriores al procesamiento. Se guardan las muestras reducidas, no los vídeos originales. Permite ajustar el procesamiento y volver a exportar; para obtener más resolución o cambiar el intervalo de vídeo importado se necesita el original.
+El **ZIP del proyecto** contiene `project.json`, muestras PNG, retoques y originales comprimidos en `originals/` (hasta 150 MB de originales por proyecto; ZIP de hasta 250 MB). Conserva paleta, reducción y escala. Los ZIP anteriores siguen abriéndose con sus muestras; para recuperar detalle perdido necesitan reimportar el original. Cambiar el intervalo de vídeo más allá del tramo muestreado también requiere reimportarlo. Los originales se guardan en el borrador local de IndexedDB y no se suben a ningún servidor.
 
-El procesamiento de hojas sucede localmente. Al pulsar **Generar** con la ayuda de OpenAI se envían la descripción y, si existe, una referencia aprobada al proveedor. No hay persistencia automática ni escritura al catálogo activo. Conserva el proyecto antes de recargar, abrir otro proyecto o cargar el ejemplo.
+El procesamiento de hojas sucede localmente. Al pulsar **Generar** con la ayuda de OpenAI se envían la descripción y, si existe, una referencia aprobada al proveedor. Se conserva un borrador local automáticamente; no se escribe al catálogo activo. Conserva el proyecto antes de recargar, abrir otro proyecto o cargar el ejemplo.
 
 ## Integrar en el juego
 
@@ -95,14 +97,17 @@ El ejemplo del juego se inyecta mediante `onexample?: () => Promise<Sources>`; e
 API sin interfaz, para aplicaciones con bundler:
 
 ```ts
-import { buildCharacter, defaultSettings } from '@isometrico/character-generator/core';
-import { readVideo, exportCharacter } from '@isometrico/character-generator/browser';
+import { defaultSettings } from '@isometrico/character-generator/core';
+import { readVideo, buildFromOriginals, exportCharacter } from '@isometrico/character-generator/browser';
 
 // `file`, `sources` y `brief` pertenecen al anfitrión.
 const clip = await readVideo(file, { start: 0, seconds: 5, fps: 12 });
 sources.walk = { ...sources.walk, se: clip };
 // Requiere todas las fuentes del perfil; ['walk'] crea solo una vista previa.
-const built = buildCharacter(defaultSettings(), sources);
+const settings = defaultSettings();
+const built = await buildFromOriginals(settings, sources);
+// Persistir la paleta de la primera construcción para las siguientes.
+settings.palette = built.metadata.processingPalette;
 const zipBytes = await exportCharacter(built, brief);
 ```
 
@@ -110,7 +115,7 @@ El núcleo acepta arrays RGBA y no usa DOM. Las utilidades `/browser` requieren 
 
 ## Límites y revisión
 
-- Hasta 180 muestras por clip y 64 millones de píxeles fuente por proyecto. Las importaciones se reducen a un lado máximo de 192 px para acotar memoria; la API del núcleo admite hasta 512 px por lado.
+- Hasta 180 muestras por clip y 64 millones de píxeles fuente por proyecto. Las muestras de análisis tienen un lado máximo de 192 px; los originales se conservan comprimidos y solo se decodifican los fotogramas elegidos. La API síncrona del núcleo admite muestras de hasta 512 px por lado.
 - Imágenes de hasta 20 MB / 32 MP; vídeos hasta 100 MB y segmentos de hasta 10 segundos. La compatibilidad de códecs depende del navegador; MP4 H.264 y WebM son las opciones habituales.
 - El vídeo se muestrea mediante búsqueda temporal del navegador. Los índices exportados corresponden a estas muestras, no a índices originales del archivo. No garantiza extracción exacta de fotogramas en vídeo con frecuencia variable.
 - Los clips deben mantener encuadre y resolución. Revisa cortes, halos del chroma, cambios de vestuario, dirección, anatomía, accesorios y continuidad. Los avisos no bloquean exportar: puede ser necesario retocar o regenerar la fuente.
@@ -167,7 +172,7 @@ Implementación contrastada con la [guía oficial de imágenes](https://develope
 
 En la aplicación, «Retocar en Piskel» abre el editor local ya incluido con el ciclo separado en fotogramas a resolución final, transparencia y reproducción. «Aplicar al taller» devuelve el PNG directamente al generador. Las capas se combinan; la cantidad de fotogramas y las dimensiones permanecen fijas. La velocidad del visor de Piskel es solo de previsualización; los FPS de salida se ajustan en el generador.
 
-Los retoques se guardan en `edits/` dentro del `.project.zip`, conservando las fuentes originales. Se aplican después de la reducción y la paleta para preservar los píxeles, colores y posición elegidos. Los reflejos se calculan desde el resultado retocado. Para cambiar la cuadrícula o rehacer el acabado, usa «Restaurar desde la fuente original». La revisión y los retoques no tienen guardado automático: descarga el proyecto actualizado.
+Los retoques se guardan en `edits/` dentro del `.project.zip`, conservando las fuentes originales. Se aplican después de la reducción y la paleta para preservar los píxeles, colores y posición elegidos. Los reflejos se calculan desde el resultado retocado. Para cambiar la cuadrícula o rehacer el acabado, usa «Restaurar desde la fuente original». La revisión y los retoques se guardan en el borrador local; descarga el proyecto actualizado para conservar una copia portátil.
 
 El paquete continúa siendo independiente: recibe un `PixelEditorProvider` opcional; la ruta `/characters` conecta ese contrato con el componente Piskel de la aplicación.
 
@@ -232,3 +237,5 @@ El reproductor mantiene el visor estable al avanzar fotogramas: los controles es
 Las referencias se administran en una sola galería. En Animaciones, el selector ofrece Kling, ChatGPT para ciclos de hasta cuatro fotogramas e importación manual según los proveedores disponibles. Calidad, conexión y prompts quedan en desplegables; la información de consumo permanece visible.
 
 Exportar separa las hojas para el juego del proyecto editable. «Generar y descargar hojas» construye y exporta las acciones aprobadas; conserva un enlace de descarga si el navegador no inicia la descarga automáticamente. El proyecto `.project.zip` mantiene las referencias, fotogramas y retoques para continuar editando.
+
+En el paso **Vistas**, **Retocar en Piskel** abre la referencia seleccionada como una sola imagen a su resolución actual. **Aplicar al taller** actualiza la referencia para las próximas generaciones y el borrador/ZIP; cancelar conserva la anterior. Las animaciones existentes se conservan y quedan pendientes de revisión si dependen de esa orientación. Para vistas por reflejo, el botón **Ir a referencia** lleva a la imagen de origen. El ancho, alto y apoyo finales del paso 1 no cambian al retocar una referencia.

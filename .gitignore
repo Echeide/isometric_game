@@ -14,3 +14,6 @@ packages/character-generator/dist/
 *.tgz
 __pycache__/
 *.pyc
+
+# Private reusable sprite library (use a persistent volume in production)
+.sprite-library/

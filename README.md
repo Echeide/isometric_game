@@ -144,6 +144,19 @@ El componente compartido acepta `editor?: WorldEditor` con `selectedId`, `onsele
 
 Abre `/sprites` para previsualizar animaciones y descargar hojas y plantillas. Consulta [la guía de recursos](static/pixelart/README.md). El paquete exporta `PixelArtPack`; pasa el catálogo con `<World {adapter} {graphics} />`. Copia también `static/pixelart` al proyecto consumidor: los PNG de la demo no se incluyen en el paquete del motor.
 
+### Biblioteca general de recursos
+
+El taller de sprites permite guardar objetos, PNJ, jugadores y suelos en una biblioteca del servidor. **Guardar en aventura** conserva el recurso en el proyecto actual; **Añadir a biblioteca general** lo hace reutilizable. Desde **Biblioteca general**, busca por tipo/nombre e incorpora una copia independiente a la aventura seleccionada. La biblioteca y las fichas individuales se pueden trasladar mediante ZIP. Para Railway se necesita un volumen persistente y `SPRITE_LIBRARY_DIR`: consulta [almacenamiento y configuración](docs/adventure-storage.md#biblioteca-general-de-sprites).
+
+### Objetos con IA en el taller
+
+En `/sprites?adventure=…`, selecciona **Objetos → Añadir objeto** (o un recurso existente). Define ancho, alto, huella y apoyo; abre **Generar con IA**, describe un objeto estático y, si quieres, elige una referencia del catálogo o importa PNG/JPG/WebP. Estilo, orientación isométrica y calidad están en un desplegable.
+
+El servicio reutiliza `OPENAI_API_KEY` y `OPENAI_IMAGE_MODEL` del servidor, con la misma protección del taller privado de personajes. Sin API configurada, la subida manual sigue disponible. Cada generación realiza una petición de pago sin reintentos automáticos; los ajustes de fondo y número de colores son locales. Nunca se envían claves al navegador.
+
+La propuesta se reduce desde la imagen original al tamaño configurado, conserva la proporción y se muestra sobre la retícula. **Usar esta imagen** aplica el resultado sin cambiar tamaño, huella ni origen. Después puedes **Editar imagen** en Piskel y **Guardar en aventura**. El zoom de la vista previa no cambia los píxeles exportados. El PNG original de IA se conserva por separado de la imagen de edición, puede descargarse y viaja dentro del ZIP de la aventura. El guardado del catálogo es local al navegador: exporta el ZIP para trasladarlo a otro dispositivo.
+
+
 ## Jugar los mapas editados
 
 En `/editor`, **Guardar y jugar** valida y guarda el mapa en localStorage y abre el mundo con sus interacciones reales. **Volver al mundo** también guarda antes de salir. Al volver al editor se recupera la versión guardada; al cambiar de escenario en el editor se guarda primero el actual. Oficina y ruta tienen espacios de guardado separados. Un mapa inválido o un fallo de almacenamiento impide salir mediante esas acciones para evitar fingir un guardado correcto.
@@ -192,7 +205,7 @@ El editor guarda en IndexedDB y migra automáticamente las aventuras anteriores 
 
 ### Generador independiente de personajes
 
-En **Sprites → Jugador → Importar ZIP del personaje** puedes cargar el ZIP de **Descargar personaje ZIP**: incluye las seis hojas PNG, sus fotogramas, FPS por orientación, tamaño de celda y apoyo. Revisa la vista previa y pulsa **Guardar en catálogo**. El ZIP editable `.project.zip` se abre únicamente en el generador. Para elegir el protagonista, abre **Editor → Jugador → Personaje principal**; la selección se guarda para toda la aventura. **Actualizar jugadores** recupera las incorporaciones hechas en otra pestaña, e **Importar o gestionar jugadores** abre el taller de esa aventura.
+En **Sprites → Jugador → Importar ZIP del personaje** puedes cargar el ZIP de **Descargar personaje ZIP**: incluye las seis hojas PNG, sus fotogramas, FPS por orientación, tamaño de celda y apoyo. Revisa la vista previa y pulsa **Guardar en aventura**. El ZIP editable `.project.zip` se abre únicamente en el generador. Para elegir el protagonista, abre **Editor → Jugador → Personaje principal**; la selección se guarda para toda la aventura. **Actualizar jugadores** recupera las incorporaciones hechas en otra pestaña, e **Importar o gestionar jugadores** abre el taller de esa aventura.
 
 Abre `/characters` desde **Sprites → Generador de personajes**. El taller prepara prompts por orientación, importa vídeos, secuencias de imágenes o filas de hojas PNG y construye un PNG por acción con `character.json`. Incluye transparencia, búsqueda de ciclos, ajuste de escala y apoyo, paleta compartida, reflejos opcionales y velocidades por orientación. **Guardar proyecto** conserva las muestras para continuar después.
 

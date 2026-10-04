@@ -1,8 +1,9 @@
 import { resumeCursor, type WizardCursor } from './wizard';
 import { spriteManifest } from './sprite-export';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import { validateSettings } from './pipeline';
-import { availableActions, actionRecipe, selectedActions, PROFILES, type ExportFormat, type BuildResult, type ClipInput, type Frame, type GeneratorSettings, type Sources } from './types';
+import { validateSettings, planCharacter, finishCharacter, normalizeOriginal, removeBackground } from './pipeline';
+import { validateOriginal, originalBytes } from './originals';
+import { availableActions, actionRecipe, selectedActions, PROFILES, type ExportFormat, type BuildResult, type ClipInput, type Frame, type GeneratorSettings, type Sources, type OriginalSource, type Direction, type PixelEditorProvider } from './types';
 import { createPrompts, type CharacterBrief } from './prompts';
 import { DIRECTIONS, emptyArt, pngData, pngUrl, type ArtProject } from './generation';
 
@@ -32,7 +33,7 @@ export async function readImages(files: File[], sourceFps: number): Promise<Clip
       frames.push(capture(bitmap, bitmap.width, bitmap.height));
     } finally { bitmap.close(); }
   }
-  return { frames, sourceFps, name: sorted.map(f => f.name).join(', '), range: [0, frames.length] };
+  return { frames, sourceFps, name: sorted.map(f => f.name).join(', '), range: [0, frames.length], original:{kind:'images',files:sorted} };
 }
 export async function readSheet(file: File, columns: number, rows: number, row: number, sourceFps: number): Promise<ClipInput> {
   if (![columns, rows].every(n => Number.isInteger(n) && n > 0 && n <= 180) || !Number.isInteger(row) || row < 0 || row >= rows) throw new Error('Cuadrícula de origen no válida.');
@@ -42,7 +43,7 @@ export async function readSheet(file: File, columns: number, rows: number, row: 
     if (bitmap.width * bitmap.height > 32_000_000 || bitmap.width % columns || bitmap.height % rows) throw new Error('Las dimensiones del PNG deben ser múltiplos exactos de filas y columnas (máximo 32 MP).');
     const w = bitmap.width / columns, h = bitmap.height / rows;
     const frames = Array.from({ length: columns }, (_, i) => capture(bitmap, w, h, [i * w, row * h, w, h]));
-    return { frames, sourceFps, name: `${file.name} · fila ${row + 1}`, range: [0, columns] };
+    return { frames, sourceFps, name: `${file.name} · fila ${row + 1}`, range: [0, columns], original:{kind:'sheet',files:[file],columns,rows,row} };
   } finally { bitmap.close(); }
 }
 function waitFor(video: HTMLVideoElement, event: string, signal?: AbortSignal) {
@@ -72,7 +73,7 @@ export async function readVideo(file: File, options: { start: number; seconds: n
       if (Math.abs(video.currentTime - time) > .0001) { const seeked = waitFor(video, 'seeked', signal); video.currentTime = time; await seeked; }
       frames.push(capture(video, video.videoWidth, video.videoHeight)); onprogress?.((i + 1) / count);
     }
-    return { name: `${file.name} · desde ${start}s`, frames, sourceFps: fps };
+    return { name: `${file.name} · desde ${start}s`, frames, sourceFps: fps, original:{kind:'video',files:[file],start} };
   } finally { video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); }
 }
 export async function encodePNG(frame: Frame): Promise<Uint8Array> {
@@ -100,11 +101,12 @@ export async function exportCharacter(result: BuildResult, brief: CharacterBrief
   files['LEEME.txt'] = strToU8(`Personaje: ${settings.id}\nPerfil: ${settings.profile}\n${format === 'generic'
     ? 'Exportación genérica: PNG transparentes por acción y sprites.json. Cada vista define su fila, FPS y rectángulos en píxeles desde la esquina superior izquierda. anchor es el punto de apoyo en píxeles dentro de cada celda. loop=false indica reproducir una vez y mantener la última pose. Las rutas PNG son relativas al JSON. E/W son derecha/izquierda en plataformas. Este JSON es un formato neutral: cada motor requiere su importador.\n'
     : `Copia los PNG a static${settings.baseUrl}.\nPara importar como jugador en el juego actual se requieren idle, walk, work, talk, celebrate y sit. Las acciones adicionales y reproducción no repetitiva requieren soporte en el juego.\n`}
-Revisa orientación, accesorios, apoyo y cortes. processing.json conserva los ajustes y muestras originales.\n`);
+Revisa orientación, accesorios, apoyo y cortes. processing.json conserva los ajustes. Guarda el proyecto editable para conservar las fuentes originales.\n`);
   return zipSync(files, { level: 6 });
 }
 export async function saveProject(settings: GeneratorSettings, brief: CharacterBrief, sources: Sources, art: ArtProject = emptyArt(), navigation?: WizardCursor) {
   validateSettings(settings);
+  if(originalBytes(sources)>150*1024*1024) throw new Error('Los originales superan 150 MB. Divide el personaje en varios proyectos.');
   const files: Record<string, Uint8Array> = {}, inputs: Record<string, Record<string, object>> = {};
   for (const [action, directions] of Object.entries(sources)) {
     inputs[action] = {};
@@ -114,7 +116,14 @@ export async function saveProject(settings: GeneratorSettings, brief: CharacterB
       for (let i = 0; i < input.frames.length; i++) { const path = `sources/${action}/${direction}/${i}.png`; files[path] = await encodePNG(input.frames[i]); paths.push(path); }
       const edits: string[] = [];
       for (let i = 0; i < (input.edits?.length || 0); i++) { const path = `edits/${action}/${direction}/${i}.png`; files[path] = await encodePNG(input.edits![i]); edits.push(path); }
-      inputs[action][direction] = { ...input, frames: paths, edits: input.edits ? edits : undefined };
+      let original;
+      if(input.original) {
+        validateOriginal(input.original,input.frames.length);
+        const originals=[];
+        for(const [i,blob] of input.original.files.entries()){const path=`originals/${action}/${direction}/${i}.bin`;files[path]=new Uint8Array(await blob.arrayBuffer());originals.push({path,type:blob.type});}
+        original={...input.original,files:originals};
+      }
+      inputs[action][direction] = { ...input, original, frames: paths, edits: input.edits ? edits : undefined };
     }
   }
   const references: Record<string, object> = {};
@@ -131,15 +140,17 @@ export async function saveProject(settings: GeneratorSettings, brief: CharacterB
     inspiration = { path: 'references/inspiration.png', name: art.inspiration.name };
   }
   files['project.json'] = strToU8(JSON.stringify({ kind: 'isometric-character-project', version: 1, settings, brief, navigation, sources: inputs, art: { references, inspiration } }));
-  return zipSync(files, { level: 1 });
+  const zip=zipSync(files, { level: 1 });
+  if(zip.length>250*1024*1024)throw new Error('El proyecto supera 250 MB. Reduce las fuentes originales.');
+  return zip;
 }
 export async function loadProject(file: File): Promise<{ settings: GeneratorSettings; brief: CharacterBrief; sources: Sources; art: ArtProject; navigation?: WizardCursor }> {
-  if (file.size > 100 * 1024 * 1024) throw new Error('El proyecto supera 100 MB.');
+  if (file.size > 250 * 1024 * 1024) throw new Error('El proyecto supera 250 MB.');
   let bytes = 0, entries = 0;
   const files = unzipSync(new Uint8Array(await file.arrayBuffer()), { filter: entry => {
     bytes += entry.originalSize; entries++;
-    if (bytes > 300 * 1024 * 1024 || entries > 6000) throw new Error('El proyecto descomprimido supera los límites.');
-    return entry.name === 'project.json' || /^(sources|edits)\/[a-z]+\/[a-z]+\/\d+\.png$/.test(entry.name) || /^references\/[a-z]+\.png$/.test(entry.name);
+    if (bytes > 512 * 1024 * 1024 || entries > 6000) throw new Error('El proyecto descomprimido supera los límites.');
+    return /^originals\/[a-z]+\/[a-z]+\/\d+\.bin$/.test(entry.name) || entry.name === 'project.json' || /^(sources|edits)\/[a-z]+\/[a-z]+\/\d+\.png$/.test(entry.name) || /^references\/[a-z]+\.png$/.test(entry.name);
   } });
   if (!files['project.json'] || files['project.json'].length > 1_000_000) throw new Error('Falta un project.json válido.');
   const raw = JSON.parse(strFromU8(files['project.json']));
@@ -175,9 +186,20 @@ export async function loadProject(file: File): Promise<{ settings: GeneratorSett
           (isEdit ? edits : frames).push({ width: bitmap.width, height: bitmap.height, data: context.getImageData(0, 0, bitmap.width, bitmap.height).data });
         } finally { bitmap.close(); }
       }
-      sources[recipe.action][direction] = { name: input.name, frames, edits: input.edits ? edits : undefined, reviewed: input.reviewed, sourceFps: input.sourceFps, range: input.range, playbackFps: input.playbackFps, scaleBias: input.scaleBias, offset: input.offset };
+      let original: OriginalSource | undefined;
+      if(input.original !== undefined){
+        const stored=input.original;
+        if(!stored || !Array.isArray(stored.files) || stored.files.length>180)throw new Error('Original no válido en el proyecto.');
+        original={...stored,files:stored.files.map((asset:{path:string;type:string},i:number)=>{
+          if(!asset || asset.path!==`originals/${recipe.action}/${direction}/${i}.bin` || !files[asset.path] || typeof asset.type!=='string' || asset.type.length>100)throw new Error('Falta un original válido del proyecto.');
+          return new Blob([new Uint8Array(files[asset.path])],{type:asset.type});
+        })};
+        validateOriginal(original!,frames.length);
+      }
+      sources[recipe.action][direction] = { original, name: input.name, frames, edits: input.edits ? edits : undefined, reviewed: input.reviewed, sourceFps: input.sourceFps, range: input.range, playbackFps: input.playbackFps, scaleBias: input.scaleBias, offset: input.offset };
     }
   }
+  if(originalBytes(sources)>150*1024*1024)throw new Error('Los originales superan 150 MB.');
   const art = emptyArt();
   if (raw.art?.inspiration !== undefined) {
     const photo = raw.art.inspiration;
@@ -219,4 +241,75 @@ export async function importCharacterReference(file: File): Promise<NonNullable<
     const image = element.toDataURL('image/png'); pngData(image);
     return { image, name: file.name.slice(0, 255) };
   } finally { bitmap.close(); }
+}
+
+/** Decode only selected original frames, one at a time, and reduce directly to the configured cell. */
+export async function buildFromOriginals(settings: GeneratorSettings, sources: Sources, actions?: string[], directions?: Direction[], signal?: AbortSignal) {
+  const plan=planCharacter(settings,sources,actions,directions);
+  for(const clip of plan.prepared){
+    const input=sources[clip.action][clip.direction]!;
+    if(!input.original || input.edits)continue;
+    validateOriginal(input.original,input.frames.length);
+    const reader=await originalReader(input.original,input.sourceFps,signal);
+    try {
+      for(let i=0;i<clip.frames.length;i++){
+        if(signal?.aborted)throw new Error('Procesamiento cancelado.');
+        const frame=removeBackground(await reader.read(clip.loop.indices[i]),settings.background,settings.tolerance);
+        const output=normalizeOriginal(frame,settings,clip.transforms[i]);
+        clip.frames[i]=output.frame;
+        if(output.clipped)plan.warnings.push(`${clip.action}/${clip.direction}: la silueta original sale de la celda. Revisa tamaño y apoyo.`);
+      }
+    } finally {reader.close();}
+  }
+  return finishCharacter(plan);
+}
+async function originalReader(source: OriginalSource, fps:number, signal?:AbortSignal) {
+  let bitmap:ImageBitmap | undefined, bitmapIndex=-1, video:HTMLVideoElement | undefined, url='';
+  const close=()=>{bitmap?.close();if(video){video.removeAttribute('src');video.load();}if(url)URL.revokeObjectURL(url);};
+  function fullFrame(image:CanvasImageSource,width:number,height:number,crop?:[number,number,number,number]):Frame {
+    if(width*height>32_000_000)throw new Error('Original mayor de 32 megapíxeles.');
+    const {context}=canvas(width,height);
+    if(crop)context.drawImage(image,...crop,0,0,width,height);else context.drawImage(image,0,0);
+    return {width,height,data:context.getImageData(0,0,width,height).data};
+  }
+  try {
+    if(source.kind==='video'){
+      video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';url=URL.createObjectURL(source.files[0]);
+      const ready=waitFor(video,'loadeddata',signal);video.src=url;video.load();await ready;
+    }
+    return {close,async read(index:number):Promise<Frame>{
+      if(source.kind==='video'){
+        const time=Math.min(source.start+index/fps,video!.duration-.001);
+        if(!Number.isFinite(time)||time<0)throw new Error('Tiempo del vídeo original no válido.');
+        if(Math.abs(video!.currentTime-time)>.0001){const seek=waitFor(video!,'seeked',signal);video!.currentTime=time;await seek;}
+        return fullFrame(video!,video!.videoWidth,video!.videoHeight);
+      }
+      const next=source.kind==='images'?index:0;
+      if(!bitmap||bitmapIndex!==next){bitmap?.close();bitmap=await createImageBitmap(source.files[next]);bitmapIndex=next;}
+      if(source.kind==='sheet'){
+        if(bitmap.width%source.columns||bitmap.height%source.rows)throw new Error('Cuadrícula del original no válida.');
+        const w=bitmap.width/source.columns,h=bitmap.height/source.rows;
+        return fullFrame(bitmap,w,h,[index*w,source.row*h,w,h]);
+      }
+      return fullFrame(bitmap,bitmap.width,bitmap.height);
+    }};
+  } catch(e){close();throw e;}
+}
+
+/** Edit a reference at its existing resolution; final sprite scaling belongs to processing. */
+export async function retouchReference(image: string, name: string, editor: PixelEditorProvider): Promise<string | null> {
+  const blob = new Blob([new Uint8Array(pngData(image))], {type: 'image/png'});
+  const original = await createImageBitmap(blob);
+  const {width, height} = original;
+  original.close();
+  const edited = await editor.edit({blob, name, width, height, frames: 1, fps: 1});
+  if (!edited) return null;
+  const bytes = new Uint8Array(await edited.arrayBuffer());
+  const updated = pngUrl(bytes);
+  pngData(updated);
+  const bitmap = await createImageBitmap(edited);
+  try {
+    if (bitmap.width !== width || bitmap.height !== height) throw new Error('El retoque debe conservar el tamaño de la referencia.');
+  } finally { bitmap.close(); }
+  return updated === image ? null : updated;
 }

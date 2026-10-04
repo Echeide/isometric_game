@@ -70,13 +70,23 @@ export function selectSequence(frames: Frame[], sourceFps: number, count: number
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > frames.length || end <= start) throw new Error('El intervalo manual debe estar dentro del clip y contener al menos un fotograma.');
   return {start,end,score:0,indices:Array.from({length:count},(_,i)=>start+(count===1 ? 0 : Math.round(i*(end-start-1)/(count-1))))};
 }
-function normalize(frame: Frame, settings: GeneratorSettings, scale: number, footX: number, footY: number, offset: [number, number] = [0, 0]): { frame: Frame; clipped: boolean } {
-  const output = emptyFrame(settings.width, settings.height), box = bounds(frame)!;
+export interface FrameTransform { scale: number; footX: number; footY: number; offset?: [number, number]; sampleWidth: number; sampleHeight: number }
+/** Geometry is measured on analysis samples; destination units always come from project settings. */
+export function normalizeOriginal(frame: Frame, settings: GeneratorSettings, transform: FrameTransform): { frame: Frame; clipped: boolean } {
+  const {scale, footX, footY, offset = [0,0], sampleWidth, sampleHeight} = transform;
+  const scaleX = scale * sampleWidth / frame.width, scaleY = scale * sampleHeight / frame.height;
+  const output = emptyFrame(settings.width, settings.height), box = bounds(frame);
+  if(!box) throw new Error('El fotograma original queda vacío al eliminar el fondo.');
   const ox = settings.anchor[0] - footX * scale + offset[0], oy = settings.anchor[1] - footY * scale + offset[1];
-  const clipped = box.left * scale + ox < 0 || (box.right + 1) * scale + ox > settings.width || box.top * scale + oy < 0 || (box.bottom + 1) * scale + oy > settings.height;
+  const clipped = box.left * scaleX + ox < 0 || (box.right + 1) * scaleX + ox > settings.width || box.top * scaleY + oy < 0 || (box.bottom + 1) * scaleY + oy > settings.height;
   // Area averaging in premultiplied alpha avoids dark/magenta fringes during downsampling.
   for (let y = 0; y < output.height; y++) for (let x = 0; x < output.width; x++) {
-    const x0 = (x - ox) / scale, x1 = (x + 1 - ox) / scale, y0 = (y - oy) / scale, y1 = (y + 1 - oy) / scale;
+    if(settings.resampling === 'nearest') {
+      const sx=Math.floor((x+.5-ox)/scaleX), sy=Math.floor((y+.5-oy)/scaleY);
+      if(sx>=0 && sy>=0 && sx<frame.width && sy<frame.height){const p=(sy*frame.width+sx)*4;if(frame.data[p+3]>=128)output.data.set([frame.data[p],frame.data[p+1],frame.data[p+2],255],(y*output.width+x)*4);}
+      continue;
+    }
+    const x0 = (x - ox) / scaleX, x1 = (x + 1 - ox) / scaleX, y0 = (y - oy) / scaleY, y1 = (y + 1 - oy) / scaleY;
     let alpha = 0, red = 0, green = 0, blue = 0;
     for (let sy = Math.max(0, Math.floor(y0)); sy < Math.min(frame.height, Math.ceil(y1)); sy++) {
       for (let sx = Math.max(0, Math.floor(x0)); sx < Math.min(frame.width, Math.ceil(x1)); sx++) {
@@ -164,6 +174,9 @@ export function validateSettings(s: GeneratorSettings) {
   if (!Array.isArray(s.anchor) || s.anchor.length !== 2 || !s.anchor.every(Number.isInteger) || s.anchor[0] <= 0 || s.anchor[0] >= s.width || s.anchor[1] <= 0 || s.anchor[1] > s.height) throw new Error('El apoyo debe estar dentro de la celda.');
   if (!Number.isFinite(s.targetHeight) || s.targetHeight < 4 || s.targetHeight > s.anchor[1]) throw new Error('La altura del personaje debe caber encima del apoyo.');
   if (!Number.isInteger(s.colors) || s.colors < 4 || s.colors > 64 || !Number.isFinite(s.tolerance) || s.tolerance < 0 || s.tolerance > 255) throw new Error('Paleta o tolerancia fuera de rango.');
+  if(s.paletteMode !== undefined && !['auto','fixed'].includes(s.paletteMode)) throw new Error('Modo de paleta no válido.');
+  if(s.resampling !== undefined && !['area','nearest'].includes(s.resampling)) throw new Error('Método de reducción no válido.');
+  if(s.palette !== undefined && (!Array.isArray(s.palette) || s.palette.length<1 || s.palette.length>64 || s.palette.some(c=>!Array.isArray(c)||c.length!==3||c.some(n=>!Number.isInteger(n)||n<0||n>255)))) throw new Error('Paleta fija no válida.');
   if (s.background !== null && (!Array.isArray(s.background) || s.background.length !== 3 || !s.background.every(n => Number.isInteger(n) && n >= 0 && n <= 255))) throw new Error('Color de fondo no válido.');
   if (![s.outline, s.mirror, s.stabilize].every(v => typeof v === 'boolean')) throw new Error('Opciones de procesamiento no válidas.');
   if (typeof s.baseUrl !== 'string' || !/^\/(?!\/)[a-zA-Z0-9/_-]+$/.test(s.baseUrl)) throw new Error('Indica una ruta pública local, por ejemplo /pixelart/characters/mi-personaje.');
@@ -181,7 +194,9 @@ export function missingSources(settings: GeneratorSettings, sources: Sources, ac
   return actions.flatMap(action => PROFILES[settings.profile].directions.filter(d => !sources[action]?.[d] && !(settings.mirror && MIRRORS[d] && sources[action]?.[MIRRORS[d]!])).map(d => `${action}/${d.toUpperCase()}`));
 }
 /** Passing actions creates a preview subset. Full exports contain the selected actions. */
-export function buildCharacter(settings: GeneratorSettings, sources: Sources, actions?: string[], previewDirections?: Direction[]): BuildResult {
+export interface PreparedClip { action: string; direction: Direction; frames: Frame[]; loop: LoopInfo; transforms: FrameTransform[] }
+export interface CharacterPlan { settings: GeneratorSettings; sources: Sources; recipes: ReturnType<typeof selectedActions>; outputDirections: Direction[]; prepared: PreparedClip[]; warnings: string[] }
+export function planCharacter(settings: GeneratorSettings, sources: Sources, actions?: string[], previewDirections?: Direction[]): CharacterPlan {
   validateSettings(settings);
   const profile = PROFILES[settings.profile], recipes = selectedActions(settings).filter(a => !actions || actions.includes(a.action));
   if (!recipes.length || actions?.some(a => !selectedActions(settings).some(r => r.action === a))) throw new Error('Acciones desconocidas.');
@@ -195,7 +210,7 @@ export function buildCharacter(settings: GeneratorSettings, sources: Sources, ac
   let pixels = 0;
   for (const recipe of recipes) for (const input of Object.values(sources[recipe.action] || {})) { validateClip(input); for (const f of [...input.frames, ...(input.edits || [])]) pixels += f.width * f.height; }
   if (pixels > 64_000_000) throw new Error('Las fuentes superan el límite de 64 millones de píxeles. Reduce duración o resolución.');
-  const prepared: { action: string; direction: Direction; frames: Frame[]; loop: LoopInfo }[] = [], warnings: string[] = [];
+  const prepared: PreparedClip[] = [], warnings: string[] = [];
   for (const recipe of recipes) {
     // Use the standing idle reference for seated and gestural actions to preserve proportions.
     // Otherwise use a constant per-clip scale; never resize individual frames independently.
@@ -219,8 +234,9 @@ export function buildCharacter(settings: GeneratorSettings, sources: Sources, ac
       const stabilize = settings.stabilize && !recipe.preserveMotion;
       if (settings.stabilize && recipe.preserveMotion) warnings.push(`${recipe.action}/${direction}: se conserva el desplazamiento de la acción; no se fija cada fotograma por los pies.`);
       let clipped = false;
+      const transforms = chosen.map((f,i)=>({scale, footX:stabilize ? boxes[i].center : footX, footY:stabilize ? boxes[i].bottom+1 : footY, offset:input.offset, sampleWidth:f.width, sampleHeight:f.height}));
       const normalized = chosen.map((f, i) => {
-        const out = normalize(f, settings, scale, stabilize ? boxes[i].center : footX, stabilize ? boxes[i].bottom + 1 : footY, input.offset);
+        const out = normalizeOriginal(f, settings, transforms[i]);
         clipped ||= out.clipped; return out.frame;
       });
       if (clipped) warnings.push(`${recipe.action}/${direction}: la silueta toca o sale de la celda. Reduce la altura o amplía la celda antes de usarla.`);
@@ -230,11 +246,16 @@ export function buildCharacter(settings: GeneratorSettings, sources: Sources, ac
       const rawFps = input.playbackFps ?? settings.actionOptions?.[recipe.action]?.fps ?? (settings.profile === 'platformer' ? recipe.fps : undefined) ?? (input.frames.length === 1 ? recipe.fps : recipe.frames * input.sourceFps / (loop.end - loop.start));
       const fps = Math.round(Math.max(1, Math.min(30, rawFps)) * 100) / 100;
       if (Math.abs(rawFps - fps) > .1) warnings.push(`${recipe.action}/${direction}: velocidad limitada a ${fps} fps.`);
-      prepared.push({ action: recipe.action, direction, frames: normalized, loop: { ...loop, fps, sourceFps: input.sourceFps, sourceName: input.name, scale, scaleBias: input.scaleBias ?? 1, offset: [...(input.offset ?? [0, 0])] } });
+      prepared.push({ action: recipe.action, direction, frames: normalized, transforms, loop: { ...loop, fps, sourceFps: input.sourceFps, sourceName: input.name, scale, scaleBias: input.scaleBias ?? 1, offset: [...(input.offset ?? [0, 0])] } });
     }
   }
-  const palette = makePalette(prepared.flatMap(p => p.frames), settings.colors - (settings.outline ? 1 : 0));
-  if (settings.outline) palette.unshift([35, 32, 43]);
+  return {settings, sources, recipes, outputDirections, prepared, warnings};
+}
+export function finishCharacter(plan: CharacterPlan): BuildResult {
+  const {settings,sources,recipes,outputDirections,prepared,warnings}=plan;
+  const fixed = settings.paletteMode === 'fixed' && settings.palette?.length;
+  const palette = fixed ? settings.palette!.map(c=>[...c] as RGB) : makePalette(prepared.flatMap(p => p.frames), settings.colors - (settings.outline ? 1 : 0));
+  if (settings.outline && !fixed) palette.unshift([35, 32, 43]);
   prepared.forEach(p => {
     const edits = sources[p.action]?.[p.direction]?.edits;
     if (edits) {
@@ -265,6 +286,19 @@ export function buildCharacter(settings: GeneratorSettings, sources: Sources, ac
     sheets,
     character: { image: url(sheets[0].action), frameWidth: settings.width, frameHeight: settings.height, anchor: [...settings.anchor], directions: [...outputDirections],
       animations: Object.fromEntries(sheets.map(sheet => [sheet.action, { image: url(sheet.action), row: 0, frames: sheet.frames, fps: sheet.loops[outputDirections[0]]!.fps, directionFps: Object.fromEntries(outputDirections.map(d => [d, sheet.loops[d]!.fps])) }])) },
-    metadata: { version: 1, profile: settings.profile, settings: structuredClone(settings), palette: [...actualColors.values()], loops: Object.fromEntries(sheets.map(s => [s.action, s.loops])), warnings: [...new Set(warnings)] }
+    metadata: { version: 1, profile: settings.profile, settings: structuredClone(settings), palette: [...actualColors.values()], processingPalette: palette.map(c=>[...c] as RGB), loops: Object.fromEntries(sheets.map(s => [s.action, s.loops])), warnings: [...new Set(warnings)] }
   };
+}
+
+/** Synchronous processing for decoded sources and older projects. */
+export function buildCharacter(settings: GeneratorSettings, sources: Sources, actions?: string[], previewDirections?: Direction[]): BuildResult {
+  return finishCharacter(planCharacter(settings,sources,actions,previewDirections));
+}
+
+/** Apply a compact palette to a standalone sprite, preserving its geometry. */
+export function quantizeSprite(frame: Frame, colors: number): Frame {
+  if(!Number.isInteger(colors) || colors<4 || colors>64)throw new Error('Usa entre 4 y 64 colores.');
+  const result={...frame,data:new Uint8ClampedArray(frame.data)};
+  applyPalette(result,makePalette([frame],colors),false);
+  return result;
 }

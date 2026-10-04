@@ -29,13 +29,17 @@ export async function readImageBody(request: Request): Promise<unknown> {
   try { return JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new ImageServiceError(400, 'JSON no válido.'); }
 }
 export function createImageService(fetcher: typeof fetch = fetch) {
+  return createPlannedImageService(validateImageRequest, imagePlan, fetcher);
+}
+/** Shared private transport: callers supply their own validated generation recipe. */
+export function createPlannedImageService<R extends {quality: string; reference?: string}>(validate: (value: unknown) => R, planFor: (request: R) => ReturnType<typeof imagePlan>, fetcher: typeof fetch = fetch) {
   let running = false;
   return async (value: unknown, config: ImageConfig, signal?: AbortSignal): Promise<ImageResult> => {
     if (!imageStatus(config).available) throw new ImageServiceError(503, imageStatus(config).message);
     let request;
-    try { request = validateImageRequest(value); } catch (e) { throw new ImageServiceError(400, (e as Error).message); }
+    try { request = validate(value); } catch (e) { throw new ImageServiceError(400, (e as Error).message); }
     if (running) throw new ImageServiceError(429, 'Hay una generación en curso. Espera a que termine.');
-    const plan = imagePlan(request), model = imageStatus(config).model;
+    const plan = planFor(request), model = imageStatus(config).model;
     const fields = { model, prompt: plan.prompt, n: 1, size: plan.size, quality: request.quality, background: 'opaque', output_format: 'png' };
     let body: BodyInit, endpoint: string;
     const headers: Record<string, string> = { Authorization: `Bearer ${config.apiKey!.trim()}` };

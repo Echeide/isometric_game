@@ -28,5 +28,5 @@
 </script>
 <svelte:head><title>Generador de personajes · Isométrico</title><meta name="description" content="Importa imágenes y vídeos para crear hojas de personaje con transparencia, ciclos y metadatos."/></svelte:head>
 <main><nav><a href="/sprites">← Taller de sprites</a><a href="/">Volver al mundo →</a></nav><CharacterGenerator onexample={example} {imageProvider} {videoProvider} {pixelEditor}/></main>
-{#if editSession}<ImageEditor session={editSession} saveHint="Pulsa «Guardar proyecto» en el generador para conservar los retoques." onchange={() => {}} onapply={async blob => { finishEdit?.(blob); finishEdit = undefined; }} onclose={closeEditor}/>{/if}
+{#if editSession}<ImageEditor session={editSession} saveHint="Pulsa «Guardar copia» en el generador para conservar los retoques." onchange={() => {}} onapply={async blob => { finishEdit?.(blob); finishEdit = undefined; }} onclose={closeEditor}/>{/if}
 <style>main{max-width:1280px;margin:auto;padding:28px 24px 60px}nav{display:flex;justify-content:space-between;gap:16px;margin-bottom:34px;font:13px system-ui,sans-serif}a{color:#526e37}@media(max-width:600px){main{padding:20px 14px 40px}}</style>
