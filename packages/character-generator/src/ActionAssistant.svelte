@@ -37,13 +37,11 @@
 </script>
 
 <div class="action-assistant">
-  <span class="tag">ACCIÓN CORTA · OPENAI</span>
-  <h3>Crear {action} con ChatGPT</h3>
-  <p>Esta acción necesita {recipe?.frames} {recipe?.frames === 1 ? 'fotograma' : 'fotogramas'}. Genera una imagen, revísala e incorpórala directamente al ciclo para retocarla en Piskel.</p>
+<p><strong>ChatGPT · {recipe?.frames} {recipe?.frames === 1 ? 'fotograma' : 'fotogramas'}</strong></p>
   {#if !available}<p>{statusMessage}</p><button onclick={check}>Comprobar conexión</button>{/if}
   {#if reference}<p class="hint">Usaremos la referencia aprobada {reference.direction.toUpperCase()}. Vista final: {orientationLabels[direction]}.</p>
   {:else}<p>Aprueba primero una referencia del personaje en el apartado anterior.</p>{/if}
-  <label>Calidad de la acción<select bind:value={quality}><option value="low">Borrador</option><option value="medium">Media</option><option value="high">Alta</option></select></label>
+  <details><summary>Opciones de generación</summary><label>Calidad<select bind:value={quality}><option value="low">Borrador</option><option value="medium">Media</option><option value="high">Alta</option></select></label></details>
   <p class="hint">Cada clic solicita una imagen y consume uso de tu API de OpenAI.</p>
   <button class="primary" aria-busy={generating} disabled={!available || !reference || !recipe || !brief.style.trim() || generating || accepting} onclick={generate}>
     {#if generating}<span class="spinner" aria-hidden="true"></span>{/if}
@@ -67,5 +65,5 @@
 </div>
 
 <style>
-  .action-assistant{border:1px solid #b8c8a6;background:#f0f5e9;border-radius:9px;padding:18px;margin:20px 0;color:#304535}.tag{font-size:10px;letter-spacing:1.3px;color:#617d45;font-weight:700}h3{font-size:18px;margin:6px 0 12px}h4{font-size:14px}p{font-size:12px;line-height:1.6}.hint{font-size:11px;color:#60705c}label{display:grid;gap:6px;max-width:240px;margin:14px 0;font-size:12px}button,a,select{font:inherit;font-size:12px;padding:9px 12px;border:1px solid #bdcbb0;border-radius:6px;background:white;color:#304535}button,a{cursor:pointer}a{text-decoration:none}.primary{display:inline-flex;gap:8px;align-items:center;background:#526e37;color:white;border-color:#526e37}button:disabled{opacity:.5;cursor:default}.primary[aria-busy=true]{opacity:1}.spinner{width:14px;height:14px;border:2px solid #ffffff55;border-top-color:currentColor;border-radius:50%;animation:spin .8s linear infinite}.candidate{margin-top:20px;border-top:1px solid #bdcbb0}.candidate img{display:block;max-width:100%;max-height:440px;object-fit:contain}.buttons{display:flex;flex-wrap:wrap;gap:8px}details{margin:14px 0;font-size:12px}details p{white-space:pre-wrap;overflow-wrap:anywhere}button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid #526e37;outline-offset:3px}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-style:dotted}}
+  .action-assistant{border:1px solid #b8c8a6;background:#f0f5e9;border-radius:9px;padding:18px;margin:20px 0;color:#304535}h4{font-size:14px}p{font-size:12px;line-height:1.6}.hint{font-size:11px;color:#60705c}label{display:grid;gap:6px;max-width:240px;margin:14px 0;font-size:12px}button,a,select{font:inherit;font-size:12px;padding:9px 12px;border:1px solid #bdcbb0;border-radius:6px;background:white;color:#304535}button,a{cursor:pointer}a{text-decoration:none}.primary{display:inline-flex;gap:8px;align-items:center;background:#526e37;color:white;border-color:#526e37}button:disabled{opacity:.5;cursor:default}.primary[aria-busy=true]{opacity:1}.spinner{width:14px;height:14px;border:2px solid #ffffff55;border-top-color:currentColor;border-radius:50%;animation:spin .8s linear infinite}.candidate{margin-top:20px;border-top:1px solid #bdcbb0}.candidate img{display:block;max-width:100%;max-height:440px;object-fit:contain}.buttons{display:flex;flex-wrap:wrap;gap:8px}details{margin:14px 0;font-size:12px}details p{white-space:pre-wrap;overflow-wrap:anywhere}button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid #526e37;outline-offset:3px}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-style:dotted}}
 </style>

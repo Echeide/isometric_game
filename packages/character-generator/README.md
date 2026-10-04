@@ -210,3 +210,25 @@ El jugador del motor actual requiere idle, walk, work, talk, celebrate y sit. Lo
 `PROFILES` define cámara, orientación inicial, vistas y recetas. `GeneratorSettings.actionOptions` permite ajustar `frames`, `fps` y `playback` por acción, y `exportFormat` selecciona el contrato de salida. Son campos opcionales: los `.project.zip` anteriores mantienen sus perfiles, selecciones y comportamiento repetitivo. Se conserva la versión 1 del proyecto y todos los datos fuente y retoques. Cambiar el número de fotogramas de una acción con retoques está bloqueado hasta restaurar sus fuentes; FPS y repetición se pueden ajustar sin borrar píxeles.
 
 Los prompts manuales y las solicitudes OpenAI comparten la cámara y las recetas del perfil. Las acciones de hasta cuatro fotogramas conservan tanto imágenes como vídeo, además de importación manual. No se han añadido formatos nativos de otros motores ni el perfil de vista superior en esta primera ampliación.
+
+## Asistente de cinco pasos
+
+El taller muestra una fase cada vez: **Personaje → Vistas → Animaciones → Revisar → Exportar**. Se puede volver a cualquier fase sin descartar las fuentes ni las propuestas de generación. La vista previa permanece al lado en escritorio y sobre el formulario en pantallas pequeñas.
+
+- **Personaje:** sección propia «Formato y dimensiones» con tipo de juego, estilo, ancho/alto del fotograma y altura del personaje. Apoyo, paleta y fondo quedan plegados, y una tabla calcula el tamaño de cada hoja según sus fotogramas y orientaciones. Después se definen la descripción o foto y las acciones. El tamaño del fotograma se bloquea si hay retoques de Piskel. El ejemplo del juego es opcional.
+- **Vistas:** importar vistas directamente o generarlas con OpenAI. Las miniaturas distinguen referencias propias y reflejadas. Las referencias se comparten entre acciones de la misma orientación.
+- **Animaciones:** elegir generación o importación manual; se mantienen ChatGPT y Kling para acciones de hasta cuatro fotogramas. Los proveedores permanecen montados al cambiar de paso, para conservar propuestas y consultas de vídeos pendientes.
+- **Revisar:** vista previa, Piskel, intervalo y ajustes avanzados. Aprobar continúa con la siguiente vista pendiente. Cambiar una referencia marca sus animaciones existentes para revisión sin borrar fuentes ni retoques. Los cambios de procesamiento también requieren revisar de nuevo.
+- **Exportar:** construir las hojas y exportar cuando todas las vistas seleccionadas estén aprobadas. El proyecto editable `.project.zip` es una descarga distinta del ZIP de hojas para el juego.
+
+El progreso cuenta vistas de animación aprobadas, incluyendo reflejos únicamente cuando su fuente está aprobada. Una fuente importada para la vista reflejada tiene prioridad y requiere su propia aprobación.
+
+**Recuperación local:** IndexedDB guarda el último borrador de este navegador y origen, con fuentes, retoques, referencias, ajustes y posición en el asistente. Al abrir el taller se ofrece recuperarlo antes de sobrescribirlo. El estado indica cambios pendientes, guardando, última hora de guardado o error. Este borrador no sincroniza ordenadores ni sustituye una copia ZIP; cada nuevo proyecto con cambios sustituye el último borrador local. Los archivos ZIP nuevos guardan `navigation` opcional; los anteriores calculan el paso pendiente al abrirlos.
+
+### Interfaz compacta
+
+El reproductor mantiene el visor estable al avanzar fotogramas: los controles están debajo, con filas fijas y contador de ancho reservado. La revisión conserva el acceso a Piskel y a los ajustes de intervalo, velocidad y posición. El progreso por acción y orientación se consulta en una matriz plegable independiente del visor.
+
+Las referencias se administran en una sola galería. En Animaciones, el selector ofrece Kling, ChatGPT para ciclos de hasta cuatro fotogramas e importación manual según los proveedores disponibles. Calidad, conexión y prompts quedan en desplegables; la información de consumo permanece visible.
+
+Exportar separa las hojas para el juego del proyecto editable. «Generar y descargar hojas» construye y exporta las acciones aprobadas; conserva un enlace de descarga si el navegador no inicia la descarga automáticamente. El proyecto `.project.zip` mantiene las referencias, fotogramas y retoques para continuar editando.

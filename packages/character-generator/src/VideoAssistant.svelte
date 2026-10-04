@@ -3,8 +3,8 @@
   import type { Direction, Profile } from './types';
   import type { VideoJob, VideoProvider } from './video';
   import { validateVideoRequest } from './video';
-  let { provider, reference, projectId, profile, action, direction, suggestedPrompt, negative, hasSource, revision, onaccept, onbusy }:
-    { provider: VideoProvider; reference?: string; projectId: string; profile: Profile; action: string; direction: Direction; suggestedPrompt: string; negative: string; hasSource: boolean; revision: number; onaccept: (blob: Blob, job: VideoJob) => Promise<boolean>; onbusy: (label: string) => void } = $props();
+  let { provider, reference, projectId, profile, action, direction, suggestedPrompt, negative, hasSource, revision, onaccept, onbusy, onjob }:
+    { provider: VideoProvider; onjob?: (job: VideoJob) => void; reference?: string; projectId: string; profile: Profile; action: string; direction: Direction; suggestedPrompt: string; negative: string; hasSource: boolean; revision: number; onaccept: (blob: Blob, job: VideoJob) => Promise<boolean>; onbusy: (label: string) => void } = $props();
   let available = $state(false), statusMessage = $state('Comprobando configuración…'), error = $state('');
   let prompt = $state(''), jobs = $state<VideoJob[]>([]), current = $state<VideoJob | null>(null);
   let submitting = $state(false), checking = $state(false), importing = $state(false), imported = $state('');
@@ -19,7 +19,7 @@
   const videoBusy = $derived(submitting || generating || importing);
   const buttonLabel = $derived(submitting ? 'Enviando a Kling…' : importing ? 'Importando vídeo…' : generating ? 'Generando en Kling…' : `Generar vídeo · ${action}/${direction.toUpperCase()}`);
   $effect(() => { prompt = suggestedPrompt; });
-  function update(job: VideoJob) { if (job.projectId !== projectId) return; current = job; jobs = [job, ...projectJobs.filter(j => j.id !== job.id)].slice(0, 50); }
+  function update(job: VideoJob) { if (job.projectId !== projectId) return; current = job; onjob?.(job); jobs = [job, ...projectJobs.filter(j => j.id !== job.id)].slice(0, 50); }
   function releaseVideo() { if (download) URL.revokeObjectURL(download); download = ''; downloadedId = ''; downloadBlob = undefined; }
   async function refresh(targetProjectId = projectId) {
     const version = ++refreshVersion;
@@ -94,13 +94,10 @@
 </script>
 
 <div class="video-assistant">
-  <span class="eyebrow">AYUDA OPCIONAL · MAGNIFIC</span>
-  <h3>Animar con Kling 2.6</h3>
-  <p>{statusMessage}</p>
-  <p>Envía la referencia de {direction.toUpperCase()} y recibe aquí su animación. Podrás revisar el ciclo y retocarlo en Piskel.</p>
-  {#if reference}<img src={reference} alt={`Referencia para animar ${direction.toUpperCase()}`}/>{:else}<p>Aprueba primero una referencia de {direction.toUpperCase()} arriba, o abre un proyecto que ya la incluya.</p>{/if}
+<details><summary>Kling 2.6 · {available ? 'Conectado' : 'Sin conexión'}</summary><p>{statusMessage}</p><button disabled={working} onclick={()=>refresh()}>Comprobar conexión</button></details>
+  {#if !reference}<p>Falta la referencia {direction.toUpperCase()}. Prepárala en Vistas.</p>{/if}
   <details><summary>Prompt del vídeo · {action}/{direction.toUpperCase()}</summary><label>Movimiento<textarea rows="6" maxlength="2500" bind:value={prompt}></textarea></label><small>{prompt.length}/2500 caracteres</small><button onclick={() => prompt = suggestedPrompt}>Restaurar prompt sugerido</button></details>
-  <p class="hint">Un clic genera un vídeo de 5 segundos y consume créditos de Magnific. Se enviarán esta imagen y el prompt. Revisa el movimiento antes de aprobarlo.</p>
+  <p class="hint">Vídeo de 5 s · consume créditos de Magnific. Se envían la referencia y el prompt.</p>
   <button class="primary generate" class:loading={videoBusy} aria-busy={videoBusy} disabled={working || generating || !available || !reference || !prompt.trim() || prompt.length > 2500} onclick={generate}>
     {#if videoBusy}<span class="spinner" aria-hidden="true"></span>{/if}
     {buttonLabel}
@@ -126,12 +123,12 @@
       {#if download}<a href={download} download={`${current.projectId}-${current.action}-${current.direction}.mp4`}>Descargar vídeo original</a>{/if}
     </div>
   {/if}
-  <details><summary>Recuperar solicitudes de vídeo ({projectJobs.length})</summary><p class="hint">Solo se muestran las solicitudes del identificador «{projectId}», guardadas en este servidor. Abrir una solicitud no genera otro vídeo. Descarga o importa los resultados pronto: los enlaces de Magnific caducan.</p><button disabled={working} onclick={() => refresh()}>Actualizar solicitudes</button>
+  <details><summary>Historial de vídeos · {projectJobs.length}</summary><p class="hint">Vídeos de «{projectId}». Recuperarlos no genera otro vídeo. Importa los resultados antes de que caduquen los enlaces.</p><button disabled={working} onclick={() => refresh()}>Actualizar solicitudes</button>
     {#each projectJobs as job}<button class="saved" disabled={working} onclick={() => recover(job)}>{job.projectId} · {job.action}/{job.direction.toUpperCase()} · {new Date(job.createdAt).toLocaleString()}</button>{:else}<p class="hint">No hay solicitudes de vídeo guardadas para este identificador.</p>{/each}
   </details>
 </div>
 
 <style>
   .generate{display:inline-flex;align-items:center;justify-content:center;gap:8px}.generate.loading:disabled{opacity:1;cursor:wait}.spinner{display:inline-block;flex-shrink:0;width:14px;height:14px;border:2px solid #ffffff55;border-top-color:currentColor;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-style:dotted}}
-  .video-assistant{border:1px solid #cad5b8;background:#f4f7ed;border-radius:12px;padding:20px;margin-top:20px;color:#26371e}.eyebrow{font-size:11px;letter-spacing:.1em;color:#526e37;font-weight:700}h3{margin:8px 0 12px}p{font-size:13px;line-height:1.6}img{width:96px;height:128px;object-fit:contain;border-radius:6px}details{margin:14px 0}summary{cursor:pointer;font-size:13px;font-weight:600}label{display:grid;gap:6px;margin-top:10px;font-size:13px}textarea{width:100%;box-sizing:border-box;border:1px solid #b6c5a1;padding:10px;border-radius:6px;font:12px/1.5 monospace}button{font:13px system-ui;padding:9px 12px;border:1px solid #acbb99;border-radius:7px;background:white;cursor:pointer;margin:5px 6px 5px 0}button:disabled{opacity:.5;cursor:default}.primary{background:#405a2d;color:white;border-color:#405a2d}.hint,small{font-size:12px;color:#58644d}.error{color:#a12b24}.job{border-top:1px solid #cad5b8;margin-top:16px;padding-top:16px;font-size:13px}.saved{display:block;text-align:left}a{display:block;color:#405a2d;margin:12px 0}
+  .video-assistant{border:1px solid #cad5b8;background:#f4f7ed;border-radius:12px;padding:14px;margin-top:14px;color:#26371e}p{font-size:13px;line-height:1.6}details{margin:14px 0}summary{cursor:pointer;font-size:13px;font-weight:600}label{display:grid;gap:6px;margin-top:10px;font-size:13px}textarea{width:100%;box-sizing:border-box;border:1px solid #b6c5a1;padding:10px;border-radius:6px;font:12px/1.5 monospace}button{font:13px system-ui;padding:9px 12px;border:1px solid #acbb99;border-radius:7px;background:white;cursor:pointer;margin:5px 6px 5px 0}button:disabled{opacity:.5;cursor:default}.primary{background:#405a2d;color:white;border-color:#405a2d}.hint,small{font-size:12px;color:#58644d}.error{color:#a12b24}.job{border-top:1px solid #cad5b8;margin-top:16px;padding-top:16px;font-size:13px}.saved{display:block;text-align:left}a{display:block;color:#405a2d;margin:12px 0}
 </style>

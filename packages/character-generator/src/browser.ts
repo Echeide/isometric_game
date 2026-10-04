@@ -1,3 +1,4 @@
+import { resumeCursor, type WizardCursor } from './wizard';
 import { spriteManifest } from './sprite-export';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { validateSettings } from './pipeline';
@@ -102,7 +103,7 @@ export async function exportCharacter(result: BuildResult, brief: CharacterBrief
 Revisa orientación, accesorios, apoyo y cortes. processing.json conserva los ajustes y muestras originales.\n`);
   return zipSync(files, { level: 6 });
 }
-export async function saveProject(settings: GeneratorSettings, brief: CharacterBrief, sources: Sources, art: ArtProject = emptyArt()) {
+export async function saveProject(settings: GeneratorSettings, brief: CharacterBrief, sources: Sources, art: ArtProject = emptyArt(), navigation?: WizardCursor) {
   validateSettings(settings);
   const files: Record<string, Uint8Array> = {}, inputs: Record<string, Record<string, object>> = {};
   for (const [action, directions] of Object.entries(sources)) {
@@ -129,10 +130,10 @@ export async function saveProject(settings: GeneratorSettings, brief: CharacterB
     files['references/inspiration.png'] = pngData(art.inspiration.image);
     inspiration = { path: 'references/inspiration.png', name: art.inspiration.name };
   }
-  files['project.json'] = strToU8(JSON.stringify({ kind: 'isometric-character-project', version: 1, settings, brief, sources: inputs, art: { references, inspiration } }));
+  files['project.json'] = strToU8(JSON.stringify({ kind: 'isometric-character-project', version: 1, settings, brief, navigation, sources: inputs, art: { references, inspiration } }));
   return zipSync(files, { level: 1 });
 }
-export async function loadProject(file: File): Promise<{ settings: GeneratorSettings; brief: CharacterBrief; sources: Sources; art: ArtProject }> {
+export async function loadProject(file: File): Promise<{ settings: GeneratorSettings; brief: CharacterBrief; sources: Sources; art: ArtProject; navigation?: WizardCursor }> {
   if (file.size > 100 * 1024 * 1024) throw new Error('El proyecto supera 100 MB.');
   let bytes = 0, entries = 0;
   const files = unzipSync(new Uint8Array(await file.arrayBuffer()), { filter: entry => {
@@ -191,7 +192,7 @@ export async function loadProject(file: File): Promise<{ settings: GeneratorSett
     const image = pngUrl(files[reference.path]); pngData(image);
     art.references[direction] = { image, prompt: reference.prompt, model: reference.model };
   }
-  return { settings: raw.settings, brief: raw.brief, sources, art };
+  return { settings: raw.settings, brief: raw.brief, sources, art, navigation: raw.navigation ? resumeCursor(raw.settings, sources, art, true, raw.navigation) : undefined };
 }
 
 export async function prepareReference(image: string): Promise<string> {
