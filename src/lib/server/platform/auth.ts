@@ -21,12 +21,14 @@ export class Auth {
    await db.query('DELETE FROM platform_login_attempts WHERE key=$1',[hashToken('account:'+name)]);const token=randomBytes(32).toString('hex');await db.query("INSERT INTO platform_sessions(id,token_hash,actor_id,expires_at) VALUES($1,$2,$3,now()+interval '8 hours')",[randomUUID(),hashToken(token),row.id]);await db.query('DELETE FROM platform_sessions WHERE expires_at<now()');await db.query("INSERT INTO platform_audit(actor_id,effective_id,tenant_id,action) VALUES($1,$1,$2,'login')",[row.id,row.tenant_id]);return token;});
  }
  async principal(token:string|undefined):Promise<Principal|null>{if(!token||!/^[a-f0-9]{64}$/.test(token))return null;return this.database.transaction(null,true,async db=>{
-  const s=(await db.query('SELECT * FROM platform_sessions WHERE token_hash=$1 AND expires_at>now()',[hashToken(token)])).rows[0];if(!s)return null;
-  const a=(await db.query('SELECT * FROM platform_users WHERE id=$1 AND enabled',[s.actor_id])).rows[0];if(!a)return null;
-  let u=s.effective_id?(await db.query("SELECT * FROM platform_users WHERE id=$1 AND enabled AND role='admin'",[s.effective_id])).rows[0]:a;
+  const s=(await db.query(`SELECT s.*,to_jsonb(a) AS actor,to_jsonb(u) AS effective,to_jsonb(t) AS tenant
+   FROM platform_sessions s JOIN platform_users a ON a.id=s.actor_id AND a.enabled
+   LEFT JOIN platform_users u ON u.id=s.effective_id AND u.enabled AND u.role='admin'
+   LEFT JOIN platform_tenants t ON t.id=COALESCE(u.tenant_id,a.tenant_id)
+   WHERE s.token_hash=$1 AND s.expires_at>now()`,[hashToken(token)])).rows[0];if(!s)return null;
+  const a=s.actor;let u=s.effective_id?s.effective:a,t=s.tenant;
   if(s.effective_id&&a.role!=='superadmin')return null;
-  if(s.effective_id&&(!u||(u.tenant_id&&!(await db.query('SELECT id FROM platform_tenants WHERE id=$1 AND enabled',[u.tenant_id])).rowCount))){await db.query('UPDATE platform_sessions SET effective_id=NULL WHERE id=$1',[s.id]);await db.query("INSERT INTO platform_audit(actor_id,effective_id,action,target) VALUES($1,$2,'impersonation.expired',$2)",[a.id,s.effective_id]);s.effective_id=null;u=a;}
-  const t=u.tenant_id?(await db.query('SELECT * FROM platform_tenants WHERE id=$1',[u.tenant_id])).rows[0]:null;
+  if(s.effective_id&&(!u||!t?.enabled)){await db.query('UPDATE platform_sessions SET effective_id=NULL WHERE id=$1',[s.id]);await db.query("INSERT INTO platform_audit(actor_id,effective_id,action,target) VALUES($1,$2,'impersonation.expired',$2)",[a.id,s.effective_id]);s.effective_id=null;u=a;t=null;}
   if(u.tenant_id&&(!t||!t.enabled))return null;
   return {actor:identity(a),user:identity(u),tenant:t?{id:t.id,name:t.name,enabled:t.enabled,limits:t.limits,permissions:t.permissions}:null,impersonating:!!s.effective_id,sessionId:s.id};
  });}

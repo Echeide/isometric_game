@@ -4,7 +4,7 @@
  const publishedCount=$derived(publications.filter(p=>p.active).length);
  const filtered=$derived(adventures.filter(a=>a.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())&&(filter==='all'||(!!publications.find(p=>p.adventure_id===a.id)?.active)===(filter==='published'))));
  async function refresh(){const r=await request('/api/platform/adventures');adventures=r.adventures;publications=r.publications;usage=r.usage;}
- async function run(fn:()=>Promise<void>){if(busy)return;busy=true;message='';failed=false;try{await fn();await refresh();}catch(e){failed=true;message=(e as Error).message;}finally{busy=false;loading=false;}}
+ async function run(fn:()=>Promise<void>){if(busy)return;busy=true;message='';failed=false;try{await fn();if(fn!==refresh)await refresh();}catch(e){failed=true;message=(e as Error).message;}finally{busy=false;loading=false;}}
  async function create(){await run(async()=>{const a={...createAdventure([structuredClone(office)]),id:crypto.randomUUID(),name:name.trim()||'Nueva aventura'};await localAdventures.save(a,{pack:graphics,blobs:{}});location.href='/editor?adventure='+a.id;});}
  async function migrate(a:Adventure){await run(async()=>{const zip=await exportAdventure(a,browserAdventures),content=unpackAdventure(new Uint8Array(await zip.arrayBuffer()));content.adventure.id=crypto.randomUUID();await localAdventures.save(content.adventure,content);message='Copia incorporada a este espacio. El original local se conserva.';});}
  async function upload(e:Event){const target=e.currentTarget as HTMLInputElement,file=target.files?.[0];target.value='';if(file)await run(async()=>{await importAdventure(file);message='Aventura importada.';});}

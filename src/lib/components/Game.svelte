@@ -24,13 +24,23 @@
  import {environments} from '@isometrico/world';
  let panMode=$state(false);
  import { graphics as defaultGraphics } from '$lib/demo/pixelart';
- import {resolveGraphics,localAdventures,storageScope} from '$lib/storage/local-adventures';
+ import LoadProgress from '$lib/components/LoadProgress.svelte';
+ import type {LoadProgress as Progress} from '$lib/storage/preload';
+ import {resolveGraphics,preloadGraphics,localAdventures,storageScope} from '$lib/storage/local-adventures';
  import {onDestroy} from 'svelte';
  let graphics=$state.raw(defaultGraphics);
  const resourceReleases:Array<()=>void>=[];
  let disposed=false;
- async function loadGraphics(id:string){if(published){graphics=published.graphics;return;}const resolved=await resolveGraphics(id);if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;}
- onDestroy(()=>{disposed=true;resourceReleases.forEach(release=>release());});
+ const preloadAbort=new AbortController();let loadProgress=$state<Progress|null>(null),assetsLoading=$state(true);
+ async function loadGraphics(id:string){
+  controller=undefined;assetsLoading=true;loadProgress=null;loadError='';
+  try{const options={signal:preloadAbort.signal,onProgress:(p:Progress)=>loadProgress=p};
+   const resolved=published?await preloadGraphics(published.graphics,async url=>{const response=await fetch(url,{signal:preloadAbort.signal});if(!response.ok)throw new Error('No se pudo descargar un gráfico.');return response.blob();},options):await resolveGraphics(id,options);
+   if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;
+  }finally{assetsLoading=false;}
+ }
+
+ onDestroy(()=>{disposed=true;preloadAbort.abort();resourceReleases.forEach(release=>release());});
  import { tick,onMount } from 'svelte';
  import MapDissolve from '$lib/components/MapDissolve.svelte';
  import {objectiveKey} from '$lib/demo/playable-adventure';
@@ -52,14 +62,15 @@
  let loadError=$state('');
  let completed=$state<string[]>([]);
  let resourceEntityId=$state('');
- onMount(()=>{void (async()=>{try{
+ async function initialize(){mapsReady=false;loadError='';loadProgress=null;try{
   const library=published?{activeId:published.adventure.id,adventures:[published.adventure]}:await loadAdventureLibrary();adventures=library.adventures;
   const requestedAdventure=new URLSearchParams(location.search).get('adventure');
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
   await loadGraphics(adventure.id);const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
   const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
   restoreProgress(adventure);inventory=readInventory(progressStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
- }catch(e){loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}})();});
+ }catch(e){if(!disposed)loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}}
+ onMount(()=>{void initialize();});
  function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;primaryCameraAction=c.getCamera().action;transitionReady=true;}
  function changeScene(next:WorldScene,facing:Facing){
   arrivalCamera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;
@@ -134,7 +145,7 @@
  function shortcut(entityId:string){void closePanel().then(()=>controller?.goTo(entityId));}
 
  async function switchAdventure(value:string){
-  if(!adventure||transitionImage||value===adventure.id)return;
+  if(!adventure||assetsLoading||transitionImage||value===adventure.id)return;
   try{
    const next=await selectAdventure(value);await loadGraphics(next.id);
    restoreProgress(next);
@@ -155,12 +166,12 @@
  <header class="topbar">
   <a class="immersive-brand" href="/" aria-label="Isométrico, inicio"><span class="brand-mark"><Layers size={22}/></span><span class="wordmark">isométrico</span></a>
   <div class="header-divider"></div>
-  <div class="world-select"><label class="sr-only" for="world-select">Cambiar de aventura</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{item.name}</option>{/each}</select><ChevronDown size={15}/></div></div>
+  <div class="world-select"><label class="sr-only" for="world-select">Cambiar de aventura</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={!mapsReady||assetsLoading||!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{item.name}</option>{/each}</select><ChevronDown size={15}/></div></div>
   <div class="topbar-right">{#if !published}<a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>Editar mapa</a><span class="demo-badge">VISTA PREVIA</span>{/if}<button class="header-action" onclick={()=>showPanel('space')} aria-label="Abrir lugares y progreso" title="Lugares y progreso"><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label="Ayuda" title="Ayuda"><CircleHelp size={19}/></button><span class="avatar-mini">E</span></div>
  </header>
  <main class="immersive-world" aria-label="Espacio virtual">
   <div class:outdoors={environments[scene.theme].outdoor} class="map-stage">
-   {#if loadError}<p class="load-error" role="alert">{loadError}</p>{:else if mapsReady}<World followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/>
+   {#if loadError}<div class="load-error"><p role="alert">{loadError}</p><button onclick={initialize}>Reintentar carga</button></div>{:else if !mapsReady||assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/>
    <div class="scene-heading"><div class="eyebrow">{adventure?.name??'MI AVENTURA'}</div><h1>{scene.name}</h1><span>{environments[scene.theme].label}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label="Abrir inventario" title="Inventario"><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
@@ -216,6 +227,8 @@
 {/if}
 
 <style>
+.preload-stage{position:absolute;inset:0;display:grid;place-content:center;z-index:5;background:#f4f7f0}.preload-stage :global(.preload){width:min(420px,85vw)}
+
 .map-inventory.map-tests{right:108px}@media(max-width:700px){.map-inventory.map-tests{right:96px}}
 .unified-modal.chat-panel{display:flex;flex-direction:column;gap:18px;overflow:hidden}.chat-panel .chat-heading{flex-shrink:0}.chat-panel .demo-footnote{display:none}
 

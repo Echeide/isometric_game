@@ -1,3 +1,4 @@
+import {preloadItems,type PreloadOptions} from './preload';
 import type { PixelArtPack } from '@isometrico/world';
 import { parseAdventure, type Adventure } from '$lib/demo/adventure';
 import { loadAdventureLibrary as legacyLibrary, parseLibrary, type AdventureLibrary } from '$lib/demo/adventure-library';
@@ -72,16 +73,22 @@ export function mapImages(pack:PixelArtPack,replace:(url:string)=>string):PixelA
  return copy;
 }
 export function imageUrls(pack:PixelArtPack){const urls=new Set<string>();mapImages(pack,url=>{urls.add(url);return url;});return [...urls];}
-export async function resourceBlob(url:string,repository:Pick<AdventureRepository,'blob'>=localAdventures){
- if(url.startsWith('asset:'))return repository.blob(url.slice(6));
+export async function resourceBlob(url:string,repository:Pick<AdventureRepository,'blob'>=localAdventures,signal?:AbortSignal){
+ signal?.throwIfAborted();
+ if(url.startsWith('asset:'))return repository===localAdventures&&context?(await api('assets/'+encodeURIComponent(url.slice(6)),{signal})).blob():repository.blob(url.slice(6));
  if(!url.startsWith('/pixelart/')||url.includes('..')||url.includes('\\'))throw new Error('Origen de recurso no admitido.');
- const response=await fetch(url);if(!response.ok)throw new Error(`No se pudo leer ${url}.`);return response.blob();
+ const response=await fetch(url,{signal});if(!response.ok)throw new Error(`No se pudo leer ${url}.`);return response.blob();
 }
-export async function resolveGraphics(id:string){
- const pack=await localAdventures.pack(id),urls=new Map<string,string>();
- try{for(const url of imageUrls(pack))if(url.startsWith('asset:'))urls.set(url,URL.createObjectURL(await resourceBlob(url)));}
- catch(error){for(const url of urls.values())URL.revokeObjectURL(url);throw error;}
- return {pack:mapImages(pack,url=>urls.get(url)??url),release(){for(const url of urls.values())URL.revokeObjectURL(url);}};
+export async function preloadGraphics(pack:PixelArtPack,load:(url:string)=>Promise<Blob>,options:PreloadOptions={}){
+ const urls=new Map<string,string>();
+ const release=()=>{for(const url of urls.values())URL.revokeObjectURL(url);urls.clear();};
+ try{await preloadItems(imageUrls(pack),async url=>{const blob=await load(url);options.signal?.throwIfAborted();urls.set(url,URL.createObjectURL(blob));},options);}
+ catch(error){release();throw error;}
+ return {pack:mapImages(pack,url=>urls.get(url)??url),release};
+}
+export async function resolveGraphics(id:string,options:PreloadOptions={}){
+ const pack=await localAdventures.pack(id);options.signal?.throwIfAborted();
+ return preloadGraphics(pack,url=>resourceBlob(url,localAdventures,options.signal),options);
 }
 
 let context:string|null=null;

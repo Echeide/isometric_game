@@ -12,6 +12,8 @@
  let arrivalCamera:ReturnType<WorldController['getCamera']>|undefined;
  let panMode=$state(false);
  import { graphics as defaultGraphics } from '$lib/demo/pixelart';
+ import LoadProgress from '$lib/components/LoadProgress.svelte';
+ import type {LoadProgress as Progress} from '$lib/storage/preload';
  import {resolveGraphics,localAdventures} from '$lib/storage/local-adventures';
  import {selectMainPlayer} from '$lib/storage/player-selection';
  import {onDestroy} from 'svelte';
@@ -19,7 +21,13 @@
  let playerChanging=$state(false),graphicsReady=$state(false);
  const resourceReleases:Array<()=>void>=[];
  let disposed=false;
- async function loadGraphics(id:string){graphicsReady=false;const resolved=await resolveGraphics(id);if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;graphicsReady=true;}
+ const preloadAbort=new AbortController();let loadProgress=$state<Progress|null>(null),loadFailed=$state(false);
+ async function loadGraphics(id:string){
+  const wasReady=graphicsReady;arrivalCamera=controller?.getCamera()??arrivalCamera;controller=undefined;graphicsReady=false;loadFailed=false;loadProgress=null;
+  try{const resolved=await resolveGraphics(id,{signal:preloadAbort.signal,onProgress:p=>loadProgress=p});if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;graphicsReady=true;}
+  catch(cause){graphicsReady=wasReady;throw cause;}
+ }
+
  async function chooseMainPlayer(id:string){
   if(playerChanging||!graphicsReady||id===(graphics.activePlayer??'default'))return;
   playerChanging=true;error='';const adventureId=adventure.id;
@@ -30,7 +38,7 @@
   if(playerChanging)return;playerChanging=true;error='';
   try{await loadGraphics(adventure.id);revision++;notice='Jugadores actualizados desde el taller.';}catch(e){error=(e as Error).message;}finally{playerChanging=false;}
  }
- onDestroy(()=>{disposed=true;resourceReleases.forEach(release=>release());});
+ onDestroy(()=>{disposed=true;preloadAbort.abort();resourceReleases.forEach(release=>release());});
  import { untrack, onMount } from 'svelte';
  import { goto } from '$app/navigation';
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
@@ -96,13 +104,15 @@
  function zoom(delta:number){if(!cameraReady)return;zoomLevel=controller?.getCamera().zoom??zoomLevel;const next=Math.round(Math.max(.65,Math.min(3,zoomLevel+delta))*100)/100;controller?.zoom(next-zoomLevel);zoomLevel=next;}
  function fitMap(){if(!cameraReady)return;controller?.recenter();zoomLevel=1;}
  const editing=$derived<WorldEditor|undefined>(testing?undefined:{selectedId:selected??'',onpick:pickingExitId?pickArrival:pendingAsset||pendingExit?placeAt:undefined,wallTool:wallTool??undefined,onwall:editWall,wallOpacity,brush:selected===null?brush??undefined:undefined,onpaint:paint,onselect:selectObject,onmove:move});
- onMount(()=>{void (async()=>{
+ async function initialize(){
+  error='';loadFailed=false;loadProgress=null;
   try{const library=await loadAdventureLibrary(),query=new URLSearchParams(location.search);availableAdventures=library.adventures;const saved=library.adventures.find(a=>a.id===(query.get('adventure')??library.activeId))??library.adventures.find(a=>a.id===library.activeId)!;
    await loadGraphics(saved.id);adopt(saved,query.get('map')??query.get('world')??saved.startMap);
-  }catch(e){error=`No se pudo cargar la aventura: ${(e as Error).message}`;}
- })();});
+  }catch(e){if(!disposed){loadFailed=true;error=`No se pudo cargar la aventura: ${(e as Error).message}`;}}
+ }
+ onMount(()=>{void initialize();});
  function syncUrl(){const url=new URL(location.href);url.search='';url.searchParams.set('adventure',adventure.id);url.searchParams.set('map',draft.id);window.history.replaceState(null,'',url);}
- async function persist(){if(playerChanging)return false;try{const library=await storeAdventure(bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en tu espacio.';return true;}catch(e){error=(e as Error).message;return false;}}
+ async function persist(){if(playerChanging||!graphicsReady)return false;try{const library=await storeAdventure(bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en tu espacio.';return true;}catch(e){error=(e as Error).message;return false;}}
  async function playSaved(){if(await persist())await goto(`/preview?adventure=${encodeURIComponent(adventure.id)}`);}
  async function switchAdventure(id:string){
   if(id===adventure.id||!(await persist()))return;
@@ -225,7 +235,7 @@
 <svelte:window onkeydown={toolKeys}/>
 <svelte:head><title>Editor de escenarios — Isométrico</title></svelte:head>
 <div class="editor">
- <header><a href="/admin" title="Volver a mis aventuras"><ArrowLeft size={18}/><span>Juego</span></a><strong>Editor <span>{draft.name}</span></strong><div class="editor-actions"><button onclick={persist}><Check size={17}/><span>Guardar</span></button><button class="save-play" onclick={playSaved}><Play size={17}/><span>Guardar y jugar</span></button><div class="file-menu"><button aria-label="Más opciones" aria-expanded={fileMenu} onclick={()=>fileMenu=!fileMenu}><MoreHorizontal size={20}/></button>{#if fileMenu}<div class="file-popover"><button onclick={()=>{fileMenu=false;fileInput.click();}}><Upload size={16}/>Importar ZIP / JSON</button><button onclick={()=>{fileMenu=false;download();}}><Download size={16}/>Exportar ZIP con recursos</button><button onclick={()=>openResources()}>Taller de sprites</button></div>{/if}</div></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo de mapa JSON" accept=".zip,application/zip,.json,application/json" bind:this={fileInput} onchange={upload}/></header>
+ <header><a href="/admin" title="Volver a mis aventuras"><ArrowLeft size={18}/><span>Juego</span></a><strong>Editor <span>{draft.name}</span></strong><div class="editor-actions"><button disabled={!graphicsReady} onclick={persist}><Check size={17}/><span>Guardar</span></button><button class="save-play" disabled={!graphicsReady} onclick={playSaved}><Play size={17}/><span>Guardar y jugar</span></button><div class="file-menu"><button aria-label="Más opciones" aria-expanded={fileMenu} onclick={()=>fileMenu=!fileMenu}><MoreHorizontal size={20}/></button>{#if fileMenu}<div class="file-popover"><button onclick={()=>{fileMenu=false;fileInput.click();}}><Upload size={16}/>Importar ZIP / JSON</button><button onclick={()=>{fileMenu=false;download();}}><Download size={16}/>Exportar ZIP con recursos</button><button onclick={()=>openResources()}>Taller de sprites</button></div>{/if}</div></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo de mapa JSON" accept=".zip,application/zip,.json,application/json" bind:this={fileInput} onchange={upload}/></header>
  <nav class="editor-tools" aria-label="Herramientas del editor">
   <button aria-pressed={!toolPanel&&!panMode&&!brush&&!pendingAsset&&!pendingExit&&!pickingExitId&&!testing} onclick={clearTools}><MousePointer2 size={18}/>Seleccionar</button>
   <span class="tool-divider"></span>
@@ -268,7 +278,7 @@
  {#if selectedWall}<p>{selectedWall.kind==='door'?'Puerta':'Pared'} · {selectedWall.x}, {selectedWall.y}</p>{#if selectedWall.kind==='door'}{#if selectedWall.exitId}<button class="panel-primary" onclick={()=>selectObject(selectedWall!.exitId!)}>Editar destino</button><button class="panel-primary" onclick={unlinkDoor}>Desvincular puerta</button>{:else}<label>Conectar puerta con<select bind:value={destination}><option value="">Elegir destino…</option>{#each adventure.maps.filter(m=>m.id!==draft.id) as m}<option value={m.id}>{m.name}</option>{/each}</select></label><button class="panel-primary" disabled={!destination} onclick={linkDoor}>Conectar puerta</button>{/if}{/if}{/if}
  {/if}</section>{/if}
   </div></aside>{/if}
-  <main class="editor-preview"><div class="editor-canvas" bind:this={canvasHost}><div class="map-heading"><h1><button onclick={()=>selectObject('')} title="Propiedades del mapa">{preview.name}</button></h1></div><World {revision} {panMode} {graphics} {adapter} editor={editing} onready={ready} onstatus={s=>notice=s}/><MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/><div class="quick-map" role="group" aria-label="Mapa actual"><Layers size={18}/><select aria-label="Seleccionar mapa" value={draft.id} onchange={e=>changeWorld(e.currentTarget.value)}>{#each adventure.maps as map}<option value={map.id}>{map.id===draft.id?draft.name:map.name}{map.id===adventure.startMap?' · Inicio':''}</option>{/each}</select><button aria-label="Propiedades del mapa actual" title="Propiedades del mapa actual" aria-expanded={mapProperties&&!inspectorCollapsed} onclick={()=>selectObject('')}><Settings2 size={19}/></button></div><div class="editor-zoom" role="group" aria-label="Controles del mapa"><button aria-label="Deshacer" title="Deshacer (Ctrl/⌘ Z)" disabled={!history.length} onclick={undo}><Undo2 size={17}/></button><button aria-label="Rehacer" title="Rehacer (Ctrl/⌘ Mayús Z)" disabled={!future.length} onclick={redo}><Redo2 size={17}/></button><span class="control-divider" aria-hidden="true"></span><button aria-label="Mover vista" title="Mover vista" aria-pressed={panMode} onclick={()=>panMode=!panMode}><Hand size={18}/></button><button aria-label="Alejar mapa" title="Alejar" disabled={!cameraReady||zoomLevel<=.65} onclick={()=>zoom(-.15)}><Minus size={18}/></button><output aria-label="Nivel de zoom">{Math.round(zoomLevel*100)}%</output><button aria-label="Acercar mapa" title="Acercar" disabled={!cameraReady||zoomLevel>=3} onclick={()=>zoom(.15)}><Plus size={18}/></button><button aria-label="Ajustar mapa a la vista" title="Ajustar mapa a la vista" disabled={!cameraReady} onclick={fitMap}><Scan size={18}/></button></div></div><div class="editor-feedback">{#if pendingAsset||pendingExit}<p>Pulsa una casilla para colocar {pendingExit?'la salida':'el objeto'}. <button onclick={clearTools}>Cancelar</button></p>{/if}{#if pickingExitId}<p>Selecciona una casilla libre en este mapa. <button onclick={cancelPicking}>Cancelar selección</button></p>{/if}{#if error}<p role="alert" class="editor-error">{error}</p>{:else}<p role="status">{notice}</p>{/if}<small>Mano: desplazar vista. También espacio + arrastre o botón central. Selecciona y arrastra con ratón o dedo, o mueve con las flechas de la cuadrícula. Guardar y jugar aplica el mapa en este navegador. Exporta el JSON como copia.</small></div></main>
+  <main class="editor-preview"><div class="editor-canvas" bind:this={canvasHost}><div class="map-heading"><h1><button onclick={()=>selectObject('')} title="Propiedades del mapa">{preview.name}</button></h1></div>{#if graphicsReady}<World {revision} {panMode} {graphics} {adapter} editor={editing} onready={ready} onstatus={s=>notice=s}/>{:else}<div class="preload-stage">{#if loadFailed}<p role="alert">{error}</p><button onclick={initialize}>Reintentar carga</button>{:else}<LoadProgress progress={loadProgress}/>{/if}</div>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/><div class="quick-map" role="group" aria-label="Mapa actual"><Layers size={18}/><select aria-label="Seleccionar mapa" value={draft.id} onchange={e=>changeWorld(e.currentTarget.value)}>{#each adventure.maps as map}<option value={map.id}>{map.id===draft.id?draft.name:map.name}{map.id===adventure.startMap?' · Inicio':''}</option>{/each}</select><button aria-label="Propiedades del mapa actual" title="Propiedades del mapa actual" aria-expanded={mapProperties&&!inspectorCollapsed} onclick={()=>selectObject('')}><Settings2 size={19}/></button></div><div class="editor-zoom" role="group" aria-label="Controles del mapa"><button aria-label="Deshacer" title="Deshacer (Ctrl/⌘ Z)" disabled={!history.length} onclick={undo}><Undo2 size={17}/></button><button aria-label="Rehacer" title="Rehacer (Ctrl/⌘ Mayús Z)" disabled={!future.length} onclick={redo}><Redo2 size={17}/></button><span class="control-divider" aria-hidden="true"></span><button aria-label="Mover vista" title="Mover vista" aria-pressed={panMode} onclick={()=>panMode=!panMode}><Hand size={18}/></button><button aria-label="Alejar mapa" title="Alejar" disabled={!cameraReady||zoomLevel<=.65} onclick={()=>zoom(-.15)}><Minus size={18}/></button><output aria-label="Nivel de zoom">{Math.round(zoomLevel*100)}%</output><button aria-label="Acercar mapa" title="Acercar" disabled={!cameraReady||zoomLevel>=3} onclick={()=>zoom(.15)}><Plus size={18}/></button><button aria-label="Ajustar mapa a la vista" title="Ajustar mapa a la vista" disabled={!cameraReady} onclick={fitMap}><Scan size={18}/></button></div></div><div class="editor-feedback">{#if pendingAsset||pendingExit}<p>Pulsa una casilla para colocar {pendingExit?'la salida':'el objeto'}. <button onclick={clearTools}>Cancelar</button></p>{/if}{#if pickingExitId}<p>Selecciona una casilla libre en este mapa. <button onclick={cancelPicking}>Cancelar selección</button></p>{/if}{#if error}<p role="alert" class="editor-error">{error}</p>{:else}<p role="status">{notice}</p>{/if}<small>Mano: desplazar vista. También espacio + arrastre o botón central. Selecciona y arrastra con ratón o dedo, o mueve con las flechas de la cuadrícula. Guardar y jugar aplica el mapa en este navegador. Exporta el JSON como copia.</small></div></main>
   {#if !testing&&!pickingExitId&&(entity||mapProperties)}{#key mapProperties}<aside use:draggablePanel={{key:mapProperties?"map-properties":"inspector",positions:panelPositions}} class="editor-inspector" class:map-properties={mapProperties} class:collapsed={inspectorCollapsed} aria-label="Inspector"><div class="panel-heading"><h2>{selected===null?'Propiedades del mapa':entity?.label}</h2><div class="panel-actions"><button aria-label={inspectorCollapsed?"Expandir inspector":"Minimizar inspector"} aria-expanded={!inspectorCollapsed} onclick={()=>inspectorCollapsed=!inspectorCollapsed}>{#if inspectorCollapsed}<ChevronDown size={18}/>{:else}<ChevronUp size={18}/>{/if}</button><button aria-label="Cerrar inspector" onclick={()=>{selected=null;mapProperties=false;}}><X size={18}/></button></div></div><div hidden={inspectorCollapsed}>
    {#if selected===null}
    <div class="map-adventure-context"><div><small>Aventura</small><strong>{adventure.name}</strong></div><button aria-label="Ajustes de la aventura" title="Ajustes de la aventura" onclick={()=>showTool('adventures')}><Settings2 size={19}/></button></div>
@@ -303,6 +313,8 @@
  </div>
 </div>
 <style>
+.preload-stage{position:absolute;inset:0;display:grid;place-content:center;z-index:5;background:#f4f7f0}.preload-stage :global(.preload){width:min(420px,85vw)}
+
 .map-adventure-context{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid #dce5d6}.map-adventure-context div{min-width:0;flex:1}.map-adventure-context small{display:block;font-size:11px;color:#718269;margin-bottom:4px}.map-adventure-context strong{display:block;font-size:14px;overflow-wrap:anywhere}.map-adventure-context button{display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border-radius:7px;color:#35502f;background:#edf3e5}.map-connections summary{display:flex;align-items:center;gap:8px}.connection-row{display:flex;align-items:center;gap:8px;padding:10px 0;width:100%;text-align:left;font-size:12px}.connection-row span{flex:1}.map-adventure-context button:focus-visible,.connection-row:focus-visible{outline:2px solid #577c35;outline-offset:2px}
 
 .adventure-transfer{margin-top:20px;padding-top:16px;border-top:1px solid #dce5d6}.adventure-transfer h3{font-size:13px}.adventure-transfer .paint-actions button{display:flex;align-items:center;gap:7px}
