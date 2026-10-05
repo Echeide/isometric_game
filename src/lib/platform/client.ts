@@ -1,0 +1,1 @@
+export async function request(path:string,body?:unknown){const r=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const value=await r.json();if(!r.ok)throw new Error(value.message??'No se pudo completar la operación.');return value;}

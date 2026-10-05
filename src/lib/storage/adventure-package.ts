@@ -36,7 +36,7 @@ export function validateCatalogGraphics(adventure:Adventure,pack:PixelArtPack){
 }
 export async function exportAdventure(adventure:Adventure,repository:Pick<AdventureRepository,'pack'|'blob'>=localAdventures){
  const valid=parseAdventure(adventure),pack=await repository.pack(valid.id),files:Record<string,Uint8Array>={},paths=new Map<string,string>();let total=0;
- validateCatalogGraphics(valid,pack);
+ delete (valid as Adventure&{_revision?:number})._revision;validateCatalogGraphics(valid,pack);
  for(const [index,url] of imageUrls(pack).entries()){
   const blob=await resourceBlob(url,repository);if(blob.size>10_000_000||(total+=blob.size)>MAX)throw new Error('Los recursos superan el límite del paquete (100 MB).');
   const path=`assets/${index}.png`,bytes=new Uint8Array(await blob.arrayBuffer());pngSize(bytes);files[path]=bytes;paths.set(url,path);
@@ -58,7 +58,7 @@ export function unpackAdventure(bytes:Uint8Array){
  if(!files['manifest.json'])throw new Error('Falta manifest.json.');
  const manifest=JSON.parse(strFromU8(files['manifest.json']));
  if(manifest.kind!=='isometric-adventure-package'||manifest.version!==1)throw new Error('Versión de paquete no compatible.');
- const adventure=parseAdventure(manifest.adventure),pack=validatePack(manifest.graphics,files);
+ const adventure=parseAdventure(manifest.adventure);delete (adventure as Adventure&{_revision?:number})._revision;const pack=validatePack(manifest.graphics,files);
  validateCatalogGraphics(adventure,pack);
  for(const map of adventure.maps)for(const entity of map.entities)if(entity.kind!=='person'&&entity.visualId?.startsWith('pixel.')&&!pack.objects[entity.visualId])throw new Error(`Falta el objeto ${entity.visualId}.`);
  const refs=new Map<string,string>(),blobs:Record<string,Blob>={};

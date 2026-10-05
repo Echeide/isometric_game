@@ -23,10 +23,10 @@ function result<T>(request:IDBRequest<T>){return new Promise<T>((resolve,reject)
 function complete(tx:IDBTransaction){return new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error??new Error('No se pudo guardar la aventura.'));});}
 async function read<T>(store:string,key:IDBValidKey){return result<T|undefined>((await db()).transaction(store).objectStore(store).get(key));}
 /** Workshop drafts keep Blob originals without adding incomplete assets to the playable pack. */
-export async function saveWorkshopDraft(id:string,value:unknown){const tx=(await db()).transaction('packs','readwrite'),done=complete(tx);tx.objectStore('packs').put(value,['workshop-draft',id]);await done;}
-export const loadWorkshopDraft=<T>(id:string)=>read<T>('packs',['workshop-draft',id]);
-export async function clearWorkshopDraft(id:string){const tx=(await db()).transaction('packs','readwrite'),done=complete(tx);tx.objectStore('packs').delete(['workshop-draft',id]);await done;}
-export const localAdventures:AdventureRepository={
+export async function saveWorkshopDraft(id:string,value:unknown){const tx=(await db()).transaction('packs','readwrite'),done=complete(tx);tx.objectStore('packs').put(value,['workshop-draft',context??'local',id]);await done;}
+export const loadWorkshopDraft=async<T>(id:string)=>await read<T>('packs',['workshop-draft',context??'local',id])??(!context?await read<T>('packs',['workshop-draft',id]):undefined);
+export async function clearWorkshopDraft(id:string){const tx=(await db()).transaction('packs','readwrite'),done=complete(tx);tx.objectStore('packs').delete(['workshop-draft',context??'local',id]);await done;}
+export const browserAdventures:AdventureRepository={
  async load(){
   const saved=await read<AdventureLibrary>('library','current');
   if(saved)return parseLibrary(saved);
@@ -83,3 +83,19 @@ export async function resolveGraphics(id:string){
  catch(error){for(const url of urls.values())URL.revokeObjectURL(url);throw error;}
  return {pack:mapImages(pack,url=>urls.get(url)??url),release(){for(const url of urls.values())URL.revokeObjectURL(url);}};
 }
+
+let context:string|null=null;
+const revisions=new Map<string,number>();
+export function setStorageContext(key:string|null){if(context!==key){revisions.clear();context=key;}}
+async function api(path:string,init?:RequestInit){const response=await fetch('/api/platform/'+path,init);if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.message??'No se pudo acceder al espacio.');}return response;}
+const serverAdventures:AdventureRepository={
+ async load(){const library=await(await api('adventures')).json();for(const a of library.adventures)if(!revisions.has(a.id))revisions.set(a.id,a._revision);const selected=sessionStorage.getItem('active:'+context);return {...library,activeId:library.adventures.some((a:Adventure)=>a.id===selected)?selected:library.adventures[0]?.id??''};},
+ async save(adventure,resources){const form=new FormData();form.set('manifest',JSON.stringify({adventure,pack:resources?.pack??(!revisions.has(adventure.id)?graphics:undefined),revision:revisions.has(adventure.id)?((adventure as Adventure&{_revision?:number})._revision??revisions.get(adventure.id)):0}));for(const [id,blob] of Object.entries(resources?.blobs??{}))form.set(id,blob,`${id}.png`);const r=await(await api('adventures/'+encodeURIComponent(adventure.id),{method:'POST',body:form})).json();revisions.set(adventure.id,r.revision);sessionStorage.setItem('active:'+context,adventure.id);return this.load();},
+ async select(id){const row=await(await api('adventures/'+encodeURIComponent(id))).json();revisions.set(id,row.revision);sessionStorage.setItem('active:'+context,id);return {...row.definition,_revision:row.revision};},
+ async pack(id){if(!revisions.has(id))return JSON.parse(JSON.stringify(graphics));const row=await(await api('adventures/'+encodeURIComponent(id))).json();if(!revisions.has(id))revisions.set(id,row.revision);return row.graphics;},
+ async blob(id){return(await api('assets/'+encodeURIComponent(id))).blob();}
+};
+export const localAdventures:AdventureRepository={load:()=>active().load(),save:(a,r)=>active().save(a,r),select:id=>active().select(id),pack:id=>active().pack(id),blob:id=>active().blob(id)};
+function active(){return context?serverAdventures:browserAdventures;}
+
+export const storageScope=()=>context??'local';

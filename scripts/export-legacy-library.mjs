@@ -1,0 +1,5 @@
+import {readdir,readFile,writeFile} from 'node:fs/promises';import {resolve,join} from 'node:path';import {createHash} from 'node:crypto';import {zipSync,strToU8} from 'fflate';
+const [directory,output]=process.argv.slice(2);if(!directory||!output)throw Error('Uso: node scripts/export-legacy-library.mjs <directorio> <archivo.zip>');
+const files={'library.json':strToU8(JSON.stringify({format:'isometric-library',version:1}))};let total=0;
+for(const id of (await readdir(resolve(directory))).filter(v=>/^[a-f0-9]{64}$/.test(v))){const bytes=new Uint8Array(await readFile(join(resolve(directory),id,'resource.zip')));if((total+=bytes.length)>190_000_000)throw Error('Más de 190 MB: exporta recursos por separado.');if(createHash('sha256').update(bytes).digest('hex')!==id)throw Error('El contenido de un recurso no coincide con su identificador.');files[`resources/${id}.zip`]=bytes;}
+await writeFile(resolve(output),zipSync(files,{level:0}),{flag:'wx',mode:0o600});console.log('Biblioteca exportada; originales conservados.');

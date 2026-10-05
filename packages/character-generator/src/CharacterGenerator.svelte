@@ -19,7 +19,7 @@
   import { orientationLabels } from './generation';
   import { emptyArt, pngData, shortActionRecipe, type ImageProvider, type ImageRequest, type ImageResult } from './generation';
 
-  let { onexample, imageProvider, videoProvider, pixelEditor }: { onexample?: () => Promise<Sources>; imageProvider?: ImageProvider; videoProvider?: VideoProvider; pixelEditor?: PixelEditorProvider } = $props();
+  let { draftKey='latest', onexample, imageProvider, videoProvider, pixelEditor }: { draftKey?:string; onexample?: () => Promise<Sources>; imageProvider?: ImageProvider; videoProvider?: VideoProvider; pixelEditor?: PixelEditorProvider } = $props();
   let settings = $state(defaultSettings());
   let brief = $state<CharacterBrief>({ description: '', style: 'Pixel art, readable silhouette, soft earthy palette, large head, compact body', props: '', notes: {} });
   let sources = $state.raw<Sources>({}), result = $state.raw<BuildResult | null>(null);
@@ -87,7 +87,7 @@
   function saveBackup() { return run('Preparando copia del proyecto…',async()=>offerDownload(await saveProject($state.snapshot(settings),$state.snapshot(brief),sources,$state.snapshot(art),cursor()),`${settings.id}.project.zip`)); }
   onMount(()=>{
     let alive=true;
-    readDraft().then(saved=>{if(alive){if(saved?.version===1)pendingDraft=saved;draftReady=true;draftStatus=saved?'Hay un borrador anterior disponible.':'Guardado local preparado.';}}).catch(()=>{if(alive){draftReady=true;draftStatus='Guardado local no disponible. Descarga una copia del proyecto.';}});
+    readDraft(draftKey).then(saved=>{if(alive){if(saved?.version===1)pendingDraft=saved;draftReady=true;draftStatus=saved?'Hay un borrador anterior disponible.':'Guardado local preparado.';}}).catch(()=>{if(alive){draftReady=true;draftStatus='Guardado local no disponible. Descarga una copia del proyecto.';}});
     const beforeUnload=(event:BeforeUnloadEvent)=>{if(draftDirty){event.preventDefault();event.returnValue='';}};
     window.addEventListener('beforeunload',beforeUnload);
     return()=>{alive=false;window.removeEventListener('beforeunload',beforeUnload);};
@@ -110,7 +110,7 @@
     draftDirty=true;draftStatus='Cambios pendientes de guardar…';
     const timer=setTimeout(()=>{
       draftStatus='Guardando en este navegador…';
-      saveQueue=saveQueue.catch(()=>{}).then(()=>writeDraft({version:1,savedAt:Date.now(),...data})).then(()=>{if(!destroyed && revision===draftRevision){draftDirty=false;draftStatus=`Guardado en este navegador · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;}}).catch(()=>{if(!destroyed){draftDirty=true;draftStatus='No se pudo guardar localmente. Descarga una copia del proyecto.';}});
+      saveQueue=saveQueue.catch(()=>{}).then(()=>writeDraft({version:1,savedAt:Date.now(),...data},draftKey)).then(()=>{if(!destroyed && revision===draftRevision){draftDirty=false;draftStatus=`Guardado en este navegador · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;}}).catch(()=>{if(!destroyed){draftDirty=true;draftStatus='No se pudo guardar localmente. Descarga una copia del proyecto.';}});
     },1200);
     return()=>clearTimeout(timer);
   });

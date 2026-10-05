@@ -12,17 +12,17 @@ async function database(): Promise<IDBDatabase> {
     request.onerror=()=>reject(request.error);
   });
 }
-export async function readDraft(): Promise<CharacterDraft | undefined> {
+export async function readDraft(key='latest'): Promise<CharacterDraft | undefined> {
   const db=await database();
   try {return await new Promise((resolve,reject)=>{
-    const request=db.transaction('drafts','readonly').objectStore('drafts').get('latest');
+    const request=db.transaction('drafts','readonly').objectStore('drafts').get(key);
     request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error);
   });} finally {db.close();}
 }
-export async function writeDraft(draft: CharacterDraft): Promise<void> {
+export async function writeDraft(draft: CharacterDraft,key='latest'): Promise<void> {
   const db=await database();
   try {await new Promise<void>((resolve,reject)=>{
-    const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').put(draft,'latest');
+    const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').put(draft,key);
     tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
   });} finally {db.close();}
 }

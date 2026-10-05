@@ -1,0 +1,45 @@
+# Plataforma de aventuras
+
+La aplicación separa el catálogo público, la gestión por espacio y la superadministración. PostgreSQL conserva cuentas, sesiones, permisos, límites, aventuras, publicaciones y auditoría. Los PNG y ZIP inmutables se almacenan en PLATFORM_STORAGE_DIR. Las contraseñas usan scrypt y las cookies de sesión HttpOnly caducan a las ocho horas. El servidor comprueba el origen de las operaciones de escritura.
+
+## Desarrollo local
+
+1. Instalar dependencias con `npm install`.
+2. Con PostgreSQL 16+ instalado, ejecutar `npm run platform:db`. Prepara un clúster aislado en `.platform-data`, sin escucha TCP, y añade DATABASE_URL a `.env` si no existe. Repetir tras reiniciar el ordenador para arrancarlo. No modifica otras instalaciones de PostgreSQL.
+3. Definir PLATFORM_BOOTSTRAP_USER/PASSWORD en `.env` y ejecutar `npm run platform:bootstrap`. Para conservar la cuenta anterior del taller: `npm run platform:bootstrap -- --use-workshop-account`. Solo crea el superadmin si la tabla de usuarios está vacía. No imprime contraseñas.
+4. Arrancar `npm run dev`, entrar por `/login` y crear un espacio y su administrador en `/superadmin`.
+5. «Entrar como» abre la gestión de ese administrador con sus permisos y límites. La barra superior permite volver al superadmin. La auditoría distingue al actor real del efectivo.
+
+## Migración de datos
+
+No se importan automáticamente datos de un navegador a una cuenta. En `/admin`, «Recuperar aventuras de este navegador» muestra las copias locales y permite copiar las elegidas al espacio actual. También se puede importar un ZIP de aventura. El original local permanece intacto. Los proyectos del generador siguen admitiendo su `.project.zip`.
+
+La antigua `.sprite-library` no se convierte en catálogo público. Exportarla a ZIP con `node scripts/export-legacy-library.mjs <directorio> <archivo.zip>` e importar ese ZIP desde «Biblioteca del espacio» de la cuenta elegida. El archivo se crea sin alterar los originales. En Railway el directorio anterior era `/data/sprite-library`.
+
+Los trabajos de vídeo anteriores siguen en CHARACTER_VIDEO_JOBS_DIR. Para asignarlos explícitamente a un espacio existente, copiar su contenido al subdirectorio `PLATFORM_STORAGE_DIR/videos/<tenant-id>` conservando los originales. No copiar trabajos de distintos propietarios juntos. Los nuevos trabajos siempre se consultan dentro del espacio de la sesión.
+
+## Publicaciones y bibliotecas
+
+Guardar actualiza el borrador. Publicar crea una revisión independiente; los siguientes cambios requieren «Actualizar publicación». Retirar la publicación impide nuevas lecturas públicas. Las imágenes originales de edición y metadatos de generación no se incluyen en las hojas públicas.
+
+Cada recurso de biblioteca pertenece al espacio. El superadmin puede copiarlo al catálogo compartido. Retirarlo del catálogo no elimina copias incorporadas a aventuras ni el recurso original. El administrador puede descargar/exportar su biblioteca e incorporar copias independientes.
+
+Las escrituras de aventuras usan revisiones: dos pestañas no pueden sobrescribirse silenciosamente. Ante un conflicto, exportar los cambios y volver a cargar. Los borradores de edición local se separan por usuario y espacio.
+
+## Railway
+
+Este cambio necesita PostgreSQL antes de desplegar. Crear un rol dedicado de aplicación **sin SUPERUSER ni BYPASSRLS** y una base propiedad de ese rol; usar su URL interna en DATABASE_URL. La aplicación rechaza roles que eludan Row Level Security. El primer arranque aplica el esquema bajo un bloqueo transaccional.
+
+Conservar el volumen `/data`; establecer PLATFORM_STORAGE_DIR=/data/platform, ORIGIN con el dominio HTTPS y BODY_SIZE_LIMIT=200M. Mantener OPENAI_API_KEY/MAGNIFIC_API_KEY exclusivamente en el servidor. La cuenta inicial se crea ejecutando el script de bootstrap una vez desde un entorno con acceso a PostgreSQL; las variables de bootstrap se pueden retirar después.
+
+Hacer copia de PostgreSQL y del volumen como una unidad. Los recursos tienen referencias por hash: restaurar solo uno de los dos almacenes puede dejar referencias incompletas. No borrar los directorios antiguos hasta verificar la migración. No volver a una versión antigua de la aplicación mientras escriba esta plataforma.
+
+## Cuotas y alcance
+
+Por espacio: número de aventuras, publicaciones activas, MB de imágenes/paquetes persistidos y solicitudes mensuales de imágenes/vídeos. Las reservas de IA y las comprobaciones de almacenamiento usan un bloqueo de fila para impedir sobrepasos concurrentes. Una solicitud fallida después de reservar cuenta como intento: no se reintenta una generación pagada automáticamente. Consultar o descargar un vídeo existente no consume otra generación.
+
+El límite de recursos guardados incluye imágenes históricas y ZIP de biblioteca; los vídeos fuente y los proyectos locales del generador no cuentan en ese límite. Debe vigilarse también el espacio total del volumen. La retirada de contenido no purga archivos que podrían seguir usándose en publicaciones anteriores. La recuperación de contraseñas se realiza mediante el superadmin; no hay servicio de correo configurado.
+
+## Verificación
+
+`npm run check`, `npm test` y `npm run build`. Las pruebas de PostgreSQL requieren PLATFORM_TEST_DATABASE_URL y una base **aislada cuyo nombre termine en _test**. `npm run test:platform` limpia únicamente las tablas de esa base de pruebas y verifica aislamiento, publicaciones, permisos, cuotas concurrentes y suplantación auditada. El rol de pruebas también debe carecer de SUPERUSER/BYPASSRLS.

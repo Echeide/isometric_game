@@ -1,0 +1,2 @@
+import {platform} from '$lib/server/platform/runtime';import {error} from '@sveltejs/kit';import {PlatformError} from '$lib/server/platform/auth';
+export const load=async({params}:import('./$types').PageServerLoadEvent)=>{try{return{published:await platform().store.published(params.slug)};}catch(e){error(e instanceof PlatformError?e.status:503,e instanceof PlatformError?e.message:'Aventura no disponible.');}};

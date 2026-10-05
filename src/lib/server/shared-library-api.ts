@@ -1,16 +1,6 @@
-import {env} from '$env/dynamic/private';
-import {dev} from '$app/environment';
-import {resolve} from 'node:path';
 import {error,type RequestEvent} from '@sveltejs/kit';
-import {allowCharacterApi} from './character-access';
-import {SharedLibrary} from './shared-library';
-let library:SharedLibrary|undefined;
-export function accessLibrary(event:RequestEvent){
- if(!allowCharacterApi(dev,dev?event.getClientAddress():'',event.url,event.request.method==='GET'?undefined:event.request.headers.get('origin'),event.locals.characterWorkshopAuthorized))error(403,'Accede al taller privado para utilizar la biblioteca.');
- const directory=env.SPRITE_LIBRARY_DIR||(dev?resolve('.sprite-library'):'');
- if(!directory)error(503,'Configura SPRITE_LIBRARY_DIR en un almacenamiento persistente del servidor.');
- return library??=new SharedLibrary(directory);
-}
+import {platform} from './platform/runtime';
+export function accessLibrary(event:RequestEvent){const p=event.locals.principal;if(!p)error(401,'Inicia sesión.');if(event.request.method!=='GET'&&event.request.headers.get('origin')!==event.url.origin)error(403,'Origen no permitido.');const store=platform().store,scope=event.url.searchParams.get('scope')??'tenant';return {list:()=>store.resourceList(p,scope),get:(id:string)=>store.resource(p,id),save:(b:Uint8Array)=>store.saveResource(p,b),export:()=>store.exportResources(p,scope),import:(b:Uint8Array)=>store.importResources(p,b)};}
 export const libraryHeaders={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 export async function readLibraryBody(request:Request,max:number){
  if(Number(request.headers.get('content-length'))>max)error(413,'El archivo supera el límite permitido.');

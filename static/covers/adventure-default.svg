@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600" fill="none">
+<defs><linearGradient id="sky" x2="960" y2="600" gradientUnits="userSpaceOnUse"><stop stop-color="#e4ead5"/><stop offset="1" stop-color="#b8cebc"/></linearGradient><linearGradient id="land" x2="0" y2="180" gradientUnits="userSpaceOnUse"><stop stop-color="#ecedd7"/><stop offset="1" stop-color="#c7d5b2"/></linearGradient><pattern id="grid" width="80" height="40" patternUnits="userSpaceOnUse"><path d="M0 20 40 0 80 20 40 40Z" stroke="#91ac8a" stroke-opacity=".2"/></pattern></defs>
+<path fill="url(#sky)" d="M0 0h960v600H0z"/><circle cx="775" cy="99" r="52" fill="#f6efd6" opacity=".65"/>
+<path d="m77 156 63-32 64 32-64 32zM773 424l56-28 56 28-56 28z" fill="#fff" opacity=".17"/>
+<ellipse cx="486" cy="491" rx="318" ry="52" fill="#527a65" opacity=".14"/>
+<path d="m120 338 360-180 360 180v38L480 556 120 376z" fill="#91af95"/>
+<path d="m480 518 360-180v38L480 556z" fill="#6e947e"/>
+<path d="m120 338 360-180 360 180-360 180z" fill="url(#land)"/>
+<path d="m120 338 360-180 360 180-360 180z" fill="url(#grid)"/>
+<path d="m280 258 40-20 360 180-40 20z" fill="#f6edce"/>
+<path d="m280 418 40 20 320-160-40-20z" fill="#f6edce"/>
+<!-- A small room, open to the player. -->
+<path d="m320 278 160-80 160 80v88l-160 80-160-80z" fill="#aabb9b"/>
+<path d="m320 278 160-80v-96l-160 80z" fill="#f8f3df"/>
+<path d="m480 198 160 80v-96l-160-80z" fill="#c5d4bb"/>
+<path d="m320 182 160-80 160 80-10 5-150-75-150 75z" fill="#fffbea"/>
+<path d="m350 207 51-25v46l-51 26z" fill="#688c78"/>
+<path d="m357 208 37-19v33l-37 19z" fill="#a9c9b7"/><path d="m375 199v34m-18-7 37-19" stroke="#e4edda" stroke-width="4"/>
+<path d="m534 156 51 26v46l-51-26z" fill="#7c9b86"/><path d="m541 166 37 19v31l-37-19z" fill="#b6d2bf"/>
+<!-- Desk and little books. -->
+<path d="m405 300 73-37 87 44-73 37z" fill="#bb8f62"/><path d="m405 300v10l87 44v-10z" fill="#956f4e"/><path d="m492 344 73-37v10l-73 37z" fill="#805f44"/>
+<path d="M416 315v38l9 5v-38m119 5v37l10-5v-37m-66 33v39l9-5v-39" fill="#856c52"/>
+<path d="m452 291 29-14 29 14-29 15z" fill="#e8e6ce"/><path d="m454 286 23-11 21 11-23 12z" fill="#7e9d94"/>
+<!-- Trees, stepping stones and shrubs. -->
+<path d="M245 315v61l10 5v-61M705 338v47l10 5v-47M480 180v43l9 4v-43" fill="#8a7655"/>
+<path d="m210 277 40-64 40 64-40 23z" fill="#567d61"/><path d="m210 297 40-59 40 59-40 22z" fill="#70936a"/><path d="m250 238 40 59-40 22z" fill="#466e56"/>
+<path d="m671 323 39-58 39 58-39 22z" fill="#73956c"/><path d="m671 341 39-57 39 57-39 22z" fill="#64885f"/><path d="m710 284 39 57-39 22z" fill="#49735a"/>
+<path d="m452 174 33-48 32 48-32 18z" fill="#7e9e70"/><path d="m485 126 32 48-32 18z" fill="#608663"/>
+<path d="m377 433 23-11 23 11-23 12zm34 17 23-11 23 11-23 12zm34 17 23-11 23 11-23 12z" fill="#b4bea1"/>
+<path d="m211 352 19-14 20 14v13l-20 10-19-10zm383 72 20-14 19 14v13l-19 10-20-10z" fill="#91ad75"/>
+<!-- Explorer. -->
+<ellipse cx="552" cy="383" rx="20" ry="9" fill="#536d52" opacity=".22"/><path d="M542 369v18h8v-14h7v14h8v-23z" fill="#405951"/><path d="m538 348 15-7 17 8v23l-16 8-16-8z" fill="#bd8152"/><path d="m552 343 18 6v23l-16 8z" fill="#95643f"/><path d="m540 326 13-7 15 7v19l-14 7-14-7z" fill="#dfb780"/><path d="m537 324 17-9 18 9v9l-18-5-17 7z" fill="#3c5648"/>
+</svg>

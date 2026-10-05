@@ -1,0 +1,4 @@
+import {json,type RequestHandler} from '@sveltejs/kit';
+import {platform} from '$lib/server/platform/runtime';
+import {PlatformError} from '$lib/server/platform/auth';
+export const GET:RequestHandler=async e=>{try{const store=platform().store,parts=(e.params.path??'').split('/');if(parts[0]==='adventures'&&parts.length===1)return json(await store.publicList());if(parts[0]==='adventures'&&parts.length===2)return json(await store.published(parts[1]));if(parts[0]==='assets'&&parts.length===3)return new Response(new Uint8Array(await store.publicAsset(parts[1],parts[2].endsWith('.png')?parts[2].slice(0,-4):parts[2])),{headers:{'Content-Type':'image/png','Cache-Control':'no-store'}});throw new PlatformError(404,'Ruta no encontrada.');}catch(e){return json({message:e instanceof PlatformError?e.message:'Catálogo no disponible.'},{status:e instanceof PlatformError?e.status:503});}};

@@ -17,3 +17,7 @@ __pycache__/
 
 # Private reusable sprite library (use a persistent volume in production)
 .sprite-library/
+
+# Private multi-tenant database and immutable media
+.platform-data/
+.platform-storage/

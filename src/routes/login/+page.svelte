@@ -1,0 +1,5 @@
+<script lang="ts">
+ import Page from '$lib/components/PlatformPage.svelte';import {request} from '$lib/platform/client';let username=$state(''),password=$state(''),error=$state(''),busy=$state(false);
+ async function login(e:SubmitEvent){e.preventDefault();busy=true;error='';try{await request('/api/auth/login',{username,password});location.href='/admin';}catch(e){error=(e as Error).message;}finally{busy=false;}}
+</script>
+<Page title="Acceso a gestión" description="Gestiona las aventuras y los recursos de tu espacio."><section><form onsubmit={login}><label>Usuario<input required autocomplete="username" bind:value={username}/></label><label>Contraseña<input required type="password" autocomplete="current-password" bind:value={password}/></label>{#if error}<p role="alert">{error}</p>{/if}<button disabled={busy}>{busy?'Entrando…':'Entrar'}</button><a href="/">Volver al catálogo público</a></form><p><small>Si has olvidado tu contraseña, solicita al superadmin que la restablezca.</small></p></section></Page>

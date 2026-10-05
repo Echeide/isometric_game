@@ -15,13 +15,17 @@
     "test": "vitest run",
     "package:world": "npm run package --workspace @isometrico/world",
     "package:characters": "npm run package --workspace @isometrico/character-generator",
-    "start": "node build"
+    "start": "node build",
+    "platform:db": "node scripts/platform-dev-db.mjs",
+    "platform:bootstrap": "node --env-file=.env scripts/platform-bootstrap.mjs",
+    "test:platform": "vitest run tests/platform.test.ts"
   },
   "dependencies": {
     "@isometrico/character-generator": "*",
     "@isometrico/world": "*",
     "fflate": "^0.8.3",
     "lucide-svelte": "^0.468.0",
+    "pg": "^8.23.1",
     "pixi.js": "^8.13.0",
     "svelte": "^5.38.0"
   },
@@ -32,6 +36,7 @@
     "@sveltejs/package": "^2.5.0",
     "@sveltejs/vite-plugin-svelte": "^6.1.0",
     "@types/node": "^26.5.1",
+    "@types/pg": "^8.23.1",
     "svelte-check": "^4.3.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0",
