@@ -59,3 +59,13 @@ La biblioteca es inmutable en esta versión: volver a enviar el mismo paquete no
 - Requiere el acceso privado existente (`CHARACTER_WORKSHOP_USER`, `CHARACTER_WORKSHOP_PASSWORD`, `ORIGIN`). Listado, descarga, miniaturas y escritura comparten su protección. Las escrituras requieren el mismo origen.
 - Una instancia de aplicación por biblioteca de archivos. Cada publicación se escribe en un directorio temporal y se publica mediante renombrado; una interrupción no deja una ficha incompleta visible. Para múltiples réplicas, sustituir este repositorio por almacenamiento compartido con coordinación de escrituras.
 - La biblioteca local y la de Railway son distintas. Usa el ZIP para trasladar recursos; no se sincronizan automáticamente. Mantén una copia exportada o un backup del volumen.
+
+## Precarga y caché entre talleres
+
+La navegación interna entre editor de mapas, taller de recursos y vista previa conserva los gráficos en memoria durante la sesión de la página. Los PNG guardados son inmutables y se reutilizan por identificador; guardar una sustitución añade una imagen nueva. También se conserva el catálogo ya resuelto a URLs de Blob para reutilizar texturas, fotogramas y máscaras del motor cuando los gráficos no han cambiado. El taller de recursos comparte la caché de PNG, aunque mantiene sus propias URLs para editar.
+
+Las definiciones de aventuras y catálogos se comprueban con el servidor en cada entrada mediante ETag e If-None-Match: un 304 evita transferir el JSON completo cuando sigue igual. La autorización y lectura actual del espacio se ejecutan antes de responder 304; las respuestas privadas mantienen Cache-Control: no-store. No se usa la copia anterior como alternativa cuando falla el acceso. Las copias que reciben los editores son independientes de los metadatos cacheados.
+
+La caché se limpia al cambiar de usuario o espacio, o ante un 401/403. Las URLs aún utilizadas por una pantalla se liberan cuando esa pantalla termina. Se retienen como máximo 64 MB / 256 PNG y 128 MB / seis catálogos preparados sin uso activo; los recursos en uso permanecen hasta que se dejan de utilizar. Los descartes siguen el orden de uso más reciente. Los fallos no se cachean y cancelar un consumidor no cancela la descarga de otro consumidor activo. En el repositorio local de IndexedDB, guardar invalida los recursos para admitir también archivos reemplazados con el mismo identificador.
+
+Esta caché pertenece a la pestaña: una recarga completa, cerrar la pestaña o abrir otra inicia una carga nueva. No añade copias privadas persistentes ni un modo sin conexión.

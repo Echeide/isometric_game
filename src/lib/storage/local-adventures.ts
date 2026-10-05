@@ -1,4 +1,5 @@
 import {preloadItems,type PreloadOptions} from './preload';
+import {ResourceCache,PreparedCache} from './resource-cache';
 import type { PixelArtPack } from '@isometrico/world';
 import { parseAdventure, type Adventure } from '$lib/demo/adventure';
 import { loadAdventureLibrary as legacyLibrary, parseLibrary, type AdventureLibrary } from '$lib/demo/adventure-library';
@@ -73,11 +74,18 @@ export function mapImages(pack:PixelArtPack,replace:(url:string)=>string):PixelA
  return copy;
 }
 export function imageUrls(pack:PixelArtPack){const urls=new Set<string>();mapImages(pack,url=>{urls.add(url);return url;});return [...urls];}
+const resourceCache=new ResourceCache<Blob>(blob=>blob.size);
+const preparedCache=new PreparedCache<PixelArtPack>();
+let cacheGeneration=0;
 export async function resourceBlob(url:string,repository:Pick<AdventureRepository,'blob'>=localAdventures,signal?:AbortSignal){
  signal?.throwIfAborted();
- if(url.startsWith('asset:'))return repository===localAdventures&&context?(await api('assets/'+encodeURIComponent(url.slice(6)),{signal})).blob():repository.blob(url.slice(6));
- if(!url.startsWith('/pixelart/')||url.includes('..')||url.includes('\\'))throw new Error('Origen de recurso no admitido.');
- const response=await fetch(url,{signal});if(!response.ok)throw new Error(`No se pudo leer ${url}.`);return response.blob();
+ const load=async(sharedSignal?:AbortSignal)=>{
+  if(url.startsWith('asset:'))return repository===localAdventures&&context?(await api('assets/'+encodeURIComponent(url.slice(6)),{signal:sharedSignal})).blob():repository.blob(url.slice(6));
+  if(!url.startsWith('/pixelart/')||url.includes('..')||url.includes('\\'))throw new Error('Origen de recurso no admitido.');
+  const response=await fetch(url,{signal:sharedSignal});if(!response.ok)throw new Error(`No se pudo leer ${url}.`);return response.blob();
+ };
+ // Explicit repositories may replace assets in place; only cache our scoped, saved resources.
+ return repository===localAdventures?resourceCache.load(JSON.stringify([context,url]),load,signal):load(signal);
 }
 export async function preloadGraphics(pack:PixelArtPack,load:(url:string)=>Promise<Blob>,options:PreloadOptions={}){
  const urls=new Map<string,string>();
@@ -88,21 +96,46 @@ export async function preloadGraphics(pack:PixelArtPack,load:(url:string)=>Promi
 }
 export async function resolveGraphics(id:string,options:PreloadOptions={}){
  const pack=await localAdventures.pack(id);options.signal?.throwIfAborted();
- return preloadGraphics(pack,url=>resourceBlob(url,localAdventures,options.signal),options);
+ const key=JSON.stringify([context,pack]),cached=preparedCache.get(key);
+ if(cached){try{options.onProgress?.({completed:imageUrls(pack).length,total:imageUrls(pack).length});return {pack:cached.value,release:cached.release};}catch(error){cached.release();throw error;}}
+ const generation=cacheGeneration;let bytes=0;
+ const resolved=await preloadGraphics(pack,async url=>{const blob=await resourceBlob(url,localAdventures,options.signal);bytes+=blob.size;return blob;},options);
+ if(generation!==cacheGeneration){resolved.release();throw new DOMException('El espacio ha cambiado.','AbortError');}
+ const saved=preparedCache.put(key,resolved.pack,bytes,resolved.release);
+ return {pack:saved.value,release:saved.release};
 }
 
 let context:string|null=null;
 const revisions=new Map<string,number>();
-export function setStorageContext(key:string|null){if(context!==key){revisions.clear();context=key;}}
-async function api(path:string,init?:RequestInit){const response=await fetch('/api/platform/'+path,init);if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.message??'No se pudo acceder al espacio.');}return response;}
+type CachedJson<T>={value:T;etag:string|null};
+type ServerLibrary=Omit<AdventureLibrary,'adventures'>&{adventures:Array<Adventure&{_revision:number}>};
+type ServerAdventure={definition:Adventure;graphics:PixelArtPack;revision:number};
+let cachedLibrary:CachedJson<ServerLibrary>|undefined;
+const cachedRows=new Map<string,CachedJson<ServerAdventure>>();
+function clearCaches(){cacheGeneration++;resourceCache.clear();preparedCache.clear();cachedLibrary=undefined;cachedRows.clear();}
+export function setStorageContext(key:string|null){if(context!==key){clearCaches();revisions.clear();context=key;}}
+async function api(path:string,init?:RequestInit,allowNotModified=false){const response=await fetch('/api/platform/'+path,init);if(!response.ok&&!(allowNotModified&&response.status===304)){if(response.status===401||response.status===403)clearCaches();const body=await response.json().catch(()=>({}));throw new Error(body.message??'No se pudo acceder al espacio.');}return response;}
+async function revalidate<T>(path:string,cached?:CachedJson<T>):Promise<CachedJson<T>>{
+ const generation=cacheGeneration;
+ const response=await api(path,cached?.etag?{headers:{'If-None-Match':cached.etag}}:undefined,true);
+ const result=response.status===304&&cached?cached:{value:await response.json() as T,etag:response.headers.get('etag')};
+ if(generation!==cacheGeneration)throw new DOMException('El espacio ha cambiado.','AbortError');
+ return result;
+}
+async function serverRow(id:string){
+ const row=await revalidate<ServerAdventure>('adventures/'+encodeURIComponent(id),cachedRows.get(id));
+ cachedRows.delete(id);cachedRows.set(id,row);
+ if(cachedRows.size>8)cachedRows.delete(cachedRows.keys().next().value!);
+ return row.value;
+}
 const serverAdventures:AdventureRepository={
- async load(){const library=await(await api('adventures')).json();for(const a of library.adventures)if(!revisions.has(a.id))revisions.set(a.id,a._revision);const selected=sessionStorage.getItem('active:'+context);return {...library,activeId:library.adventures.some((a:Adventure)=>a.id===selected)?selected:library.adventures[0]?.id??''};},
- async save(adventure,resources){const form=new FormData();form.set('manifest',JSON.stringify({adventure,pack:resources?.pack??(!revisions.has(adventure.id)?graphics:undefined),revision:revisions.has(adventure.id)?((adventure as Adventure&{_revision?:number})._revision??revisions.get(adventure.id)):0}));for(const [id,blob] of Object.entries(resources?.blobs??{}))form.set(id,blob,`${id}.png`);const r=await(await api('adventures/'+encodeURIComponent(adventure.id),{method:'POST',body:form})).json();revisions.set(adventure.id,r.revision);sessionStorage.setItem('active:'+context,adventure.id);return this.load();},
- async select(id){const row=await(await api('adventures/'+encodeURIComponent(id))).json();revisions.set(id,row.revision);sessionStorage.setItem('active:'+context,id);return {...row.definition,_revision:row.revision};},
- async pack(id){if(!revisions.has(id))return JSON.parse(JSON.stringify(graphics));const row=await(await api('adventures/'+encodeURIComponent(id))).json();if(!revisions.has(id))revisions.set(id,row.revision);return row.graphics;},
+ async load(){cachedLibrary=await revalidate<ServerLibrary>('adventures',cachedLibrary);const library=structuredClone(cachedLibrary.value);for(const a of library.adventures)if(!revisions.has(a.id))revisions.set(a.id,a._revision);const selected=sessionStorage.getItem('active:'+context);return {...library,activeId:library.adventures.some((a:Adventure)=>a.id===selected)?selected!:library.adventures[0]?.id??''};},
+ async save(adventure,resources){const form=new FormData();form.set('manifest',JSON.stringify({adventure,pack:resources?.pack??(!revisions.has(adventure.id)?graphics:undefined),revision:revisions.has(adventure.id)?((adventure as Adventure&{_revision?:number})._revision??revisions.get(adventure.id)):0}));for(const [id,blob] of Object.entries(resources?.blobs??{}))form.set(id,blob,`${id}.png`);const r=await(await api('adventures/'+encodeURIComponent(adventure.id),{method:'POST',body:form})).json();cachedRows.delete(adventure.id);revisions.set(adventure.id,r.revision);sessionStorage.setItem('active:'+context,adventure.id);return this.load();},
+ async select(id){const row=await serverRow(id);revisions.set(id,row.revision);sessionStorage.setItem('active:'+context,id);return {...structuredClone(row.definition),_revision:row.revision};},
+ async pack(id){if(!revisions.has(id))return JSON.parse(JSON.stringify(graphics));const row=await serverRow(id);if(!revisions.has(id))revisions.set(id,row.revision);return structuredClone(row.graphics);},
  async blob(id){return(await api('assets/'+encodeURIComponent(id))).blob();}
 };
-export const localAdventures:AdventureRepository={load:()=>active().load(),save:(a,r)=>active().save(a,r),select:id=>active().select(id),pack:id=>active().pack(id),blob:id=>active().blob(id)};
+export const localAdventures:AdventureRepository={load:()=>active().load(),save:async(a,r)=>{if(!context){resourceCache.clear();preparedCache.clear();cacheGeneration++;}return active().save(a,r);},select:id=>active().select(id),pack:id=>active().pack(id),blob:id=>active().blob(id)};
 function active(){return context?serverAdventures:browserAdventures;}
 
 export const storageScope=()=>context??'local';
