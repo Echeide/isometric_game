@@ -148,6 +148,14 @@ Abre `/sprites` para previsualizar animaciones y descargar hojas y plantillas. C
 
 El taller de sprites permite guardar objetos, PNJ, jugadores y suelos en una biblioteca del servidor. **Guardar en aventura** conserva el recurso en el proyecto actual; **Añadir a biblioteca general** lo hace reutilizable. Desde **Biblioteca general**, busca por tipo/nombre e incorpora una copia independiente a la aventura seleccionada. La biblioteca y las fichas individuales se pueden trasladar mediante ZIP. Para Railway se necesita un volumen persistente y `SPRITE_LIBRARY_DIR`: consulta [almacenamiento y configuración](docs/adventure-storage.md#biblioteca-general-de-sprites).
 
+### Paleta de aventura · 64 colores
+
+Las aventuras nuevas incluyen **Aventura 64**, una paleta propia de ocho rampas. En el taller, **Definir paleta / Configurar** permite editar sus 64 colores, importar o exportar JSON/HEX y extraer colores del recurso seleccionado. Cambiar la paleta no modifica los recursos existentes automáticamente.
+
+Selecciona un objeto, PNJ, jugador o suelo y pulsa **Adaptar a la paleta**. Revisa Actual/Adaptado, acepta y guarda en aventura. Se procesan todas las hojas y variantes con la misma paleta, conservando dimensiones, transparencia, recortes, apoyo y FPS. **Recuperar colores originales** permite volver atrás; los originales se conservan en el ZIP privado de aventura y se excluyen de la publicación pública. La biblioteca y otras aventuras conservan sus propios recursos.
+
+El generador de objetos utiliza la paleta configurada en su acabado local. En `/characters`, **Paso 1 → Paleta y reducción → Paleta de aventura** copia los colores al proyecto sin cambiar la escala inicial. Los retoques de Piskel del personaje conservan sus colores manuales; para adaptar también esos retoques, importa el ZIP del personaje al taller de sprites y adapta el recurso completo. La adaptación local no consume generaciones de IA.
+
 ### Objetos con IA en el taller
 
 En `/sprites?adventure=…`, selecciona **Objetos → Añadir objeto** (o un recurso existente). Define ancho, alto, huella y apoyo; abre **Generar con IA**, describe un objeto estático y, si quieres, elige una referencia del catálogo o importa PNG/JPG/WebP. Estilo, orientación isométrica y calidad están en un desplegable.
@@ -227,3 +235,14 @@ Configura como variables privadas del servicio, nunca en Git:
 - `CHARACTER_VIDEO_JOBS_DIR=/data/character-video-jobs`: montar un volumen persistente en `/data` para conservar solicitudes y vídeos recuperados entre despliegues.
 
 Las variables del `.env` local no se cargan automáticamente al ejecutar `node build`: Railway debe inyectarlas. Mantén una sola réplica para el registro de solicitudes en archivos. Las imágenes del proyecto siguen guardándose con **Guardar proyecto**, independientemente del volumen del servidor. En desarrollo continúa el acceso exclusivo desde loopback y la importación manual no requiere ninguna API.
+
+## Conversaciones en el editor de mapas
+
+Selecciona un objeto o PNJ para abrir su panel derecho. **Propiedades** mantiene
+los ajustes del elemento; **Módulos → Conversación** permite crear, vincular y
+editar chats con nodos, mensajes por visita, respuestas y destinos. Puedes
+importar/exportar JSON de RoutingTales y probar el diálogo dentro del panel.
+**Aplicar conversación** modifica el borrador; pulsa **Guardar** para conservarlo.
+Las conversaciones propias se incluyen en los ZIP y en la siguiente publicación
+de la aventura. Los chats de ejemplo siguen funcionando y se copian a la aventura
+al editarlos. [Detalles de la adaptación](static/modules/routingtales-chat/README.md).

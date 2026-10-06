@@ -19,8 +19,11 @@
   import { orientationLabels } from './generation';
   import { emptyArt, pngData, shortActionRecipe, type ImageProvider, type ImageRequest, type ImageResult } from './generation';
 
-  let { draftKey='latest', onexample, imageProvider, videoProvider, pixelEditor }: { draftKey?:string; onexample?: () => Promise<Sources>; imageProvider?: ImageProvider; videoProvider?: VideoProvider; pixelEditor?: PixelEditorProvider } = $props();
+  let { palettes=[], palettesLoading=false, onrefreshPalettes, draftKey='latest', onexample, imageProvider, videoProvider, pixelEditor }: { palettes?:{id:string;name:string;colors:RGB[]}[]; palettesLoading?:boolean;onrefreshPalettes?:()=>Promise<void>; draftKey?:string; onexample?: () => Promise<Sources>; imageProvider?: ImageProvider; videoProvider?: VideoProvider; pixelEditor?: PixelEditorProvider } = $props();
   let settings = $state(defaultSettings());
+  let adventurePaletteId=$state('');
+  $effect(()=>{const choice=palettes.find(p=>p.id===adventurePaletteId);if(adventurePaletteId&&(!choice||settings.paletteMode!=='fixed'||JSON.stringify(settings.palette)!==JSON.stringify(choice.colors)))untrack(()=>adventurePaletteId='');});
+  function useAdventurePalette(id:string){const palette=palettes.find(p=>p.id===id);if(!palette)return;settings.palette=palette.colors.map(c=>[...c] as RGB);settings.paletteMode='fixed';settings.colors=palette.colors.length;adventurePaletteId=id;processingChanged();notice='Paleta de aventura aplicada al personaje. Reconstruye sus hojas para usar estos colores.';}
   let brief = $state<CharacterBrief>({ description: '', style: 'Pixel art, readable silhouette, soft earthy palette, large head, compact body', props: '', notes: {} });
   let sources = $state.raw<Sources>({}), result = $state.raw<BuildResult | null>(null);
   let art = $state(emptyArt()), assistantRevision = $state(0);
@@ -163,10 +166,10 @@
   const colorHex = (color: RGB) => '#'+color.map(n=>n.toString(16).padStart(2,'0')).join('');
   function setPaletteColor(index:number, hex:string) {
     if(!settings.palette)return;
-    settings.palette[index]=[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
+    adventurePaletteId='';settings.palette[index]=[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
     processingChanged();
   }
-  function resetPalette() { settings.palette=undefined; processingChanged(); }
+  function resetPalette() { adventurePaletteId='';settings.palette=undefined; processingChanged(); }
   function changed() { clearResult(); clearDownload(); error = ''; notice = ''; }
   function chooseView(pose: string, facing: Direction) {
     if (!!shortActionRecipe(settings.profile, pose, settings.actionOptions?.[pose]) !== !!shortAction) mode = shortActionRecipe(settings.profile, pose, settings.actionOptions?.[pose]) ? 'images' : 'video';
@@ -389,6 +392,7 @@
         {#if hasRetouchedFrames}<p class="hint">Tamaño y apoyo bloqueados por retoques de Piskel. Puedes restaurar las fuentes en Revisar.</p>{/if}
         <p class="hint">Estos valores definen la salida. La resolución del original y el zoom de revisión no cambian esta escala.</p>
         <details class="advanced"><summary>Paleta y reducción</summary>
+          <label>Paleta de aventura<select value={adventurePaletteId} onchange={e=>useAdventurePalette(e.currentTarget.value)}><option value="">{palettesLoading?'Cargando paletas…':'Elegir una paleta de aventura…'}</option>{#each palettes as p}<option value={p.id}>{p.name} · 64 colores</option>{/each}</select></label>{#if onrefreshPalettes}<button disabled={palettesLoading} onclick={()=>void onrefreshPalettes?.()}>Actualizar paletas</button>{/if}<p class="hint">Define la paleta en el taller de sprites. Se copia al proyecto; tus dimensiones y escala se conservan.</p>
           <label>Paleta<select value={settings.paletteMode ?? 'auto'} onchange={e=>{settings.paletteMode=e.currentTarget.value as 'auto'|'fixed';processingChanged();}}><option value="fixed">Fija para todo el personaje</option><option value="auto">Automática por construcción</option></select></label>
           <label>Máximo de colores<input type="number" min="4" max="64" bind:value={settings.colors} onchange={resetPalette}/></label>
           {#if settings.paletteMode==='fixed'}

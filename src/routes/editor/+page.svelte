@@ -7,6 +7,7 @@
  let availableAdventures=$state<Adventure[]>([]);
  import { draggablePanel } from '$lib/actions/draggable-panel';
  const panelPositions = new Map();
+ function inspectorDrag(node:HTMLElement){if(mapProperties)return draggablePanel(node,{key:'map-properties',positions:panelPositions});}
  import MapDissolve from '$lib/components/MapDissolve.svelte';
  let transitionImage=$state<string|null>(null),transitionReady=$state(false);
  let arrivalCamera:ReturnType<WorldController['getCamera']>|undefined;
@@ -16,6 +17,38 @@
  import type {LoadProgress as Progress} from '$lib/storage/preload';
  import {resolveGraphics,localAdventures} from '$lib/storage/local-adventures';
  import {selectMainPlayer} from '$lib/storage/player-selection';
+ import ChatEditor from '$lib/chat/ChatEditor.svelte';
+ import EntityModules from '$lib/modules/EntityModules.svelte';
+ import type {ContentModuleCard,ContentModuleType} from '$lib/modules/types';
+ import {fly} from 'svelte/transition';
+ let inspectorTab=$state<'properties'|'modules'>('properties');
+ function leaveChat(){if(chatDirty&&!confirm('¿Descartar los cambios de esta conversación?'))return false;chatEditing=null;chatDirty=false;return true;}
+ async function closeChatLayer(){chatEditing=null;chatDirty=false;await tick();if(!disposed)(document.querySelector<HTMLButtonElement>('.module-list [data-edit-chat]')??document.querySelector<HTMLButtonElement>('.module-add button'))?.focus({preventScroll:true});}
+ function closeInspector(){if(!leaveChat())return;selected=null;mapProperties=false;}
+ import {chatResource,loadChat,createChat,type AdventureChat} from '$lib/chat/editor';
+ import {attachChat} from '$lib/chat/adventure-chats';
+ import type {ChatConfig} from '$lib/chat/routingtales';
+ let chatEditing=$state<{chat:AdventureChat;title:string;mapId:string;entityId:string;uses:number}|null>(null),chatLoading=$state(false),chatDirty=$state(false);
+ async function openChatEditor(fresh=false){
+  if(!entity||chatLoading)return;
+  const target=entity,mapId=draft.id,adventureId=adventure.id;chatLoading=true;error='';
+  try{
+   const resource=target.interaction?.action==='chat.open'?target.interaction.resourceId:'';
+   const saved=!fresh?(adventure.chats??[]).find(c=>chatResource(c.id)===resource):undefined;
+   const chat=saved??{id:crypto.randomUUID(),name:target.label,config:!fresh&&resource?await loadChat(resource,preloadAbort.signal):createChat()};
+   if(disposed||adventure.id!==adventureId||draft.id!==mapId||selected!==target.id)return;
+   const uses=saved?bundle().maps.reduce((count,m)=>count+m.entities.filter(e=>e.interaction?.action==='chat.open'&&e.interaction.resourceId===resource).length,0):1;
+   inspectorCollapsed=false;chatEditing={chat,title:target.label,mapId,entityId:target.id,uses};
+  }catch(e){if(!disposed)error=(e as Error).message;}finally{chatLoading=false;}
+ }
+ function applyChat(name:string,config:ChatConfig){
+  if(!chatEditing)return;
+  const next=attachChat(bundle(),chatEditing.mapId,chatEditing.entityId,{...chatEditing.chat,name,config});
+  snapshot();adventure=next;draft=structuredClone(next.maps.find(m=>m.id===draft.id)!);void closeChatLayer();error='';notice='Conversación aplicada al borrador. Guarda la aventura para conservarla.';
+ }
+ function addContentModule(type:ContentModuleType){if(type==='chat')void openChatEditor(true);}
+ function editContentModule(type:ContentModuleType){if(type==='chat')void openChatEditor();}
+ function removeContentModule(type:ContentModuleType){if(type==='chat'&&entity?.interaction?.action==='chat.open'){update({interaction:undefined});notice='Módulo eliminado del elemento. Puedes deshacer o guardar la aventura.';}}
  import {onDestroy} from 'svelte';
  let graphics=$state.raw(defaultGraphics);
  let playerChanging=$state(false),graphicsReady=$state(false);
@@ -39,7 +72,7 @@
   try{await loadGraphics(adventure.id);revision++;notice='Jugadores actualizados desde el taller.';}catch(e){error=(e as Error).message;}finally{playerChanging=false;}
  }
  onDestroy(()=>{disposed=true;preloadAbort.abort();resourceReleases.forEach(release=>release());});
- import { untrack, onMount } from 'svelte';
+ import { untrack, onMount, tick } from 'svelte';
  import { goto } from '$app/navigation';
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
  import {workshopTiles,catalogAssetName} from '$lib/workshop/resources';
@@ -61,15 +94,15 @@
  const objectCategories=[{id:'office',label:'Oficina'},{id:'nature',label:'Naturaleza'},{id:'urban',label:'Urbano'},{id:'people',label:'Personajes'}] as const;
  let objectCategory=$state('office'),catalogSearch=$state('');
  let search=$state(''),pendingAsset=$state<string|null>(null),pendingExit=$state(false);
- function selectObject(id:string){wallTool=null;selectedWall=null;selected=id||null;mapProperties=!id;inspectorCollapsed=false;toolPanel=null;brush=null;pendingAsset=null;pendingExit=false;panMode=false;testing=false;}
- function showTool(value:ToolPanel|null){wallTool=null;selectedWall=null;
+ function selectObject(id:string){if(id!==selected&&!leaveChat())return;if(id!==selected)inspectorTab='properties';wallTool=null;selectedWall=null;selected=id||null;mapProperties=!id;inspectorCollapsed=false;toolPanel=null;brush=null;pendingAsset=null;pendingExit=false;panMode=false;testing=false;}
+ function showTool(value:ToolPanel|null){if(!leaveChat())return;wallTool=null;selectedWall=null;
   if(pickingExitId)cancelPicking();
   toolCollapsed=false;toolPanel=toolPanel===value?null:value;selected=null;mapProperties=false;brush=null;pendingAsset=null;pendingExit=false;panMode=false;testing=false;fileMenu=false;
  }
- function clearTools(){wallTool=null;selectedWall=null;testing=false;if(pickingExitId)cancelPicking();toolPanel=null;selected=null;mapProperties=false;brush=null;pendingAsset=null;pendingExit=false;panMode=false;fileMenu=false;}
+ function clearTools(){if(!leaveChat())return;wallTool=null;selectedWall=null;testing=false;if(pickingExitId)cancelPicking();toolPanel=null;selected=null;mapProperties=false;brush=null;pendingAsset=null;pendingExit=false;panMode=false;fileMenu=false;}
  function beginPlacement(id:string){pendingAsset=id;pendingExit=false;toolPanel=null;selected=null;mapProperties=false;panMode=false;notice='Pulsa una casilla para colocar el objeto. Escape cancela.';}
  function placeAt(cell:Cell){if(pendingAsset)add(pendingAsset,cell);else if(pendingExit)addExit(cell);}
- function toolKeys(event:KeyboardEvent){if((event.ctrlKey||event.metaKey)&&!event.altKey&&!(event.target instanceof Element&&event.target.closest('input,textarea,select,[contenteditable=true]'))){const key=event.key.toLowerCase();if(key==='z'||key==='y'){event.preventDefault();if(key==='y'||event.shiftKey)redo();else undo();return;}}if(event.key==='Escape'){clearTools();return;}arrowMove(event);}
+ function toolKeys(event:KeyboardEvent){if(chatEditing)return;if((event.ctrlKey||event.metaKey)&&!event.altKey&&!(event.target instanceof Element&&event.target.closest('input,textarea,select,[contenteditable=true]'))){const key=event.key.toLowerCase();if(key==='z'||key==='y'){event.preventDefault();if(key==='y'||event.shiftKey)redo();else undo();return;}}if(event.key==='Escape'){clearTools();return;}arrowMove(event);}
  let adventure=$state<Adventure>(createAdventure([structuredClone(office),structuredClone(outdoors)]));
  const visualCatalog=$derived(resolveVisualCatalog(adventure.catalog,adventure.catalogOverrides));
  const inventoryArticle=$derived(adventure.items?.find(i=>i.id===inventorySelection));
@@ -112,7 +145,7 @@
  }
  onMount(()=>{void initialize();});
  function syncUrl(){const url=new URL(location.href);url.search='';url.searchParams.set('adventure',adventure.id);url.searchParams.set('map',draft.id);window.history.replaceState(null,'',url);}
- async function persist(){if(playerChanging||!graphicsReady)return false;try{const library=await storeAdventure(bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en tu espacio.';return true;}catch(e){error=(e as Error).message;return false;}}
+ async function persist(){if(chatEditing)return false;if(playerChanging||!graphicsReady)return false;try{const library=await storeAdventure(bundle());availableAdventures=library.adventures;adventure=library.adventures.find(a=>a.id===library.activeId)!;syncUrl();error='';notice='Aventura guardada en tu espacio.';return true;}catch(e){error=(e as Error).message;return false;}}
  async function playSaved(){if(await persist())await goto(`/preview?adventure=${encodeURIComponent(adventure.id)}`);}
  async function switchAdventure(id:string){
   if(id===adventure.id||!(await persist()))return;
@@ -174,6 +207,7 @@
   const direction=directions[event.key];if(!direction)return;event.preventDefault();move(entity.id,{x:entity.position.x+direction.x,y:entity.position.y+direction.y});
  }
  const entity=$derived(draft.entities.find(e=>e.id===selected));
+ const entityModules=$derived<ContentModuleCard[]>(entity?.interaction?.action==='chat.open'?[{type:'chat',name:adventure.chats?.find(chat=>chatResource(chat.id)===entity?.interaction?.resourceId)?.name??entity.label}]:[]);
  const adapter=$derived<WorldAdapter>({scene:preview,interact:e=>{
   if(e.action==='adventure.exit'){if(transitionImage)return;try{const a=parseAdventure(bundle()),next=travel(a,e.sceneId,e.entityId,controller?.getFacing());const camera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;adopt(a,next.scene.id);arrivalCamera=camera;zoomLevel=camera?.zoom??1;arrival=next.scene.spawn;arrivalFacing=next.facing;testing=true;notice=`Has llegado a ${next.scene.name}.`; }catch(cause){error=(cause as Error).message;}}
   else notice=`Interacción: ${e.action} → ${e.resourceId}`;
@@ -197,9 +231,9 @@
   try{
    const id=crypto.randomUUID();const next=insertEntity(draft,kind,id,visualId,cell,visualCatalog);
    snapshot();draft=next;selectObject(id);
-   if(kind==='person'&&visualId.startsWith('custom.'))draft={...draft,entities:draft.entities.map(e=>e.id===id?{...e,interaction:{label:'Conversar',action:'chat.open',resourceId:id}}:e)};
+   if(kind==='person'&&visualId.startsWith('custom.')){inspectorTab='modules';notice='Personaje añadido. Crea o asigna su conversación en Módulos.';}
    const placed=next.entities.find(e=>e.id===id)!;
-   notice=`${placed.label} añadido en ${placed.position.x}, ${placed.position.y}. Ya aparece en el mapa.`;error='';
+   notice=kind==='person'&&visualId.startsWith('custom.')?'Personaje añadido. Crea o asigna su conversación en Módulos.':`${placed.label} añadido en ${placed.position.x}, ${placed.position.y}. Ya aparece en el mapa.`;error='';
   }catch(e){error=e instanceof Error?e.message:'No se pudo añadir el objeto.';}
  }
  function flip(){
@@ -208,7 +242,7 @@
   catch(e){error=`No se puede voltear aquí: ${(e as Error).message}`;}
  }
  function remove(){snapshot();adventure={...adventure,exits:adventure.exits.filter(e=>!(e.fromMap===draft.id&&e.entityId===selected)).map(e=>e.toMap===draft.id&&e.destinationEntityId===selected?{...e,destinationEntityId:undefined}:e)};draft={...draft,entities:draft.entities.filter(e=>e.id!==selected),...(draft.walls?{walls:draft.walls.map(w=>w.exitId===selected?{...w,exitId:undefined}:w)}:{})};selected=null;}
- function changeWorld(value:string){pickingExitId=null;try{const a=parseAdventure(bundle());adopt(a,value);syncUrl();testing=false;error='';}catch(e){error=(e as Error).message;}}
+ function changeWorld(value:string){if(!leaveChat())return;pickingExitId=null;try{const a=parseAdventure(bundle());adopt(a,value);syncUrl();testing=false;error='';}catch(e){error=(e as Error).message;}}
  function newMap(duplicate=false){try{const a=parseAdventure(bundle());snapshot();const id=crypto.randomUUID();
   const map:WorldScene=duplicate?{...parseScene(draft),id,name:`${draft.name} (copia)`,...(draft.walls?{walls:draft.walls.map(w=>({...w,exitId:undefined}))}:{}),entities:(JSON.parse(JSON.stringify(draft.entities)) as WorldEntity[]).filter(e=>e.interaction?.action!=='adventure.exit')}:{schemaVersion:1,id,name:`Mapa ${a.maps.length+1}`,theme:'outdoors',width:12,height:12,spawn:{x:1,y:1},entities:[]};
   adopt(parseAdventure({...a,maps:[...a.maps,map]}),id);testing=false;error='';
@@ -235,7 +269,7 @@
 <svelte:window onkeydown={toolKeys}/>
 <svelte:head><title>Editor de escenarios — Isométrico</title></svelte:head>
 <div class="editor">
- <header><a href="/admin" title="Volver a mis aventuras"><ArrowLeft size={18}/><span>Juego</span></a><strong>Editor <span>{draft.name}</span></strong><div class="editor-actions"><button disabled={!graphicsReady} onclick={persist}><Check size={17}/><span>Guardar</span></button><button class="save-play" disabled={!graphicsReady} onclick={playSaved}><Play size={17}/><span>Guardar y jugar</span></button><div class="file-menu"><button aria-label="Más opciones" aria-expanded={fileMenu} onclick={()=>fileMenu=!fileMenu}><MoreHorizontal size={20}/></button>{#if fileMenu}<div class="file-popover"><button onclick={()=>{fileMenu=false;fileInput.click();}}><Upload size={16}/>Importar ZIP / JSON</button><button onclick={()=>{fileMenu=false;download();}}><Download size={16}/>Exportar ZIP con recursos</button><button onclick={()=>openResources()}>Taller de sprites</button></div>{/if}</div></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo de mapa JSON" accept=".zip,application/zip,.json,application/json" bind:this={fileInput} onchange={upload}/></header>
+ <header><a href="/admin" title="Volver a mis aventuras"><ArrowLeft size={18}/><span>Juego</span></a><strong>Editor <span>{draft.name}</span></strong><div class="editor-actions"><button disabled={!graphicsReady||!!chatEditing} onclick={persist}><Check size={17}/><span>Guardar</span></button><button class="save-play" disabled={!graphicsReady||!!chatEditing} onclick={playSaved}><Play size={17}/><span>Guardar y jugar</span></button><div class="file-menu"><button aria-label="Más opciones" aria-expanded={fileMenu} onclick={()=>fileMenu=!fileMenu}><MoreHorizontal size={20}/></button>{#if fileMenu}<div class="file-popover"><button onclick={()=>{fileMenu=false;fileInput.click();}}><Upload size={16}/>Importar ZIP / JSON</button><button onclick={()=>{fileMenu=false;download();}}><Download size={16}/>Exportar ZIP con recursos</button><button onclick={()=>openResources()}>Taller de sprites</button></div>{/if}</div></div><input class="sr-only" tabindex="-1" type="file" aria-label="Archivo de mapa JSON" accept=".zip,application/zip,.json,application/json" bind:this={fileInput} onchange={upload}/></header>
  <nav class="editor-tools" aria-label="Herramientas del editor">
   <button aria-pressed={!toolPanel&&!panMode&&!brush&&!pendingAsset&&!pendingExit&&!pickingExitId&&!testing} onclick={clearTools}><MousePointer2 size={18}/>Seleccionar</button>
   <span class="tool-divider"></span>
@@ -278,8 +312,8 @@
  {#if selectedWall}<p>{selectedWall.kind==='door'?'Puerta':'Pared'} · {selectedWall.x}, {selectedWall.y}</p>{#if selectedWall.kind==='door'}{#if selectedWall.exitId}<button class="panel-primary" onclick={()=>selectObject(selectedWall!.exitId!)}>Editar destino</button><button class="panel-primary" onclick={unlinkDoor}>Desvincular puerta</button>{:else}<label>Conectar puerta con<select bind:value={destination}><option value="">Elegir destino…</option>{#each adventure.maps.filter(m=>m.id!==draft.id) as m}<option value={m.id}>{m.name}</option>{/each}</select></label><button class="panel-primary" disabled={!destination} onclick={linkDoor}>Conectar puerta</button>{/if}{/if}{/if}
  {/if}</section>{/if}
   </div></aside>{/if}
-  <main class="editor-preview"><div class="editor-canvas" bind:this={canvasHost}><div class="map-heading"><h1><button onclick={()=>selectObject('')} title="Propiedades del mapa">{preview.name}</button></h1></div>{#if graphicsReady}<World {revision} {panMode} {graphics} {adapter} editor={editing} onready={ready} onstatus={s=>notice=s}/>{:else}<div class="preload-stage">{#if loadFailed}<p role="alert">{error}</p><button onclick={initialize}>Reintentar carga</button>{:else}<LoadProgress progress={loadProgress}/>{/if}</div>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/><div class="quick-map" role="group" aria-label="Mapa actual"><Layers size={18}/><select aria-label="Seleccionar mapa" value={draft.id} onchange={e=>changeWorld(e.currentTarget.value)}>{#each adventure.maps as map}<option value={map.id}>{map.id===draft.id?draft.name:map.name}{map.id===adventure.startMap?' · Inicio':''}</option>{/each}</select><button aria-label="Propiedades del mapa actual" title="Propiedades del mapa actual" aria-expanded={mapProperties&&!inspectorCollapsed} onclick={()=>selectObject('')}><Settings2 size={19}/></button></div><div class="editor-zoom" role="group" aria-label="Controles del mapa"><button aria-label="Deshacer" title="Deshacer (Ctrl/⌘ Z)" disabled={!history.length} onclick={undo}><Undo2 size={17}/></button><button aria-label="Rehacer" title="Rehacer (Ctrl/⌘ Mayús Z)" disabled={!future.length} onclick={redo}><Redo2 size={17}/></button><span class="control-divider" aria-hidden="true"></span><button aria-label="Mover vista" title="Mover vista" aria-pressed={panMode} onclick={()=>panMode=!panMode}><Hand size={18}/></button><button aria-label="Alejar mapa" title="Alejar" disabled={!cameraReady||zoomLevel<=.65} onclick={()=>zoom(-.15)}><Minus size={18}/></button><output aria-label="Nivel de zoom">{Math.round(zoomLevel*100)}%</output><button aria-label="Acercar mapa" title="Acercar" disabled={!cameraReady||zoomLevel>=3} onclick={()=>zoom(.15)}><Plus size={18}/></button><button aria-label="Ajustar mapa a la vista" title="Ajustar mapa a la vista" disabled={!cameraReady} onclick={fitMap}><Scan size={18}/></button></div></div><div class="editor-feedback">{#if pendingAsset||pendingExit}<p>Pulsa una casilla para colocar {pendingExit?'la salida':'el objeto'}. <button onclick={clearTools}>Cancelar</button></p>{/if}{#if pickingExitId}<p>Selecciona una casilla libre en este mapa. <button onclick={cancelPicking}>Cancelar selección</button></p>{/if}{#if error}<p role="alert" class="editor-error">{error}</p>{:else}<p role="status">{notice}</p>{/if}<small>Mano: desplazar vista. También espacio + arrastre o botón central. Selecciona y arrastra con ratón o dedo, o mueve con las flechas de la cuadrícula. Guardar y jugar aplica el mapa en este navegador. Exporta el JSON como copia.</small></div></main>
-  {#if !testing&&!pickingExitId&&(entity||mapProperties)}{#key mapProperties}<aside use:draggablePanel={{key:mapProperties?"map-properties":"inspector",positions:panelPositions}} class="editor-inspector" class:map-properties={mapProperties} class:collapsed={inspectorCollapsed} aria-label="Inspector"><div class="panel-heading"><h2>{selected===null?'Propiedades del mapa':entity?.label}</h2><div class="panel-actions"><button aria-label={inspectorCollapsed?"Expandir inspector":"Minimizar inspector"} aria-expanded={!inspectorCollapsed} onclick={()=>inspectorCollapsed=!inspectorCollapsed}>{#if inspectorCollapsed}<ChevronDown size={18}/>{:else}<ChevronUp size={18}/>{/if}</button><button aria-label="Cerrar inspector" onclick={()=>{selected=null;mapProperties=false;}}><X size={18}/></button></div></div><div hidden={inspectorCollapsed}>
+  <main class="editor-preview" class:with-inspector={!!entity&&!testing&&!pickingExitId}><div class="editor-canvas" bind:this={canvasHost}><div class="map-heading"><h1><button onclick={()=>selectObject('')} title="Propiedades del mapa">{preview.name}</button></h1></div>{#if graphicsReady}<World {revision} {panMode} {graphics} {adapter} editor={editing} onready={ready} onstatus={s=>notice=s}/>{:else}<div class="preload-stage">{#if loadFailed}<p role="alert">{error}</p><button onclick={initialize}>Reintentar carga</button>{:else}<LoadProgress progress={loadProgress}/>{/if}</div>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/><div class="quick-map" role="group" aria-label="Mapa actual"><Layers size={18}/><select aria-label="Seleccionar mapa" value={draft.id} onchange={e=>changeWorld(e.currentTarget.value)}>{#each adventure.maps as map}<option value={map.id}>{map.id===draft.id?draft.name:map.name}{map.id===adventure.startMap?' · Inicio':''}</option>{/each}</select><button aria-label="Propiedades del mapa actual" title="Propiedades del mapa actual" aria-expanded={mapProperties&&!inspectorCollapsed} onclick={()=>selectObject('')}><Settings2 size={19}/></button></div><div class="editor-zoom" role="group" aria-label="Controles del mapa"><button aria-label="Deshacer" title="Deshacer (Ctrl/⌘ Z)" disabled={!history.length} onclick={undo}><Undo2 size={17}/></button><button aria-label="Rehacer" title="Rehacer (Ctrl/⌘ Mayús Z)" disabled={!future.length} onclick={redo}><Redo2 size={17}/></button><span class="control-divider" aria-hidden="true"></span><button aria-label="Mover vista" title="Mover vista" aria-pressed={panMode} onclick={()=>panMode=!panMode}><Hand size={18}/></button><button aria-label="Alejar mapa" title="Alejar" disabled={!cameraReady||zoomLevel<=.65} onclick={()=>zoom(-.15)}><Minus size={18}/></button><output aria-label="Nivel de zoom">{Math.round(zoomLevel*100)}%</output><button aria-label="Acercar mapa" title="Acercar" disabled={!cameraReady||zoomLevel>=3} onclick={()=>zoom(.15)}><Plus size={18}/></button><button aria-label="Ajustar mapa a la vista" title="Ajustar mapa a la vista" disabled={!cameraReady} onclick={fitMap}><Scan size={18}/></button></div></div><div class="editor-feedback">{#if pendingAsset||pendingExit}<p>Pulsa una casilla para colocar {pendingExit?'la salida':'el objeto'}. <button onclick={clearTools}>Cancelar</button></p>{/if}{#if pickingExitId}<p>Selecciona una casilla libre en este mapa. <button onclick={cancelPicking}>Cancelar selección</button></p>{/if}{#if error}<p role="alert" class="editor-error">{error}</p>{:else}<p role="status">{notice}</p>{/if}<small>Mano: desplazar vista. También espacio + arrastre o botón central. Selecciona y arrastra con ratón o dedo, o mueve con las flechas de la cuadrícula. Guardar y jugar aplica el mapa en este navegador. Exporta el JSON como copia.</small></div></main>
+  {#if !testing&&!pickingExitId&&(entity||mapProperties)}{#key mapProperties}<aside use:inspectorDrag transition:fly={{x:mapProperties?-24:24,duration:160}} class="editor-inspector" class:entity-drawer={!!entity&&!mapProperties} class:map-properties={mapProperties} class:collapsed={inspectorCollapsed&&!chatEditing} aria-label="Inspector"><div class="inspector-main" inert={!!chatEditing} aria-hidden={chatEditing?true:undefined}><div class="panel-heading"><h2>{selected===null?'Propiedades del mapa':entity?.label}</h2><div class="panel-actions"><button aria-label={inspectorCollapsed?"Expandir inspector":"Minimizar inspector"} aria-expanded={!inspectorCollapsed} onclick={()=>inspectorCollapsed=!inspectorCollapsed}>{#if inspectorCollapsed}<ChevronDown size={18}/>{:else}<ChevronUp size={18}/>{/if}</button><button aria-label="Cerrar inspector" onclick={closeInspector}><X size={18}/></button></div></div><div class="inspector-body" hidden={inspectorCollapsed}>
    {#if selected===null}
    <div class="map-adventure-context"><div><small>Aventura</small><strong>{adventure.name}</strong></div><button aria-label="Ajustes de la aventura" title="Ajustes de la aventura" onclick={()=>showTool('adventures')}><Settings2 size={19}/></button></div>
    <label for="mapname">Nombre del mapa</label><input id="mapname" value={draft.name} onchange={e=>{snapshot();draft={...draft,name:e.currentTarget.value};}}/>
@@ -291,7 +325,8 @@
    {#each adventure.exits.filter(e=>e.fromMap===draft.id) as exit}<button class="connection-row" onclick={()=>selectObject(exit.entityId)}><Link size={15}/><span>{adventure.maps.find(m=>m.id===exit.toMap)?.name}</span><Settings2 size={15}/></button>{/each}</details>
    <button class="panel-primary" onclick={()=>showTool('maps')}><Layers size={16}/> Gestionar mapas</button>
 
-   {:else if entity}<label for="entityname">Nombre del objeto</label><input id="entityname" value={entity.label} onchange={e=>update({label:e.currentTarget.value})}/><label>Descripción<input value={entity.description??''} onchange={e=>update({description:e.currentTarget.value})}/></label>{#if selectedExit}<p class="environment-note">{draft.walls?.some(w=>w.exitId===entity.id)?'Puerta conectada a otro mapa.':'Loseta de salida con flecha hacia el borde más cercano.'}</p>{:else if visualCatalog.filter(a=>a.kind===entity.kind).length>1}<label>Gráfico<select value={entity.visualId??`pixel.${entity.kind}`} onchange={e=>{const asset=visualCatalog.find(a=>a.id===e.currentTarget.value)!;update({visualId:asset.id,...(asset.color!==undefined?{color:asset.color}:{})});}}>{#each visualCatalog.filter(a=>a.kind===entity.kind) as asset}<option value={asset.id}>{asset.label}</option>{/each}</select></label>{/if}<button class="flip-button" aria-pressed={entity.flipX??false} onclick={flip}>↔ Voltear horizontalmente</button><small>{entity.flipX?'Orientación reflejada':'Orientación original'}</small><small class="asset-id">{selectedExit?(draft.walls?.some(w=>w.exitId===entity.id)?'Puerta de salida':'Loseta de salida'):entity.visualId??`pixel.${entity.kind}`}</small>
+   {:else if entity}<div class="inspector-tabs" role="group" aria-label="Secciones del elemento"><button aria-pressed={inspectorTab==='properties'} onclick={()=>inspectorTab='properties'}>Propiedades</button><button aria-pressed={inspectorTab==='modules'} onclick={()=>inspectorTab='modules'}>Módulos</button></div><div hidden={inspectorTab!=='modules'}>{#if selectedExit||entity.pickup}<p class="environment-note">Este elemento utiliza su acción para viajar o recoger un artículo. Puedes añadir chats a los demás objetos y personajes.</p>{:else}
+    <EntityModules modules={entityModules} loading={chatLoading} onadd={addContentModule} onedit={editContentModule} onremove={removeContentModule}/>{/if}</div><div hidden={inspectorTab!=='properties'}><label for="entityname">Nombre del objeto</label><input id="entityname" value={entity.label} onchange={e=>update({label:e.currentTarget.value})}/><label>Descripción<input value={entity.description??''} onchange={e=>update({description:e.currentTarget.value})}/></label>{#if selectedExit}<p class="environment-note">{draft.walls?.some(w=>w.exitId===entity.id)?'Puerta conectada a otro mapa.':'Loseta de salida con flecha hacia el borde más cercano.'}</p>{:else if visualCatalog.filter(a=>a.kind===entity.kind).length>1}<label>Gráfico<select value={entity.visualId??`pixel.${entity.kind}`} onchange={e=>{const asset=visualCatalog.find(a=>a.id===e.currentTarget.value)!;update({visualId:asset.id,...(asset.color!==undefined?{color:asset.color}:{})});}}>{#each visualCatalog.filter(a=>a.kind===entity.kind) as asset}<option value={asset.id}>{asset.label}</option>{/each}</select></label>{/if}<button class="flip-button" aria-pressed={entity.flipX??false} onclick={flip}>↔ Voltear horizontalmente</button><small>{entity.flipX?'Orientación reflejada':'Orientación original'}</small><small class="asset-id">{selectedExit?(draft.walls?.some(w=>w.exitId===entity.id)?'Puerta de salida':'Loseta de salida'):entity.visualId??`pixel.${entity.kind}`}</small>
     {#if !selectedExit}<label>Objeto de inventario<select value={entity.pickup?.itemId??''} onchange={e=>{const id=e.currentTarget.value;update(id?{pickup:{itemId:id,quantity:1},solid:false,interaction:{label:'Recoger',action:'inventory.collect',resourceId:id}}:{pickup:undefined,interaction:undefined});}}><option value="">No es recogible</option>{#each adventure.items??[] as item}<option value={item.id}>{item.name}</option>{/each}</select></label>
     <button onclick={()=>{inventorySelection=entity?.pickup?.itemId??'';showTool('inventory');}}>Gestionar artículos</button>
     {#if entity.pickup}<label>Cantidad<input type="number" min="1" step="1" value={entity.pickup.quantity} onchange={e=>update({pickup:{...entity!.pickup!,quantity:Math.max(1,Math.floor(+e.currentTarget.value)||1)}})}/></label>{/if}{/if}
@@ -307,9 +342,11 @@
     {#if entity.kind==='desk'}<label class="checkbox"><input type="checkbox" checked={!!entity.seat} onchange={e=>update({seat:e.currentTarget.checked?{cell:{x:entity!.position.x,y:entity!.position.y+(entity!.size?.y??1)},facing:'ne'}:undefined,interactionPoints:undefined})}/> Puesto con asiento</label>{/if}
     {#if entity.seat}<div class="pair"><label>Asiento X<input type="number" min="0" value={entity.seat.cell.x} onchange={e=>setSeat('x',+e.currentTarget.value)}/></label><label>Asiento Y<input type="number" min="0" value={entity.seat.cell.y} onchange={e=>setSeat('y',+e.currentTarget.value)}/></label></div><label>Orientación del asiento<select value={entity.seat.facing} onchange={e=>update({seat:{...entity!.seat!,facing:e.currentTarget.value as Facing}})}><option value="ne">Noreste</option><option value="se">Sureste</option><option value="sw">Suroeste</option><option value="nw">Noroeste</option></select></label>{/if}
     </details>{/if}
-    <button class="delete-object" onclick={remove}><Trash2 size={16}/> Eliminar objeto</button>
+    <button class="delete-object" onclick={()=>{if(leaveChat())remove();}}><Trash2 size={16}/> Eliminar objeto</button></div>
    {/if}
-  </div></aside>{/key}{/if}
+  </div></div>
+  {#if chatEditing}<section class="module-layer" transition:fly={{x:24,duration:160}} aria-label="Editar módulo de conversación"><ChatEditor chat={chatEditing.chat} title={chatEditing.title} uses={chatEditing.uses} onapply={applyChat} onclose={()=>void closeChatLayer()} ondirty={value=>chatDirty=value}/></section>{/if}
+  </aside>{/key}{/if}
  </div>
 </div>
 <style>
@@ -334,4 +371,7 @@
 .editor-zoom button[aria-pressed=true]{background:#dfeccd;color:#284333}.control-divider{height:22px;border-left:1px solid #d5dfce}
 .quick-map{position:absolute;left:16px;bottom:16px;z-index:3;display:flex;align-items:center;gap:8px;width:288px;max-width:calc(100% - 32px);height:44px;padding:0 8px 0 12px;background:#fffef8;border:1px solid #d5dfce;border-radius:9px;box-shadow:0 3px 12px #28433318;color:#52694a}.editor .quick-map select{flex:1;min-width:0;margin:0;border:0;background:transparent;padding:8px 0;font-size:12px;text-overflow:ellipsis}.quick-map button{display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;border-radius:6px}.quick-map button:hover,.quick-map button[aria-expanded=true]{background:#dfeccd}.quick-map button:focus-visible,.quick-map select:focus-visible{outline:2px solid #577c35;outline-offset:1px}@media(max-width:680px){.quick-map{bottom:68px;left:12px;width:260px}}
 @media(min-width:701px){.editor aside.map-properties{left:16px;right:auto;top:auto;bottom:132px;height:auto;max-height:calc(100% - 156px)}.editor aside.map-properties.collapsed{bottom:132px}.editor aside.map-properties:global(.drag-positioned){bottom:auto}}
+.editor aside.entity-drawer{right:0;left:auto;top:0;bottom:0;width:400px;max-width:calc(100% - 40px);border-radius:14px 0 0 14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:-8px 0 30px #28433320}.entity-drawer .panel-heading{flex-shrink:0;cursor:default;touch-action:auto}.entity-drawer .inspector-body{flex:1;min-height:0;overflow:auto}.editor aside.entity-drawer.collapsed{bottom:auto}.inspector-tabs{display:flex;gap:6px;position:sticky;top:0;background:#fffef8;padding:0 0 12px;z-index:2}.inspector-tabs button{flex:1;padding:10px;border:1px solid #d5dfce;border-radius:8px;font-size:12px}.inspector-tabs button[aria-pressed=true]{background:#dfeccd;border-color:#789557}.entity-drawer .paint-actions button{font-size:12px}@media(prefers-reduced-motion:reduce){.entity-drawer{transition:none!important}}
+@media(min-width:1000px){.with-inspector .editor-zoom{right:416px}}
+.inspector-main{min-height:0}.entity-drawer .inspector-main{display:flex;flex-direction:column;flex:1;overflow:hidden}.module-layer{position:absolute;inset:0;z-index:6;display:flex;min-width:0;min-height:0;background:#fffef8;border-radius:inherit;overflow:hidden}.module-layer :global(.chat-editor){flex:1}
 </style>

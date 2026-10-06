@@ -22,6 +22,8 @@ Los trabajos de vídeo anteriores siguen en CHARACTER_VIDEO_JOBS_DIR. Para asign
 
 Guardar actualiza el borrador. Publicar crea una revisión independiente; los siguientes cambios requieren «Actualizar publicación». Retirar la publicación impide nuevas lecturas públicas. Las imágenes originales de edición y metadatos de generación no se incluyen en las hojas públicas.
 
+En **Mis aventuras**, las tarjetas distinguen **Publicada · al día**, **Cambios sin publicar** y **Borrador privado**. El filtro **Con novedades** muestra las publicaciones que difieren de su contenido guardado, y el botón **Publicar cambios** actualiza su copia pública. El estado se refresca al volver a esta pantalla o con el botón de actualización. Se compara contenido, no fechas ni contadores: guardar sin modificar nada o conservar originales privados no crea una falsa novedad. También funciona con publicaciones anteriores.
+
 Cada recurso de biblioteca pertenece al espacio. El superadmin puede copiarlo al catálogo compartido. Retirarlo del catálogo no elimina copias incorporadas a aventuras ni el recurso original. El administrador puede descargar/exportar su biblioteca e incorporar copias independientes.
 
 Las escrituras de aventuras usan revisiones: dos pestañas no pueden sobrescribirse silenciosamente. Ante un conflicto, exportar los cambios y volver a cargar. Los borradores de edición local se separan por usuario y espacio.

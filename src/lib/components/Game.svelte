@@ -14,6 +14,7 @@
 
  import RoutingTalesChat from '$lib/components/RoutingTalesChat.svelte';
  import {chatProgressKey} from '$lib/chat/routingtales';
+ import {embeddedChat} from '$lib/chat/editor';
  import InfoBubble from '$lib/components/InfoBubble.svelte';
  let information=$state<WorldInteraction|null>(null);
  let obtained=$state<{name:string;quantity:number}|null>(null);
@@ -211,7 +212,7 @@
   {:else if panel==='chat'}
    <div class="chat-heading"><span class="person-avatar" class:lucia={resource==='lucia'} class:marcos={resource==='marcos'}>{chatName.slice(0,1)}</span><div><h2>{chatName}</h2><p>Conversación</p></div></div>
    {#key [adventure?.id,scene.id,resourceEntityId,resource].join(':')}
-    <RoutingTalesChat storage={progressStorage} onprogress={node=>record(`Conversación con ${chatName}: ${node==='success'?'completada':'paso '+node}.`)} {resource} progressKey={chatProgressKey(adventure?.id??'',scene.id,resourceEntityId,resource)} onclose={()=>void closePanel()}/>
+    <RoutingTalesChat config={embeddedChat(adventure?.chats,resource)} storage={progressStorage} onprogress={node=>record(`Conversación con ${chatName}: ${node==='success'?'completada':'paso '+node}.`)} {resource} progressKey={chatProgressKey(adventure?.id??'',scene.id,resourceEntityId,resource)} onclose={()=>void closePanel()}/>
    {/key}
   {:else if panel==='goal'&&selectedGoal}
    <div class="drawer-icon"><Flag size={27}/></div><h2>{selectedGoal.title}</h2><p class="drawer-description">{selectedGoal.description}</p><div class="goal-callout"><Map size={28}/><p>Cada objetivo es un lugar al que volver. Explora a tu ritmo y marca este paso cuando lo hayas conseguido.</p></div><button class="primary-button" onclick={finishGoal} disabled={selectedGoal.done}>{#if selectedGoal.done}<Check size={18}/> Objetivo completado{:else}<Flag size={18}/> Marcar como completado{/if}</button>

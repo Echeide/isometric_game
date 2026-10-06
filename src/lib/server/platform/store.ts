@@ -11,6 +11,7 @@ import {imageUrls,mapImages} from '../../storage/local-adventures';
 import {validatePack,validateCatalogGraphics,pngSize} from '../../storage/adventure-package';
 import {unpackResource,resourcePreview} from '../../workshop/shared-resource';
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
+import {publicGraphics,graphicsChanged} from './publication-state';
 export function tenant(p:Principal){if(!p.tenant)throw new PlatformError(403,'Entra como un administrador para gestionar un espacio.');return p.tenant.id;}
 export function superuser(p:Principal){if(!isSuper(p))throw new PlatformError(403,'Acción exclusiva del superadmin.');}
 function name(value:unknown){if(typeof value!=='string'||!value.trim()||value.length>120)throw new PlatformError(400,'Nombre no válido (1–120 caracteres).');return value.trim();}
@@ -44,7 +45,13 @@ export class PlatformStore {
   }
   throw new PlatformError(400,'Acción no válida.');
  });}
- async list(p:Principal){const t=tenant(p);return this.database.transaction(t,false,async db=>({version:1,activeId:'',adventures:(await db.query('SELECT definition,revision FROM platform_adventures WHERE tenant_id=$1 ORDER BY updated_at DESC',[t])).rows.map(r=>({...r.definition,_revision:r.revision})),publications:(await db.query('SELECT slug,adventure_id,active,published_at FROM platform_publications WHERE tenant_id=$1',[t])).rows,usage:(await db.query("SELECT kind,used FROM platform_usage WHERE tenant_id=$1 AND month=to_char(now(),'YYYY-MM')",[t])).rows}));}
+ async list(p:Principal){const t=tenant(p);return this.database.transaction(t,false,async db=>({version:1,activeId:'',adventures:(await db.query('SELECT definition,revision FROM platform_adventures WHERE tenant_id=$1 ORDER BY updated_at DESC',[t])).rows.map(r=>({...r.definition,_revision:r.revision})),publications:(await db.query(`
+  SELECT p.slug,p.adventure_id,p.active,p.published_at,
+   a.definition IS DISTINCT FROM p.definition AS definition_changed,
+   CASE WHEN p.active AND a.definition=p.definition THEN a.graphics END AS current_graphics,
+   CASE WHEN p.active AND a.definition=p.definition THEN p.graphics END AS published_graphics
+  FROM platform_publications p LEFT JOIN platform_adventures a ON a.tenant_id=p.tenant_id AND a.id=p.adventure_id
+  WHERE p.tenant_id=$1`,[t])).rows.map(r=>({slug:r.slug,adventure_id:r.adventure_id,active:r.active,published_at:r.published_at,hasUnpublishedChanges:!!r.active&&(r.definition_changed||graphicsChanged(r.current_graphics,r.published_graphics))})),usage:(await db.query("SELECT kind,used FROM platform_usage WHERE tenant_id=$1 AND month=to_char(now(),'YYYY-MM')",[t])).rows}));}
  async adventure(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT * FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Aventura no encontrada.');return a;});}
  async asset(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT hash FROM platform_assets WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(a.hash);});}
  async save(p:Principal,value:unknown,pack:PixelArtPack|undefined,blobs:Record<string,Uint8Array>,revision:number){
@@ -71,7 +78,7 @@ export class PlatformStore {
   if(!active){await db.query('UPDATE platform_publications SET active=false WHERE tenant_id=$1 AND adventure_id=$2',[t,id]);await audit(db,p,'adventure.withdraw',id);return{};}
   const a=(await db.query('SELECT * FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];if(!a)throw new PlatformError(404,'Aventura no encontrada.');const old=(await db.query('SELECT * FROM platform_publications WHERE tenant_id=$1 AND adventure_id=$2',[t,id])).rows[0];
   const count=Number((await db.query('SELECT count(*) AS n FROM platform_publications WHERE tenant_id=$1 AND active',[t])).rows[0].n);if(!old?.active&&count>=space.limits.published)throw new PlatformError(409,'Límite de aventuras publicadas alcanzado.');
-  const graphics=structuredClone(a.graphics) as PixelArtPack;delete graphics.resourceOrigins;delete graphics.tileOriginalImages;for(const o of Object.values(graphics.objects)){delete o.originalImage;delete o.generationImage;for(const key of Object.keys(o))if(/prompt|generation|source/i.test(key))delete (o as any)[key];}
+  const graphics=publicGraphics(a.graphics);
   const slug=old?.slug??randomUUID(),version=randomUUID(),assetIds=imageUrls(graphics).filter(u=>u.startsWith('asset:')).map(u=>u.slice(6));
   await db.query('INSERT INTO platform_releases(id,slug,tenant_id,definition,graphics,asset_ids) VALUES($1,$2,$3,$4,$5,$6)',[version,slug,t,a.definition,graphics,JSON.stringify(assetIds)]);
   await db.query('INSERT INTO platform_publications(slug,tenant_id,adventure_id,name,definition,graphics,asset_ids,release_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,adventure_id) DO UPDATE SET name=$4,definition=$5,graphics=$6,asset_ids=$7,release_id=$8,active=true,published_at=now()',[slug,t,id,a.definition.name,a.definition,graphics,JSON.stringify(assetIds),version]);await audit(db,p,'adventure.publish',id);return{slug};

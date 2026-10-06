@@ -11,6 +11,8 @@ export interface PixelArtPack {
  tileFrames?:Partial<Record<TileKind,[number,number,number,number]>>;
  tileNames?:Partial<Record<TileKind,string>>;
  tileOriginalImages?:Partial<Record<TileKind,string>>;
+ /** Adapted sheet URL -> original sheet URL; private workshop metadata. */
+ paletteOriginalImages?:Record<string,string>;
  players?:Record<string,{name:string;character:CharacterPack}>;
  activePlayer?:string;
  resourceOrigins?:Record<string,{id:string;version:number}>;

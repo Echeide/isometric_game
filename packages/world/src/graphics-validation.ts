@@ -28,6 +28,14 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
   if(!Object.hasOwn(pack.tiles,kind))fail('El original referencia un suelo que no existe.');
   const original=image(url!),current=image(pack.tiles[kind as TileKind]);if(original.width!==current.width||original.height!==current.height)fail('El original y el suelo retocado deben tener las mismas dimensiones.');
  }
+ if(pack.paletteOriginalImages!==undefined){
+  const links=pack.paletteOriginalImages;
+  if(!links||typeof links!=='object'||Array.isArray(links)||Object.keys(links).length>512)fail('Originales de paleta no válidos.');
+  for(const [url,original]of Object.entries(links)){
+   if(typeof original!=='string'||!original||url===original||Object.hasOwn(links,original))fail('Referencia original de paleta no válida.');
+   const a=image(url),b=image(original);if(a.width!==b.width||a.height!==b.height)fail('La adaptación de paleta debe mantener las mismas dimensiones.');
+  }
+ }
 }
 
 export function validateCharacterGraphics(c:CharacterPack,sizes:Map<string,ImageSize>){

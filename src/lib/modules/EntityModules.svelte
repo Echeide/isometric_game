@@ -1,0 +1,19 @@
+<script lang="ts">
+ import {Plus,MessageCircle,Pencil,Trash2} from 'lucide-svelte';
+ import {contentModuleTypes,type ContentModuleType,type ContentModuleCard} from './types';
+ let {modules,loading=false,onadd,onedit,onremove}:{modules:ContentModuleCard[];loading?:boolean;onadd:(type:ContentModuleType)=>void;onedit:(type:ContentModuleType)=>void;onremove:(type:ContentModuleType)=>void}=$props();
+ let selected=$state<ContentModuleType>('chat');
+ const added=$derived(modules.some(module=>module.type===selected));
+</script>
+<section class="entity-modules" aria-label="Módulos del elemento">
+ <div class="module-add"><label>Tipo de módulo<select aria-label="Tipo de módulo" bind:value={selected} disabled={loading}>{#each contentModuleTypes as type}<option value={type.id}>{type.label}{modules.some(module=>module.type===type.id)?' · Añadida':''}</option>{/each}</select></label><button class="add" onclick={()=>onadd(selected)} disabled={loading||added} title={added?'Este tipo de módulo ya está añadido':'Añadir módulo'}><Plus size={16}/> Añadir</button></div>
+ <div class="module-list" role="list" aria-label="Módulos añadidos">
+ {#each modules as module (module.type)}
+  <article class="module-card" role="listitem" aria-label={'Módulo '+module.name}><span class="module-icon"><MessageCircle size={20}/></span><div class="module-name"><strong>{module.name}</strong><small>{contentModuleTypes.find(type=>type.id===module.type)?.label}</small></div><div class="module-actions"><button data-edit-chat={module.type==='chat'?true:undefined} disabled={loading} onclick={()=>onedit(module.type)} aria-label={'Editar módulo '+module.name} title="Editar módulo"><Pencil size={17}/></button><button class="delete" disabled={loading} onclick={()=>onremove(module.type)} aria-label={'Eliminar módulo '+module.name} title="Eliminar módulo"><Trash2 size={17}/></button></div></article>
+ {:else}<p class="empty">Este elemento aún no tiene módulos. Elige un tipo y pulsa Añadir.</p>{/each}
+ </div>
+ {#if loading}<p class="loading" role="status">Abriendo módulo…</p>{/if}
+</section>
+<style>
+ .entity-modules{padding:4px 0}.module-add{display:flex;align-items:flex-end;gap:8px;padding:10px 0 18px;border-bottom:1px solid #e2e9db}label{display:flex;flex-direction:column;gap:7px;flex:1;min-width:0;color:#62755c;font-size:12px;font-weight:600}select{width:100%;box-sizing:border-box;border:1px solid #d5dfce;border-radius:7px;background:white;padding:10px;font:inherit;font-weight:400;color:#35502f;min-width:0}button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid #d5dfce;border-radius:7px;padding:9px;background:white;color:#35502f;font:inherit;font-size:12px;cursor:pointer}button:disabled{opacity:.4;cursor:default}button:hover:not(:disabled){background:#eef3e8}.add{height:38px;flex-shrink:0;background:#dfeccd}.module-list{display:flex;flex-direction:column;gap:10px;padding-top:18px}.module-card{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid #d5dfce;border-radius:10px;background:white;min-width:0}.module-icon{display:grid;place-items:center;flex-shrink:0;width:34px;height:34px;border-radius:8px;background:#edf2e7;color:#52694a}.module-name{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}.module-name strong{font-size:13px;color:#35502f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.module-name small{font-size:11px;color:#718269}.module-actions{display:flex;gap:5px;flex-shrink:0}.module-actions button{width:32px;height:32px;padding:0}.module-actions .delete{color:#a66754}.empty,.loading{font-size:12px;line-height:1.6;color:#718269;margin:0}.loading{margin-top:12px}button:focus-visible,select:focus-visible{outline:2px solid #789557;outline-offset:2px}@media(max-width:400px){.module-card{gap:7px;padding:10px}.module-icon{width:28px;height:28px}.module-actions{gap:3px}.module-actions button{width:30px}}
+</style>

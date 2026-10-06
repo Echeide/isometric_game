@@ -12,6 +12,12 @@
  import {downloadBlob,exportAdventure,pngSize,validateCatalogGraphics} from '$lib/storage/adventure-package';
  import {validateGraphics,type ImageSize} from '@isometrico/world';
  import {workshopEntries,workshopNpc,standaloneCharacter,supportOrigin,resourceUsages,actionLabels,type ResourceKind,type ResourceEntry} from './resources';
+ import AdventurePaletteEditor from './AdventurePaletteEditor.svelte';
+ import PaletteAdapter from './PaletteAdapter.svelte';
+ import {defaultAdventurePalette,type AdventurePalette} from '$lib/demo/adventure-palette';
+ import {mapResourceImages,resourceImages,prunePaletteOriginals,paletteFromColors,type PaletteResource} from './palette';
+ import {decodePaletteImage} from './palette-browser';
+ import {extractSpritePalette} from '../../../packages/character-generator/src/pipeline';
  import {readPng,visibleCrop} from './images';
  import {readCharacterZip} from './character-package';
  import ResourceStage from '$lib/components/ResourceStage.svelte';
@@ -33,15 +39,18 @@
  let tileImage=$state(''),tileOriginalImage=$state<string>(),tileFrame=$state<[number,number,number,number]>([0,0,64,32]);
  let libraryScope=$state<'adventure'|'general'|'global'>('adventure'),libraryKind=$state<ResourceKind>('object');
  let objectProposal=$state<string|null>(null);
+ let paletteDialogOpen=$state(false),paletteLinks=$state<Record<string,string>>({});
+ const paletteOriginals=$derived({...pack.paletteOriginalImages,...paletteLinks});
+ const paletteResource=$derived({kind,item,character,tileImage});
  let imageEdit=$state.raw<ImageEditSession>(),imageEditDirty=$state(false);
  let pose=$state<ActorPose>('idle'),direction=$state(1),playing=$state(true),zoom=$state(2),reuseSit=$state(false),locked=$state(true);
  let search=$state(''),dirty=$state(false),busy=$state(false),loading=$state(true),loadFailed=$state(false),error=$state(''),notice=$state(''),hasDraft=$state(false);
  let imageRevision=$state(0),fileInput:HTMLInputElement,characterZipInput:HTMLInputElement,confirmDialog:HTMLDialogElement;
  let pendingAction:(()=>void)|undefined,uploadSlot='base',packSignature='',catalogSignature='',disposed=false;
  const pending=new Map<string,Blob>(),urls=new Map<string,string>(),sizes=new Map<string,ImageSize>();
- type Draft={kind:ResourceKind;selected:string;name:string;category:VisualAsset['category'];size:{x:number;y:number};item:ObjectSprite;character:CharacterPack;tileImage:string;tileOriginalImage?:string;tileFrame:[number,number,number,number];reuseSit:boolean;pending:Record<string,Blob>};
+ type Draft={kind:ResourceKind;selected:string;name:string;category:VisualAsset['category'];size:{x:number;y:number};item:ObjectSprite;character:CharacterPack;tileImage:string;tileOriginalImage?:string;tileFrame:[number,number,number,number];reuseSit:boolean;paletteLinks?:Record<string,string>;pending:Record<string,Blob>};
  const entries=$derived(workshopEntries(pack,adventure?.catalog,adventure?.catalogOverrides));
- function catalogVersion(a:Adventure){return JSON.stringify([a.catalog??[],a.catalogOverrides??{}]);}
+ function catalogVersion(a:Adventure){return JSON.stringify([a.catalog??[],a.catalogOverrides??{},a.palette??null]);}
  const filtered=$derived(entries.filter(e=>e.kind===kind&&e.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())));
  const current=$derived(entries.find(e=>e.id===selected&&e.kind===kind));
  const custom=$derived(selected.startsWith('custom.'));
@@ -58,8 +67,8 @@
  function message(cause:unknown){error=cause instanceof Error?cause.message:'No se pudo completar la operación.';}
  function ask(action:()=>void){if(dirty||objectProposal){pendingAction=action;confirmDialog.showModal();}else action();}
  function continueAction(){dirty=false;confirmDialog.close();const action=pendingAction;pendingAction=undefined;action?.();}
- beforeNavigate(nav=>{if(imageEdit){nav.cancel();return;}if((dirty||objectProposal)&&nav.to?.url&&!nav.willUnload){nav.cancel();ask(()=>void goto(nav.to!.url));}});
- function beforeUnload(event:BeforeUnloadEvent){if(dirty||imageEditDirty||objectProposal){event.preventDefault();event.returnValue='';}}
+ beforeNavigate(nav=>{if(imageEdit||paletteDialogOpen){nav.cancel();return;}if((dirty||objectProposal)&&nav.to?.url&&!nav.willUnload){nav.cancel();ask(()=>void goto(nav.to!.url));}});
+ function beforeUnload(event:BeforeUnloadEvent){if(dirty||imageEditDirty||objectProposal||paletteDialogOpen){event.preventDefault();event.returnValue='';}}
  async function addImage(url:string,blob:Blob){const dimensions=pngSize(new Uint8Array(await blob.arrayBuffer()));if(disposed)return;const old=urls.get(url);if(old)URL.revokeObjectURL(old);urls.set(url,URL.createObjectURL(blob));sizes.set(url,dimensions);imageRevision++;}
  async function hydrate(next:PixelArtPack){await preloadItems(imageUrls(next).filter(url=>!sizes.has(url)),async url=>addImage(url,await resourceBlob(url,localAdventures,preloadAbort.signal)),{signal:preloadAbort.signal,onProgress:p=>loadProgress=p});}
  async function load(id?:string){
@@ -73,7 +82,7 @@
  onMount(()=>{playing=!matchMedia('(prefers-reduced-motion: reduce)').matches;const query=new URLSearchParams(location.search),section=query.get('section');if(tabs.some(t=>t.id===section))kind=section as ResourceKind;void load(query.get('adventure')??undefined);});
  onDestroy(()=>{disposed=true;preloadAbort.abort();urls.forEach(url=>URL.revokeObjectURL(url));});
  function select(entry:ResourceEntry){
-  kind=entry.kind;selected=entry.id;name=entry.name;pose='idle';error='';notice='';dirty=false;zoom=2;locked=true;
+  paletteLinks={};kind=entry.kind;selected=entry.id;name=entry.name;pose='idle';error='';notice='';dirty=false;zoom=2;locked=true;
   const asset=resolveVisualCatalog(adventure?.catalog,adventure?.catalogOverrides).find(a=>a.id===entry.id);category=asset?.category??'office';size=clone(asset?.size??{x:1,y:1});
   if(kind==='player'){character=entry.id==='default'?standaloneCharacter(pack.character,'728da5'):clone(pack.players![entry.id].character);reuseSit=characterImage(character,'sit')===characterImage(character,'work')&&character.animations.sit.frames===1;}
   else if(kind==='tile'){tileImage=pack.tiles[entry.id as TileKind];tileOriginalImage=pack.tileOriginalImages?.[entry.id as TileKind];const dimensions=sizes.get(tileImage)!;tileFrame=clone(pack.tileFrames?.[entry.id as TileKind]??[0,0,dimensions.width,dimensions.height]);}
@@ -81,7 +90,7 @@
  }
  function tab(next:ResourceKind){ask(()=>{kind=next;search='';const entry=entries.find(e=>e.kind===next);if(entry)select(entry);else{selected='';dirty=false;}});}
  function create(){ask(()=>{
-  selected=`custom.${crypto.randomUUID()}`;name=kind==='npc'?'Nuevo PNJ':kind==='player'?'Nuevo jugador':kind==='tile'?'Nuevo suelo':'Nuevo objeto';size={x:1,y:1};category=kind==='npc'?'people':'office';pose='idle';error='';notice='';dirty=true;
+  paletteLinks={};selected=`custom.${crypto.randomUUID()}`;name=kind==='npc'?'Nuevo PNJ':kind==='player'?'Nuevo jugador':kind==='tile'?'Nuevo suelo':'Nuevo objeto';size={x:1,y:1};category=kind==='npc'?'people':'office';pose='idle';error='';notice='';dirty=true;
   if(kind==='player'){character=standaloneCharacter(defaultGraphics.character);character.image='';for(const p of actorPoses)character.animations[p].image='';reuseSit=true;}
   else if(kind==='tile'){tileImage='';tileOriginalImage=undefined;tileFrame=[0,0,64,32];}
   else item={image:'',width:64,height:64,origin:[32,48]};
@@ -164,6 +173,29 @@
   dirty=true;notice='Imagen original recuperada. Guarda en el catálogo para aplicar el cambio.';
  }
  $effect(()=>{if(kind==='player'&&reuseSit){const work={...character.animations.work};untrack(()=>{character.animations.sit={...work,frames:1};});}});
+ async function paletteBlob(url:string){return pending.get(url.slice(6))??await resourceBlob(url);}
+ async function savePalette(palette:AdventurePalette){
+  if(busy)throw Error('Espera a que termine la operación actual.');busy=true;
+  try{const {currentAdventure}=await latest();currentAdventure.palette=palette;await localAdventures.save(currentAdventure);adventure=currentAdventure;catalogSignature=catalogVersion(adventure);adventures=adventures.map(a=>a.id===adventure!.id?currentAdventure:a);notice='Paleta de 64 colores guardada. Ya puedes adaptar los recursos de esta aventura.';}finally{busy=false;}
+ }
+ async function extractPalette():Promise<AdventurePalette>{
+  const frames=[];
+  for(const url of resourceImages(paletteResource)){
+   const frame=await decodePaletteImage(await paletteBlob(paletteOriginals[url]??url)),pixels=frame.width*frame.height,count=Math.min(2048,pixels),data=new Uint8ClampedArray(count*4);
+   for(let i=0;i<count;i++){const p=Math.floor(i*pixels/count)*4;data.set(frame.data.subarray(p,p+4),i*4);}
+   frames.push({width:count,height:1,data});
+  }
+  const colors=extractSpritePalette(frames,64).map(c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join(''));
+  return paletteFromColors(colors,defaultAdventurePalette());
+ }
+ function usePaletteResource(resource:PaletteResource){if(kind==='player')character=resource.character;else if(kind==='tile')tileImage=resource.tileImage;else item=resource.item;}
+ async function acceptPalette(blobs:Record<string,Blob>){
+  busy=true;try{const replacements:Record<string,string>={},links:Record<string,string>={};
+   for(const [url,blob]of Object.entries(blobs)){const id=crypto.randomUUID(),next=`asset:${id}`;await addImage(next,blob);if(disposed)return;pending.set(id,blob);replacements[url]=next;links[next]=paletteOriginals[url]??url;}
+   usePaletteResource(mapResourceImages(paletteResource,u=>replacements[u]??u));paletteLinks={...paletteLinks,...links};dirty=true;notice='Adaptación aplicada a todas las hojas. Guarda en aventura para usarla en el juego.';
+  }finally{busy=false;}
+ }
+ function restorePalette(){usePaletteResource(mapResourceImages(paletteResource,u=>paletteOriginals[u]??u));dirty=true;notice='Colores originales recuperados en todas las hojas. Guarda en aventura para conservarlos.';}
  async function publishResource(){
   if(busy||dirty||objectProposal||!current)return;busy=true;error='';
   try{await latest();const resource:SharedResource={format:'isometric-resource',version:1,kind,name:name.trim(),category,size:clone(size),...(kind==='player'?{character:clone(character)}:kind==='tile'?{tile:{image:tileImage,originalImage:tileOriginalImage,frame:clone(tileFrame)}}:{object:clone(item)})};
@@ -190,10 +222,11 @@
    if(kind==='player'){syncSit();if(id==='default')id=`custom.${crypto.randomUUID()}`;currentPack.players={...currentPack.players,[id]:{name:name.trim(),character:clone(character)}};}
    else if(kind==='tile'){currentPack.tiles[id as TileKind]=tileImage;currentPack.tileFrames={...currentPack.tileFrames,[id]:clone(tileFrame)};currentPack.tileNames={...currentPack.tileNames,[id]:name.trim()};if(tileOriginalImage)currentPack.tileOriginalImages={...currentPack.tileOriginalImages,[id]:tileOriginalImage};else if(currentPack.tileOriginalImages)delete currentPack.tileOriginalImages[id as TileKind];}
    else{currentPack.objects[id]=clone(item);if(custom){const entry:VisualAsset={id,label:name.trim(),kind:kind==='npc'?'person':'object',category:kind==='npc'?'people':category,size:clone(size)};currentAdventure.catalog=[...(currentAdventure.catalog??[]).filter(e=>e.id!==id),entry];}else currentAdventure.catalogOverrides={...currentAdventure.catalogOverrides,[id]:{label:name.trim(),category:kind==='npc'?'people':category}};}
+   currentPack.paletteOriginalImages={...currentPack.paletteOriginalImages,...paletteLinks};prunePaletteOriginals(currentPack);
    validateGraphics(currentPack,sizes);validateCatalogGraphics(currentAdventure,currentPack);
    const used=new Set(imageUrls(currentPack).filter(u=>u.startsWith('asset:')).map(u=>u.slice(6))),blobs=Object.fromEntries([...pending].filter(([key])=>used.has(key)));
    await localAdventures.save(currentAdventure,{pack:currentPack,blobs});await clearWorkshopDraft(adventure.id);hasDraft=false;
-   adventure=currentAdventure;pack=currentPack;packSignature=JSON.stringify(currentPack);catalogSignature=catalogVersion(currentAdventure);selected=id;dirty=false;notice=kind==='player'?'Jugador guardado. Pulsa «Usar como jugador» para activarlo.':kind==='tile'?'Suelo guardado. Ya puedes seleccionarlo en Baldosas y pintar el mapa.':'Recurso guardado. Ya está disponible en el editor y en el juego.';
+   adventure=currentAdventure;pack=currentPack;packSignature=JSON.stringify(currentPack);catalogSignature=catalogVersion(currentAdventure);selected=id;paletteLinks={};dirty=false;notice=kind==='player'?'Jugador guardado. Pulsa «Usar como jugador» para activarlo.':kind==='tile'?'Suelo guardado. Ya puedes seleccionarlo en Baldosas y pintar el mapa.':'Recurso guardado. Ya está disponible en el editor y en el juego.';
   }catch(e){message(e);}finally{busy=false;}
  }
  async function activate(){if(dirty||busy)return;busy=true;error='';try{const {currentAdventure,currentPack}=await latest();if(selected==='default')delete currentPack.activePlayer;else currentPack.activePlayer=selected;await localAdventures.save(currentAdventure,{pack:currentPack,blobs:{}});pack=currentPack;packSignature=JSON.stringify(currentPack);catalogSignature=catalogVersion(currentAdventure);notice='Jugador activado para esta aventura.';}catch(e){message(e);}finally{busy=false;}}
@@ -202,11 +235,11 @@
     delete currentPack.tiles[selected as TileKind];delete currentPack.tileFrames?.[selected as TileKind];delete currentPack.tileNames?.[selected as TileKind];
     delete currentPack.tileOriginalImages?.[selected as TileKind];
    }else{if(currentAdventure.maps.some(m=>m.entities.some(e=>e.visualId===selected)))throw new Error('Este recurso se utiliza en un mapa. Retira sus instancias antes de eliminarlo.');delete currentPack.objects[selected];currentAdventure.catalog=currentAdventure.catalog?.filter(e=>e.id!==selected);}
-   validateGraphics(currentPack,sizes);validateCatalogGraphics(currentAdventure,currentPack);
+   prunePaletteOriginals(currentPack);validateGraphics(currentPack,sizes);validateCatalogGraphics(currentAdventure,currentPack);
    await localAdventures.save(currentAdventure,{pack:currentPack,blobs:{}});dirty=false;await load(adventure!.id);notice='Recurso eliminado del catálogo.';
   }catch(e){message(e);}finally{busy=false;}}
- async function saveDraft(){if(!adventure)return false;busy=true;try{const draft:Draft={kind,selected,name,category,size:clone(size),item:clone(item),character:clone(character),tileImage,tileOriginalImage,tileFrame:clone(tileFrame),reuseSit,pending:Object.fromEntries(pending)};await saveWorkshopDraft(adventure.id,draft);hasDraft=true;notice='Borrador guardado en este navegador. Aún no modifica el juego.';return true;}catch(e){message(e);return false;}finally{busy=false;}}
- async function restoreDraft(){if(!adventure)return;busy=true;try{const draft=await loadWorkshopDraft<Draft>(adventure.id);if(!draft)return;for(const [id,blob]of Object.entries(draft.pending)){pending.set(id,blob);await addImage(`asset:${id}`,blob);}kind=draft.kind;selected=draft.selected;name=draft.name;category=draft.category;size=draft.size;item=draft.item;character=draft.character;tileImage=draft.tileImage;tileOriginalImage=draft.tileOriginalImage;tileFrame=draft.tileFrame;reuseSit=draft.reuseSit;dirty=true;notice='Borrador recuperado. Revisa los campos y guarda en la aventura.';}catch(e){message(e);}finally{busy=false;}}
+ async function saveDraft(){if(!adventure)return false;busy=true;try{const draft:Draft={kind,selected,name,category,size:clone(size),item:clone(item),character:clone(character),tileImage,tileOriginalImage,tileFrame:clone(tileFrame),reuseSit,paletteLinks:clone(paletteLinks),pending:Object.fromEntries(pending)};await saveWorkshopDraft(adventure.id,draft);hasDraft=true;notice='Borrador guardado en este navegador. Aún no modifica el juego.';return true;}catch(e){message(e);return false;}finally{busy=false;}}
+ async function restoreDraft(){if(!adventure)return;busy=true;try{const draft=await loadWorkshopDraft<Draft>(adventure.id);if(!draft)return;for(const [id,blob]of Object.entries(draft.pending)){pending.set(id,blob);await addImage(`asset:${id}`,blob);}kind=draft.kind;selected=draft.selected;name=draft.name;category=draft.category;size=draft.size;item=draft.item;character=draft.character;tileImage=draft.tileImage;tileOriginalImage=draft.tileOriginalImage;tileFrame=draft.tileFrame;reuseSit=draft.reuseSit;paletteLinks=draft.paletteLinks??{};dirty=true;notice='Borrador recuperado. Revisa los campos y guarda en la aventura.';}catch(e){message(e);}finally{busy=false;}}
  async function download(){try{if(source)downloadBlob(pending.get(source.slice(6))??await resourceBlob(source),`${name||'recurso'}.png`);}catch(e){message(e);}}
  async function exportZip(){busy=true;try{const a=(await localAdventures.load()).adventures.find(a=>a.id===adventure!.id)!;downloadBlob(await exportAdventure(a),`${a.id}.zip`);notice='ZIP exportado con el catálogo y sus imágenes guardadas.';}catch(e){message(e);}finally{busy=false;}}
 </script>
@@ -222,7 +255,9 @@
  <div class="category-bar" aria-label="Tipos de recurso">{#each tabs as t}<button aria-pressed={(libraryScope!=='adventure'?libraryKind:kind)===t.id} disabled={loading||busy} onclick={()=>{if(libraryScope!=='adventure')libraryKind=t.id;else tab(t.id);}}><t.icon size={18}/>{t.label}{#if libraryScope==='adventure'}<span>{entries.filter(e=>e.kind===t.id).length}</span>{/if}</button>{/each}<span class="local-label">{libraryScope!=='adventure'?'Guardada en el servidor':'Biblioteca de esta aventura'}</span></div>
  {#if loading}<LoadProgress title="Preparando tu biblioteca…" progress={loadProgress}/>{:else if loadFailed}<button onclick={()=>load(adventure?.id)}>Reintentar carga</button>{:else if adventure}
  {#if libraryScope!=='adventure'}{#key libraryScope}<SharedLibrary scope={libraryScope==='global'?'global':'tenant'} kind={libraryKind} {busy} onincorporate={entry=>ask(()=>void incorporateResource(entry))}/>{/key}{/if}
- <div hidden={libraryScope!=='adventure'}><div class="workspace">
+ <div hidden={libraryScope!=='adventure'}>
+ {#key adventure.id}<AdventurePaletteEditor palette={adventure.palette} disabled={busy||!!objectProposal} onsave={savePalette} onextract={selected&&resourceImages(paletteResource).length?extractPalette:undefined} onediting={open=>paletteDialogOpen=open}/>{/key}
+ <div class="workspace">
   <aside class="library" aria-label="Catálogo de recursos"><div class="library-title"><h2>{tabs.find(t=>t.id===kind)?.label}</h2><span>{filtered.length}</span></div><label class="search"><Search size={15}/><input aria-label="Buscar recurso" placeholder="Buscar recurso…" bind:value={search}/></label>
    <button class="add" disabled={busy} onclick={create}><Plus size={16}/> Añadir {kind==='npc'?'PNJ':kind==='player'?'jugador':kind==='tile'?'suelo':'objeto'}</button>{#if kind==='tile'}<p class="library-note">Añade un suelo propio o selecciona uno existente. Al guardar, podrás pintarlo desde Baldosas en el editor.</p>{/if}
    {#if kind==='player'}<button class="upload" disabled={busy} onclick={()=>characterZipInput.click()}><Upload size={16}/> Importar ZIP del personaje</button><p class="zip-note">Usa «Descargar personaje ZIP» del generador, con el perfil de 4 direcciones. Las hojas, fotogramas, FPS y apoyo se cargan automáticamente.</p>{/if}
@@ -235,6 +270,7 @@
    <div class="preview-tools"><div>{#if kind==='player'||kind==='npc'}<button aria-label={playing?'Pausar animación':'Reproducir animación'} onclick={()=>playing=!playing}>{#if playing}<Pause size={16}/>{:else}<Play size={16}/>{/if}</button><select aria-label="Acción de vista previa" bind:value={pose}>{#each kind==='npc'?npcPoses:actorPoses as p}<option value={p}>{actionLabels[p]}</option>{/each}</select>{/if}{#if kind==='player'}<select aria-label="Dirección de vista previa" bind:value={direction}><option value={0}>NE ↗</option><option value={1}>SE ↘</option><option value={2}>SW ↙</option><option value={3}>NW ↖</option></select>{/if}</div><div><span>Vista</span><button aria-label="Alejar vista previa" disabled={zoom<=.5} onclick={()=>zoom=Math.max(.5,zoom-.5)}><Minus size={15}/></button><output>{zoom}×</output><button aria-label="Acercar vista previa" disabled={zoom>=4} onclick={()=>zoom=Math.min(4,zoom+.5)}><Plus size={15}/></button></div></div>
    {#if kind==='npc'}<p class="preview-note">{activeClip?`${pose==='talk'&&item.animations?.talk?'Conversación animada':'Animación de reposo'} · ${activeClip.frames} fotogramas a ${activeClip.fps} fps`:'Imagen estática · lista para usar sin animaciones.'}</p>{/if}
    {#if kind==='player'}<div class="action-strip">{#each actorPoses as p}<button class:active={pose===p} onclick={()=>pose=p}><span>{actionLabels[p]}</span><small>{characterImage(character,p)?`${character.animations[p].frames} fotogramas`:'Sin imagen'}</small></button>{/each}</div>{/if}
+   {#key `${adventure.id}:${selected}`}<PaletteAdapter palette={adventure.palette} resource={paletteResource} originals={paletteOriginals} disabled={busy||!!objectProposal} {size} {tileFrame} reference={pack.activePlayer?pack.players![pack.activePlayer].character:pack.character} floorImage={defaultGraphics.tiles.office} {resolve} load={paletteBlob} onaccept={acceptPalette} onrestore={restorePalette} onopen={open=>paletteDialogOpen=open}/>{/key}
    <div class="source-card"><div><h3>Imagen original</h3><p>{sourceSize?`${sourceSize.width} × ${sourceSize.height} px`:'Carga un PNG para empezar'} · PNG transparente</p></div><div class="source-actions">{#if kind!=='player'}<button disabled={busy||!source||!!objectProposal} onclick={editImage}><Pencil size={15}/> Editar imagen</button>{/if}<button disabled={busy||!source||!!objectProposal} onclick={download}><Download size={15}/> Descargar</button></div></div>
    {#if kind==='object' && item.generationImage}<button class="restore-image" disabled={busy} onclick={()=>downloadGeneration().catch(message)}><Download size={14}/> Descargar original de IA</button>{/if}
    {#if originalImage&&source!==originalImage}<button class="restore-image" disabled={busy} onclick={restoreOriginalImage}><RotateCcw size={14}/> Recuperar imagen original</button>{/if}
@@ -247,7 +283,7 @@
    {#if kind==='object'||kind==='npc'}
     <p class="metadata-note">El nombre del catálogo se usa al colocar objetos nuevos. Cada objeto del mapa tiene su propio nombre.</p>
     <button type="button" class="upload" onclick={()=>chooseUpload()}><Upload size={16}/>{item.image?'Sustituir imagen':'Subir imagen PNG'}</button>
-    {#if kind==='object'}{#key `${adventure.id}:${selected}`}<ObjectAssistant width={Math.round(item.width)} height={Math.round(item.height)} footprint={size} references={entries.filter(e=>e.kind==='object').map(e=>({id:e.id,name:e.name}))} onreference={generationReference} onpreview={image=>objectProposal=image} onaccept={acceptObjectImage} onbusy={value=>busy=value}/>{/key}<label>Categoría<select bind:value={category}><option value="office">Oficina</option><option value="nature">Naturaleza</option><option value="urban">Urbano</option></select></label>{/if}
+    {#if kind==='object'}{#key `${adventure.id}:${selected}`}<ObjectAssistant palette={adventure.palette} width={Math.round(item.width)} height={Math.round(item.height)} footprint={size} references={entries.filter(e=>e.kind==='object').map(e=>({id:e.id,name:e.name}))} onreference={generationReference} onpreview={image=>objectProposal=image} onaccept={acceptObjectImage} onbusy={value=>busy=value}/>{/key}<label>Categoría<select bind:value={category}><option value="office">Oficina</option><option value="nature">Naturaleza</option><option value="urban">Urbano</option></select></label>{/if}
     <section class="fields-section"><h3>Escala en el mundo</h3><label>Tamaño proporcional <span>{scalePercent}%</span><input aria-label="Escala del objeto" type="range" min="5" max="400" step="1" value={scalePercent} oninput={e=>setScale(e.currentTarget.valueAsNumber)}/></label><div class="two-fields"><label>Ancho (px)<input aria-label="Ancho del dibujo" type="number" min="1" max="4096" step="any" value={Math.round(item.width*100)/100} oninput={e=>dimension('width',e.currentTarget.valueAsNumber)}/></label><label>Alto (px)<input aria-label="Alto del dibujo" type="number" min="1" max="4096" step="any" value={Math.round(item.height*100)/100} oninput={e=>dimension('height',e.currentTarget.valueAsNumber)}/></label></div><label class="checkbox"><input type="checkbox" bind:checked={locked}/> Mantener proporciones</label><p>La ampliación de la vista previa no cambia este tamaño.</p></section>
     <section class="fields-section"><h3>Huella y apoyo</h3><div class="two-fields"><label>Casillas X<input aria-label="Huella X" type="number" min="1" max="16" bind:value={size.x} disabled={!custom}/></label><label>Casillas Y<input aria-label="Huella Y" type="number" min="1" max="16" bind:value={size.y} disabled={!custom}/></label></div><button type="button" onclick={support}><Move size={15}/> Apoyar sobre la huella</button><p>También puedes arrastrar el dibujo. La huella es el tamaño predeterminado de las nuevas instancias.</p><details><summary>Ajustar apoyo con precisión</summary><div class="two-fields"><label>Origen X<input aria-label="Origen X" type="number" step="any" bind:value={item.origin[0]}/></label><label>Origen Y<input aria-label="Origen Y" type="number" step="any" bind:value={item.origin[1]}/></label></div></details></section>
     <details class="fields-section"><summary>Recorte del PNG</summary><p>Selecciona un objeto de una hoja o elimina sus márgenes.</p><div class="two-fields">{#each ['X','Y','Ancho','Alto'] as title,i}<label>{title}<input aria-label={`Recorte ${title}`} type="number" min={i<2?0:1} value={crop[i]} oninput={e=>setCrop(i,e.currentTarget.valueAsNumber)}/></label>{/each}</div><button type="button" disabled={!item.image} onclick={trim}><Scissors size={15}/> Recortar transparencia</button></details>

@@ -140,6 +140,11 @@ function makePalette(frames: Frame[], count: number): RGB[] {
     return [0, 1, 2].map(c => Math.round(box.reduce((s, v) => s + v.rgb[c] * v.weight, 0) / weight)) as RGB;
   });
 }
+/** Shared palette extraction for whole resources, rather than each animation frame. */
+export function extractSpritePalette(frames:Frame[],count:number):RGB[]{
+ if(!Number.isInteger(count)||count<4||count>64)throw Error('Usa entre 4 y 64 colores.');
+ return makePalette(frames,count);
+}
 function applyPalette(frame: Frame, palette: RGB[], outline: boolean) {
   const original = frame.data.slice(), cache = new Map<number, RGB>();
   for (let y = 0; y < frame.height; y++) for (let x = 0; x < frame.width; x++) {

@@ -7,3 +7,4 @@ export interface Identity {id:string;username:string;role:Role;tenantId:string|n
 export interface Principal {actor:Identity;user:Identity;tenant:{id:string;name:string;enabled:boolean;limits:Limits;permissions:Permissions}|null;impersonating:boolean;sessionId:string}
 export const isSuper=(p:Principal)=>p.actor.role==='superadmin'&&!p.impersonating;
 export interface PublicAdventure {slug:string;name:string;description:string;tenantName:string;publishedAt:string}
+export interface PublicationSummary {slug:string;adventure_id:string;active:boolean;published_at:string;hasUnpublishedChanges:boolean}

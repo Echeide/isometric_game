@@ -1,7 +1,7 @@
 <script lang="ts">
  import {onMount} from 'svelte';
  import {chatUrl,parseChat,resumeNode,type ChatConfig} from '$lib/chat/routingtales';
- let {storage,resource,progressKey,onclose,onprogress}:{storage?:Pick<Storage,'getItem'|'setItem'>;resource:string;progressKey:string;onclose:()=>void;onprogress?:(node:string)=>void}=$props();
+ let {storage,resource,config:embedded,progressKey,onclose,onprogress}:{storage?:Pick<Storage,'getItem'|'setItem'>;resource:string;config?:ChatConfig;progressKey:string;onclose:()=>void;onprogress?:(node:string)=>void}=$props();
  let frame=$state<HTMLIFrameElement>();
  let error=$state(''),loading=$state(true),completed=$state(false);
  onMount(()=>{
@@ -23,9 +23,9 @@
   }
   window.addEventListener('message',receive);
   void (async()=>{try{
-   const url=chatUrl(resource),response=await fetch(url,{signal:abort.signal});
-   if(!response.ok)throw new Error('No se pudo cargar el archivo de conversación.');
-   config=parseChat(await response.json());
+   const url=embedded?location.href:chatUrl(resource);
+   if(embedded)config=parseChat(JSON.parse(JSON.stringify(embedded)));
+   else {const response=await fetch(url,{signal:abort.signal});if(!response.ok)throw new Error('No se pudo cargar el archivo de conversación.');config=parseChat(await response.json());}
    // Substitute in text only; never alter ids, targets or URLs.
    config={...config,avatar:config.avatar?new URL(config.avatar,new URL(url,location.href)).href:new URL('/modules/routingtales-chat/avatar.svg',location.href).href,chatNodes:config.chatNodes.map(node=>({...node,messages:node.messages?.map(m=>Array.isArray(m)?m.map(t=>t.replaceAll('{playerName}','Explorador')):m.replaceAll('{playerName}','Explorador')) as typeof node.messages}))};
    configure();

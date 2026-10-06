@@ -45,8 +45,8 @@
  function up(event:PointerEvent){if(drag?.id===event.pointerId){drag=null;if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);}}
 </script>
 <div class="stage">
- <canvas width="680" height="430" bind:this={canvas} aria-label={kind==='tile'?'Vista previa del suelo repetido':'Vista previa del recurso sobre la retícula con un personaje de referencia'} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>Vista previa del recurso.</canvas>
- <div class="legend"><span>{kind==='tile'?'Mosaico · 4 × 4 casillas':'Referencia a la izquierda · Recurso a la derecha'}</span><span>{kind==='tile'?'Comprueba las uniones':'Arrastra el dibujo para ajustar su apoyo'}</span></div>
+ <canvas width="680" height="430" bind:this={canvas} style:cursor={onshift&&kind!=='tile'?'grab':'default'} aria-label={kind==='tile'?'Vista previa del suelo repetido':'Vista previa del recurso sobre la retícula con un personaje de referencia'} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>Vista previa del recurso.</canvas>
+ <div class="legend"><span>{kind==='tile'?'Mosaico · 4 × 4 casillas':'Referencia a la izquierda · Recurso a la derecha'}</span><span>{kind==='tile'?'Comprueba las uniones':onshift?'Arrastra el dibujo para ajustar su apoyo':'Mismo tamaño y apoyo'}</span></div>
 </div>
 <style>
  .stage{background:radial-gradient(ellipse at 50% 50%,#f3f5e8,#e7eddd);border:1px solid #d8e1d0;border-radius:16px;overflow:hidden}.stage canvas{display:block;width:100%;height:auto;touch-action:none;cursor:grab}.stage canvas:active{cursor:grabbing}.legend{display:flex;justify-content:space-between;gap:12px;padding:14px 18px;border-top:1px solid #d7dfcf;font-size:11px;color:#68795c;background:#f2f5e9}@media(max-width:700px){.legend{flex-direction:column;gap:4px}}

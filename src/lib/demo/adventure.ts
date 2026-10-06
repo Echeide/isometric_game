@@ -3,12 +3,14 @@ import {entranceFacing} from '../../../packages/world/src/exits';
 import { parseScene, isCustomVisual, validateCustomCatalog, validateCatalogOverrides, type VisualCatalogOverrides, type VisualAsset, type Cell, type Facing, type WorldScene } from '@isometrico/world';
 import { findPath, interactionCells, walkable } from '../../../packages/world/src/navigation';
 import { insertEntity } from './editor';
+import {defaultAdventurePalette,validateAdventurePalette,type AdventurePalette} from './adventure-palette';
+import {validateChats,embeddedChat,type AdventureChat,CHAT_PREFIX} from '../chat/editor';
 
 export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; destinationEntityId?:string; requirement?:{itemId:string;quantity:number;consume:boolean} }
-export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides }
+export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides; palette?:AdventurePalette; chats?:AdventureChat[] }
 export const ADVENTURE_KEY='isometrico.adventure.v1';
 export function createAdventure(maps:WorldScene[]):Adventure {
- return parseAdventure({kind:'isometric-adventure',version:1,id:'my-adventure',name:'Mi aventura',startMap:maps[0]?.id,maps,exits:[]});
+ return parseAdventure({kind:'isometric-adventure',version:1,id:'my-adventure',name:'Mi aventura',startMap:maps[0]?.id,maps,exits:[],palette:defaultAdventurePalette()});
 }
 export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}={}):Adventure {
  const a=value as Adventure;
@@ -18,6 +20,9 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
  const maps=a.maps.map(m=>parseScene(m,options)), byId=new Map(maps.map(m=>[m.id,m]));
  const catalog=validateCustomCatalog(a.catalog);
  validateCatalogOverrides(a.catalogOverrides);
+ if(a.palette!==undefined)validateAdventurePalette(a.palette);
+ validateChats(a.chats);
+ for(const map of maps)for(const entity of map.entities)if(entity.interaction?.action==='chat.open'&&entity.interaction.resourceId.startsWith(CHAT_PREFIX))embeddedChat(a.chats,entity.interaction.resourceId);
  for(const map of maps)for(const e of map.entities)if(isCustomVisual(e.visualId)&&!catalog.some(r=>r.id===e.visualId&&r.kind===e.kind))throw new Error(`Falta ${e.visualId} en el catálogo de la aventura.`);
  if(byId.size!==maps.length)throw new Error('Hay mapas con identificadores repetidos.');
  if(!byId.has(a.startMap))throw new Error('El mapa inicial no existe.');

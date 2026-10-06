@@ -3,7 +3,13 @@
   let {data}=$props();let migrationMessage=$state('');
   const draftKey=$derived('account:'+data.principal!.user.id+':'+data.principal!.tenant!.id);
   async function recoverLocal(){try{if(await readDraft(draftKey))throw new Error('Ya existe un borrador en este espacio. Descarga su ZIP antes de recuperar otro.');const draft=await readDraft();if(!draft)throw new Error('No hay un borrador anterior en este navegador.');await writeDraft(draft,draftKey);location.reload();}catch(e){migrationMessage=(e as Error).message;}}
-  import { onDestroy } from 'svelte';
+  import {localAdventures} from '$lib/storage/local-adventures';
+  import {paletteRGB} from '$lib/demo/adventure-palette';
+  let palettes=$state<{id:string;name:string;colors:[number,number,number][] }[]>([]),paletteError=$state('');
+  let palettesLoading=$state(false),paletteViewAlive=true;
+  async function refreshPalettes(){palettesLoading=true;paletteError='';try{const library=await localAdventures.load();if(paletteViewAlive)palettes=library.adventures.filter(a=>a.palette).map(a=>({id:a.id,name:a.name+' · '+a.palette!.name,colors:paletteRGB(a.palette!)}));}catch{if(paletteViewAlive)paletteError='No se pudieron cargar las paletas de aventura. Pulsa «Actualizar paletas» para volver a intentarlo.';}finally{if(paletteViewAlive)palettesLoading=false;}}
+  onMount(()=>{void refreshPalettes();return()=>{paletteViewAlive=false;};});
+  import { onDestroy,onMount } from 'svelte';
   import ImageEditor from '$lib/components/ImageEditor.svelte';
   import type { ImageEditSession } from '$lib/workshop/image-edit';
   import { CharacterGenerator, PROFILES, readSheet, httpImageProvider, httpVideoProvider, type Sources, type PixelEditorProvider } from '@isometrico/character-generator';
@@ -31,6 +37,6 @@
   }
 </script>
 <svelte:head><title>Generador de personajes · Isométrico</title><meta name="description" content="Importa imágenes y vídeos para crear hojas de personaje con transparencia, ciclos y metadatos."/></svelte:head>
-<main><nav><a href="/library">← Biblioteca del espacio</a><a href="/admin">Mis aventuras →</a></nav><details><summary>Recuperar personaje de la versión anterior</summary><p>Copia el último borrador local a tu espacio, conservando el original.</p><button onclick={recoverLocal}>Copiar borrador anterior</button>{#if migrationMessage}<p role="status">{migrationMessage}</p>{/if}</details>{#key draftKey}<CharacterGenerator {draftKey} onexample={example} {imageProvider} {videoProvider} {pixelEditor}/>{/key}</main>
+<main>{#if paletteError}<p role="status">{paletteError}</p>{/if}<nav><a href="/library">← Biblioteca del espacio</a><a href="/sprites" target="_blank" rel="noreferrer">Paletas de aventura ↗</a><a href="/admin">Mis aventuras →</a></nav><details><summary>Recuperar personaje de la versión anterior</summary><p>Copia el último borrador local a tu espacio, conservando el original.</p><button onclick={recoverLocal}>Copiar borrador anterior</button>{#if migrationMessage}<p role="status">{migrationMessage}</p>{/if}</details>{#key draftKey}<CharacterGenerator {palettes} {palettesLoading} onrefreshPalettes={refreshPalettes} {draftKey} onexample={example} {imageProvider} {videoProvider} {pixelEditor}/>{/key}</main>
 {#if editSession}<ImageEditor session={editSession} saveHint="Pulsa «Guardar copia» en el generador para conservar los retoques." onchange={() => {}} onapply={async blob => { finishEdit?.(blob); finishEdit = undefined; }} onclose={closeEditor}/>{/if}
 <style>main{max-width:1280px;margin:auto;padding:28px 24px 60px}nav{display:flex;justify-content:space-between;gap:16px;margin-bottom:34px;font:13px system-ui,sans-serif}a{color:#526e37}@media(max-width:600px){main{padding:20px 14px 40px}}</style>
