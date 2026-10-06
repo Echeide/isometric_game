@@ -62,13 +62,18 @@ export class PlatformStore {
    if(!old&&Number((await db.query('SELECT count(*) AS n FROM platform_adventures WHERE tenant_id=$1',[t])).rows[0].n)>=space.limits.adventures)throw new PlatformError(409,'Límite de aventuras alcanzado.');
    const graphics=pack??old?.graphics;if(!graphics)throw new PlatformError(400,'Faltan los gráficos.');
    const files:Record<string,Uint8Array>={},paths=new Map<string,string>(),assets:Array<{id:string;hash:string;bytes:number}>=[];let extra=0,total=0;
-   for(const [i,url] of imageUrls(graphics).entries()){
-    let bytes:Uint8Array;
-    if(url.startsWith('asset:')){const id=url.slice(6);if(!idValid(id))throw new PlatformError(400,'Identificador de imagen no válido.');const prior=(await db.query('SELECT hash FROM platform_assets WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];bytes=blobs[id]??(prior?await this.bytes(prior.hash):new Uint8Array());pngSize(bytes);const hash=hashToken(Buffer.from(bytes).toString('base64'));if(prior&&hash!==prior.hash)throw new PlatformError(409,'Las imágenes guardadas son inmutables. Usa un nuevo identificador.');if(!prior){assets.push({id,hash,bytes:bytes.length});extra+=bytes.length;}}
-    else{if(!/^\/pixelart\/[a-zA-Z0-9_./-]+\.png$/.test(url)||url.includes('..'))throw new PlatformError(400,'Origen de imagen no admitido.');bytes=new Uint8Array(await readFile(join(this.builtins,url.slice(10))));}
-    if(bytes.length>20_000_000||(total+=bytes.length)>100_000_000)throw new PlatformError(413,'Los recursos superan 100 MB.');const path=`assets/${i}.png`;paths.set(url,path);files[path]=bytes;
+   // Stored graphics and assets were validated when uploaded and are immutable.
+   // Editing maps/content does not require reading every PNG again.
+   if(pack!==undefined||Object.keys(blobs).length){
+    for(const [i,url] of imageUrls(graphics).entries()){
+     let bytes:Uint8Array;
+     if(url.startsWith('asset:')){const id=url.slice(6);if(!idValid(id))throw new PlatformError(400,'Identificador de imagen no válido.');const prior=(await db.query('SELECT hash FROM platform_assets WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];bytes=blobs[id]??(prior?await this.bytes(prior.hash):new Uint8Array());pngSize(bytes);const hash=hashToken(Buffer.from(bytes).toString('base64'));if(prior&&hash!==prior.hash)throw new PlatformError(409,'Las imágenes guardadas son inmutables. Usa un nuevo identificador.');if(!prior){assets.push({id,hash,bytes:bytes.length});extra+=bytes.length;}}
+     else{if(!/^\/pixelart\/[a-zA-Z0-9_./-]+\.png$/.test(url)||url.includes('..'))throw new PlatformError(400,'Origen de imagen no admitido.');bytes=new Uint8Array(await readFile(join(this.builtins,url.slice(10))));}
+     if(bytes.length>20_000_000||(total+=bytes.length)>100_000_000)throw new PlatformError(413,'Los recursos superan 100 MB.');const path=`assets/${i}.png`;paths.set(url,path);files[path]=bytes;
+    }
+    validatePack(mapImages(graphics,u=>paths.get(u)!),files);
    }
-   validatePack(mapImages(graphics,u=>paths.get(u)!),files);validateCatalogGraphics(adventure,graphics);await this.storage(db,t,extra,space.limits.storageMB);
+   validateCatalogGraphics(adventure,graphics);await this.storage(db,t,extra,space.limits.storageMB);
    for(const a of assets){await this.put(blobs[a.id]);await db.query('INSERT INTO platform_assets(tenant_id,id,hash,bytes) VALUES($1,$2,$3,$4)',[t,a.id,a.hash,a.bytes]);}
    const r=await db.query('INSERT INTO platform_adventures(tenant_id,id,definition,graphics) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,id) DO UPDATE SET definition=$3,graphics=$4,revision=platform_adventures.revision+1,updated_at=now() RETURNING revision',[t,adventure.id,adventure,graphics]);await audit(db,p,'adventure.save',adventure.id);return{revision:r.rows[0].revision};
   });

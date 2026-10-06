@@ -1,4 +1,4 @@
-import {describe,it,expect,beforeAll,afterAll} from 'vitest';
+import {describe,it,expect,beforeAll,afterAll,vi} from 'vitest';
 import {readFile,mkdtemp,rm} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -24,6 +24,24 @@ describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
  it('bootstraps once and stores only password and token hashes',async()=>{expect(await auth.bootstrap('other-root',password)).toBe(false);const rows=await database.pool.query('SELECT password_hash FROM platform_users');expect(rows.rows.every(r=>r.password_hash.startsWith('scrypt-v1:')&&!r.password_hash.includes(password))).toBe(true);expect((await database.pool.query('SELECT token_hash FROM platform_sessions')).rows.some(r=>r.token_hash===token)).toBe(false);});
  it('isolates identical adventure IDs across tenants, including raw RLS reads',async()=>{await store.save(a,adventure(),graphics,{},0);await store.save(b,adventure('Privada B'),graphics,{},0);expect((await store.list(a)).adventures.map(x=>x.name)).toEqual(['Privada A']);expect((await store.list(b)).adventures.map(x=>x.name)).toEqual(['Privada B']);const rows=await database.transaction(ta,false,async db=>(await db.query('SELECT tenant_id FROM platform_adventures')).rows);expect(rows.map(r=>r.tenant_id)).toEqual([ta]);expect(await database.transaction(null,false,async db=>(await db.query('SELECT * FROM platform_adventures')).rowCount)).toBe(0);});
  it('rejects lost updates instead of overwriting another editor',async()=>{await store.save(a,adventure('A editada'),undefined,{},1);await expect(store.save(a,adventure('A obsoleta'),undefined,{},1)).rejects.toMatchObject({status:409});expect((await store.adventure(a,'example')).definition.name).toBe('A editada');});
+ it('reuses validated images for content-only saves but validates new uploads and object references',async()=>{
+  const draft={...adventure(),id:'content-save'},pack=structuredClone(graphics),bytes=new Uint8Array(await readFile('static'+pack.objects['pixel.key'].image));
+  pack.objects['pixel.key'].image='asset:content-key';
+  await store.save(a,draft,pack,{'content-key':bytes},0);
+  const reads=vi.spyOn(PlatformStore.prototype as any,'bytes');
+  try{
+   // No builtin files are available to this instance: metadata saves must not read them.
+   const contentStore=new PlatformStore(database,folder,join(folder,'no-builtins'));
+   await contentStore.save(a,{...draft,name:'Contenido actualizado'},undefined,{},1);
+   expect(reads).not.toHaveBeenCalled();
+   expect((await store.adventure(a,draft.id)).graphics).toEqual(pack);
+   const invalid={...structuredClone(draft),catalog:[{id:'custom.missing',kind:'object' as const,label:'Objeto sin imagen',category:'office' as const,size:{x:1,y:1}}]};
+   await expect(contentStore.save(a,invalid,undefined,{},2)).rejects.toThrow('Falta el objeto');
+   await expect(store.save(a,draft,pack,{'content-key':new Uint8Array([1,2,3])},2)).rejects.toThrow();
+   expect((await store.adventure(a,draft.id)).revision).toBe(2);
+   await store.save(a,draft,pack,{},2);expect(reads).toHaveBeenCalled();
+  }finally{reads.mockRestore();}
+ });
  it('keeps drafts private and publications immutable until republished',async()=>{expect(await store.publicList()).toHaveLength(0);const published=await store.publish(a,'example',true);await store.save(a,adventure('Borrador secreto'),undefined,{},2);expect((await store.published(published.slug!)).adventure.name).toBe('A editada');expect((await store.publicList()).map(r=>r.name)).toEqual(['A editada']);await store.publish(a,'example',false);expect(await store.publicList()).toHaveLength(0);await expect(store.published(published.slug!)).rejects.toMatchObject({status:404});});
  it('reports saved map and player changes, clears the warning on republish and ignores a no-op save',async()=>{
   const draft={...adventure('Estado de publicación'),id:'publication-state'},pack=structuredClone(graphics);
