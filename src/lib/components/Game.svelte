@@ -1,16 +1,28 @@
 <script lang="ts">
  let {published=null}:{published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string}|null}=$props();
+ import {statusLabels,emptyStory,type StoryProgress,type EntityRef,type ModuleStatus,type StoryEvent} from '$lib/story/types';
+ import {readStory,saveStory} from '$lib/story/progress';
+ import {availability,resolveStoryScene,react,setObjectState,setModuleStatus,moduleStatus} from '$lib/story/engine';
+ let story=$state<StoryProgress>(emptyStory()),conditionMessage=$state('');
+ function refreshStoryWorld(){arrivalCamera=controller?.getCamera()??arrivalCamera;arrivalFacing=controller?.getFacing()??arrivalFacing;const cell=controller?.getPlayerCell?.();if(cell)currentScene={...currentScene,spawn:cell};worldKey++;}
+ function commitStory(p:StoryProgress,i:typeof inventory,messages:string[]=[]){if(!adventure)return;if(!messages.length&&JSON.stringify(p)===JSON.stringify(story)&&JSON.stringify(i)===JSON.stringify(inventory))return;const before=JSON.stringify(resolveStoryScene(adventure,currentScene,story,inventory).entities),after=JSON.stringify(resolveStoryScene(adventure,currentScene,p,i).entities);saveStory(progressStorage,adventure.id,p,i);story=p;inventory=i;if(before!==after)refreshStoryWorld();messages.forEach(record);}
+ function storyEvent(ref:EntityRef,event:StoryEvent,moduleId?:string,p=$state.snapshot(story)){if(!adventure)return;const result=react(adventure,p,$state.snapshot(inventory),ref,event,moduleId);commitStory(result.progress,result.inventory,result.messages);}
+ function testState(ref:EntityRef,stateId:string){if(!adventure)return;try{commitStory(setObjectState(adventure,$state.snapshot(story),ref,stateId),$state.snapshot(inventory));record('Estado de objeto simulado: '+(adventure.story?.entities.find(e=>e.mapId===ref.mapId&&e.entityId===ref.entityId)?.states.find(s=>s.id===stateId)?.name??stateId));}catch(e){testError=(e as Error).message;}}
+ function testModule(ref:EntityRef,moduleId:string,value:ModuleStatus,reactions=false){if(!adventure)return;try{const p=setModuleStatus(adventure,$state.snapshot(story),ref,moduleId,value);if(reactions&&value!=='not-started')storyEvent(ref,('module.'+value) as StoryEvent,moduleId,p);else commitStory(p,$state.snapshot(inventory));record('Progreso de módulo simulado: '+statusLabels[value]);}catch(e){testError=(e as Error).message;}}
+ function testItem(id:string,quantity:number){if(!adventure||!adventure.items?.some(i=>i.id===id)||!Number.isSafeInteger(quantity)||quantity<0)return;try{commitStory($state.snapshot(story),{...$state.snapshot(inventory),counts:{...inventory.counts,[id]:quantity}});record('Inventario simulado: '+id+' × '+quantity);}catch(e){testError=(e as Error).message;}}
+ function chatState(value:ModuleStatus){if(!adventure)return;const ref={mapId:currentScene.id,entityId:resourceEntityId};if(moduleStatus(story,ref,'chat')===value)return;try{storyEvent(ref,('module.'+value) as StoryEvent,'chat',setModuleStatus(adventure,$state.snapshot(story),ref,'chat',value));}catch(e){const message=(e as Error).message;record('No se aplicó el resultado del módulo: '+message);testError=message;}}
+ function checkInteraction(event:WorldInteraction){if(!adventure)return true;const v=availability(adventure,story,inventory,{mapId:event.sceneId,entityId:event.entityId});if(v.visible&&v.interactive)return true;conditionMessage=v.message;information=null;panel='condition';record('Interacción bloqueada: '+v.message);return false;}
  import AdventureTests from '$lib/components/AdventureTests.svelte';
  import {readProgress,writeProgress,resetProgress,appendActivity,milestones,type Activity} from '$lib/demo/test-progress';
  const progressPrefix=()=>published?'public:'+published.key:'preview:'+storageScope();
  import {scopedStorage} from '$lib/storage/scoped-storage';
  const progressStorage=scopedStorage(()=>localStorage,progressPrefix);
  let activityLog=$state<Activity[]>([]),testError=$state('');
- function restoreProgress(a:Adventure){const p=readProgress(progressStorage,a);tasks=p.tasks;completed=p.completed;activityLog=p.log;testError='';}
+ function restoreProgress(a:Adventure){const p=readProgress(progressStorage,a);tasks=p.tasks;completed=p.completed;activityLog=p.log;story=readStory(progressStorage,a);testError='';}
  function record(message:string){if(!adventure)return;activityLog=appendActivity(activityLog,message);try{writeProgress(progressStorage,adventure.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});testError='';}catch{testError='No se pudo guardar el progreso en este navegador.';}}
  function toggleTestGoal(key:string){if(!adventure)return;const goal=milestones(adventure).find(g=>g.key===key);if(!goal)return;const wasDone=completed.includes(key);completed=wasDone?completed.filter(k=>k!==key):[...completed,key];record(`${wasDone?'Reabierto':'Completado'} desde pruebas: ${goal.label} (${goal.map}).`);}
  function toggleTestTask(id:string){const task=tasks.find(t=>t.id===id);if(!task)return;const wasDone=task.status==='done';tasks=tasks.map(t=>t.id===id?{...t,status:wasDone?'todo':'done'}:t);record(`${wasDone?'Reabierta':'Completada'} desde pruebas: ${task.title}.`);}
- function restartAdventure(){if(!adventure)return;try{const initial=parseScene(adventure.maps.find(m=>m.id===adventure!.startMap)!);const p=resetProgress(progressStorage,adventure.id);tasks=p.tasks;completed=p.completed;activityLog=p.log;inventory=emptyInventory();obtained=null;blockedExit=null;testError='';panMode=false;controller?.setConversation(null);traveler=createTraveler(adventure);changeScene(initial,'se');arrivalCamera=undefined;status='Aventura reiniciada.';}catch(e){testError=`No se pudo reiniciar: ${(e as Error).message}`;}}
+ function restartAdventure(){if(!adventure)return;try{const initial=parseScene(adventure.maps.find(m=>m.id===adventure!.startMap)!);const p=resetProgress(progressStorage,adventure.id);tasks=p.tasks;completed=p.completed;activityLog=p.log;inventory=emptyInventory();story=emptyStory();obtained=null;blockedExit=null;testError='';panMode=false;controller?.setConversation(null);traveler=createTraveler(adventure);changeScene(initial,'se');arrivalCamera=undefined;status='Aventura reiniciada.';}catch(e){testError=`No se pudo reiniciar: ${(e as Error).message}`;}}
 
  import RoutingTalesChat from '$lib/components/RoutingTalesChat.svelte';
  import {chatProgressKey} from '$lib/chat/routingtales';
@@ -19,7 +31,7 @@
  let information=$state<WorldInteraction|null>(null);
  let obtained=$state<{name:string;quantity:number}|null>(null);
 
- import {collectedIds,collectItem,useExit,emptyInventory,readInventory,saveInventory} from '$lib/demo/inventory';
+ import {collectedIds,collectItem,useExit,emptyInventory,readInventory} from '$lib/demo/inventory';
  let inventory=$state(emptyInventory());
 
  import {environments} from '@isometrico/world';
@@ -72,17 +84,17 @@
   restoreProgress(adventure);inventory=readInventory(progressStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
  }catch(e){if(!disposed)loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}}
  onMount(()=>{void initialize();});
- function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;primaryCameraAction=c.getCamera().action;transitionReady=true;}
+ function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;}
  function changeScene(next:WorldScene,facing:Facing){
   arrivalCamera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;
   celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;
  }
  let tasks=$state<Task[]>(structuredClone(initialTasks));
- let panel=$state<'tests'|'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|null>(null);
+ let panel=$state<'tests'|'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|'condition'|null>(null);
  let blockedExit=$state<{name:string;item:string;quantity:number;image?:string}|null>(null);
  const exitIndicators=$derived.by(()=>{
   const result:Record<string,import('../../../packages/world/src/types').ExitIndicator>={};
-  for(const exit of adventure?.exits??[]){const r=exit.requirement;if(exit.fromMap!==currentScene.id||!r||inventory.unlocked.includes(exit.id))continue;
+  for(const exit of adventure?.exits??[]){const r=exit.requirement;if(exit.fromMap!==currentScene.id)continue;const v=availability(adventure!,story,inventory,{mapId:exit.fromMap,entityId:exit.entityId});if(!v.visible)continue;if(!v.interactive){result[exit.entityId]={state:'locked',label:v.message};continue;}if(!r||inventory.unlocked.includes(exit.id))continue;
    const item=adventure?.items?.find(i=>i.id===r.itemId)?.name??r.itemId,ready=(inventory.counts[r.itemId]??0)>=r.quantity;
    result[exit.entityId]={state:ready?'ready':'locked',label:ready?'Puedes abrir':'Necesitas '+r.quantity+' × '+item};
   }return result;
@@ -95,12 +107,12 @@
  let status=$state('Tu espacio, a tu ritmo.');
  const done=$derived(tasks.filter(t=>t.status==='done').length);
  const active=$derived(tasks.find(t=>t.status==='active'));
- const scene=$derived({...currentScene,entities:currentScene.entities.map(e=>({...e,completed:completed.includes(objectiveKey(currentScene.id,e.id))}))});
+ const scene=$derived(adventure?resolveStoryScene(adventure,{...currentScene,entities:currentScene.entities.map(e=>({...e,completed:completed.includes(objectiveKey(currentScene.id,e.id))}))},story,inventory):currentScene);
  const informationEntity=$derived(scene.entities.find(e=>e.id===information?.entityId));
  const sceneGoals=$derived(scene.entities.filter(e=>!e.pickup&&e.kind==='goal'&&e.interaction?.action!=='adventure.exit'));
  const completedGoals=$derived(sceneGoals.filter(e=>e.completed).length);
  const hasTasks=$derived(scene.entities.some(e=>e.interaction?.action==='tasks.open'||e.interaction?.action==='project.open'));
- const selectedEntity=$derived(scene.entities.find(e=>e.id===resourceEntityId));
+ const selectedEntity=$derived(scene.entities.find(e=>e.id===resourceEntityId)??currentScene.entities.find(e=>e.id===resourceEntityId));
  const selectedGoal=$derived(selectedEntity?{
   title:initialGoals.find(g=>g.id===resource)?.title??selectedEntity.label,
   description:initialGoals.find(g=>g.id===resource)?.description??selectedEntity.interaction?.label??'Completa este objetivo a tu ritmo.',
@@ -111,15 +123,17 @@
  let opener:HTMLElement|null=null;
  function openInteraction(event:WorldInteraction){
   if(transitionImage||panel)return;
+  if(!checkInteraction(event))return;
   if(event.action==='adventure.exit'){information=null;executeInteraction(event);return;}
   information=event;
  }
  function executeInteraction(event:WorldInteraction){
    information=null;
    if(transitionImage)return;
+   if(!checkInteraction(event))return;
    if(event.action==='inventory.collect'){
     if(!adventure)return;
-    try{const next=collectItem(adventure,$state.snapshot(inventory),event.sceneId,event.entityId);saveInventory(progressStorage,adventure.id,next);inventory=next;obtained={name:adventure.items?.find(i=>i.id===event.resourceId)?.name??'Objeto',quantity:scene.entities.find(e=>e.id===event.entityId)?.pickup?.quantity??1};panel='obtained';record(`Objeto recogido: ${obtained.name} × ${obtained.quantity}.`);status='Has recogido '+(adventure.items?.find(i=>i.id===event.resourceId)?.name??'un objeto')+'.';}catch(e){status=(e as Error).message;}return;
+    try{const next=collectItem(adventure,$state.snapshot(inventory),event.sceneId,event.entityId);const reaction=react(adventure,$state.snapshot(story),next,{mapId:event.sceneId,entityId:event.entityId},'interact');commitStory(reaction.progress,reaction.inventory,reaction.messages);obtained={name:adventure.items?.find(i=>i.id===event.resourceId)?.name??'Objeto',quantity:scene.entities.find(e=>e.id===event.entityId)?.pickup?.quantity??1};panel='obtained';record(`Objeto recogido: ${obtained.name} × ${obtained.quantity}.`);status='Has recogido '+(adventure.items?.find(i=>i.id===event.resourceId)?.name??'un objeto')+'.';}catch(e){status=(e as Error).message;}return;
    }
    if(event.action==='adventure.exit'){
     if(!adventure)return;
@@ -130,10 +144,11 @@
       if(pickup?.visualId)blockedExit.image=graphics.objects[pickup.visualId]?.image;
       opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel='locked';record(`Salida cerrada: ${blockedExit.name}. Falta ${blockedExit.item}.`);return;
     }
-    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);saveInventory(progressStorage,adventure.id,progress);inventory=progress;record(`Viaje: ${currentScene.name} → ${next.scene.name}.`);changeScene(next.scene,next.facing);}
+    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);const reaction=react(adventure,$state.snapshot(story),progress,{mapId:event.sceneId,entityId:event.entityId},'interact');commitStory(reaction.progress,reaction.inventory,reaction.messages);record(`Viaje: ${currentScene.name} → ${next.scene.name}.`);changeScene(next.scene,next.facing);}
     catch(e){status=(e as Error).message;}
     return;
    }
+   if(event.action!=='info.open'){try{storyEvent({mapId:event.sceneId,entityId:event.entityId},'interact');}catch(e){conditionMessage=(e as Error).message;panel='condition';return;}}
    opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
    resource=event.resourceId;resourceEntityId=event.entityId;
    if(event.action==='chat.open')controller?.setConversation(event.entityId);
@@ -188,10 +203,11 @@
  <!-- Native dialog keeps focus inside the floating interaction. -->
  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
  <!-- svelte-ignore a11y_click_events_have_key_events -->
- <dialog class="drawer unified-modal" class:chat-panel={panel==='chat'} class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='tests'?'Pruebas de aventura':panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
-  <div class="drawer-top"><span>{panel==='tests'?'PROGRESO Y PRUEBAS':panel==='obtained'?'INVENTARIO':panel==='locked'?'SALIDA CERRADA':panel==='inventory'?'INVENTARIO':panel==='chat'?'CONVERSACIÓN':panel==='goal'?'TU SIGUIENTE PASO':panel==='space'?'TU ESPACIO':panel==='help'?'CÓMO JUGAR':panel==='object'?'INTERACCIÓN':'CHECKPOINT / ATLAS'}</span><button onclick={closePanel} aria-label="Cerrar panel"><X size={20}/></button></div>
+ <dialog class="drawer unified-modal" class:chat-panel={panel==='chat'} class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='condition'?'Interacción bloqueada':panel==='tests'?'Pruebas de aventura':panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
+  <div class="drawer-top"><span>{panel==='condition'?'INTERACCIÓN BLOQUEADA':panel==='tests'?'PROGRESO Y PRUEBAS':panel==='obtained'?'INVENTARIO':panel==='locked'?'SALIDA CERRADA':panel==='inventory'?'INVENTARIO':panel==='chat'?'CONVERSACIÓN':panel==='goal'?'TU SIGUIENTE PASO':panel==='space'?'TU ESPACIO':panel==='help'?'CÓMO JUGAR':panel==='object'?'INTERACCIÓN':'CHECKPOINT / ATLAS'}</span><button onclick={closePanel} aria-label="Cerrar panel"><X size={20}/></button></div>
   {#if panel==='tests'&&adventure}
-   {#if testError}<p role="alert">{testError}</p>{/if}<AdventureTests {adventure} {tasks} {completed} log={activityLog} ontask={toggleTestTask} ongoal={toggleTestGoal} onreset={restartAdventure}/>
+   {#if testError}<p role="alert">{testError}</p>{/if}<AdventureTests {adventure} {tasks} {completed} log={activityLog} {story} {inventory} onstate={testState} onmodule={testModule} onitem={testItem} ontask={toggleTestTask} ongoal={toggleTestGoal} onreset={restartAdventure}/>
+  {:else if panel==='condition'}<h2>Acción bloqueada</h2><p class="drawer-description" role="status">{conditionMessage}</p><button class="primary-button" onclick={closePanel}>Seguir explorando</button>
   {:else if panel==='obtained'&&obtained}<div class="drawer-icon"><Backpack size={28}/></div><h2>Objeto obtenido</h2><p class="drawer-description">{obtained.name} × {obtained.quantity}</p><button class="primary-button" onclick={closePanel}>Continuar</button>
   {:else if panel==='locked'&&blockedExit}<div class="drawer-icon"><LockKeyhole size={28}/></div><h2>{blockedExit.name}</h2><p class="drawer-description">Necesitas este artículo para abrir la salida:</p><section class="progress-card">{#if blockedExit.image}<img src={blockedExit.image} alt="" style="width:64px;height:64px;object-fit:contain;image-rendering:pixelated"/>{:else}<Package size={24}/>{/if}<h3>{blockedExit.item} × {blockedExit.quantity}</h3></section><button class="primary-button" onclick={closePanel}>Seguir explorando</button>
   {:else if panel==='inventory'}
@@ -210,9 +226,9 @@
    <div class="project-summary"><span>{done} de {tasks.length} completadas</span><strong>{Math.round(done/tasks.length*100)}%</strong></div><div class="progress-track"><span style={`width:${done/tasks.length*100}%`}></span></div>
    <div class="task-list">{#each tasks as task}<article class="task" class:task-done={task.status==='done'}><div class="task-meta"><span>{task.tag}</span><span>{task.status==='done'?'Completada':task.status==='active'?'En curso':'Pendiente'}</span></div><h3>{#if task.status==='done'}<CheckCheck size={18}/>{/if}{task.title}</h3><p>{task.description}</p>{#if task.status==='todo'}<button class="task-action" onclick={()=>startTask(task.id)}><Play size={14}/> Trabajar en esta tarea</button>{:else if task.status==='active'}<div class="task-buttons"><button class="task-action" onclick={()=>finishTask(task.id)}><Check size={15}/> Completar</button><button class="subtle-button" onclick={pauseTask}>Pausar</button></div>{/if}</article>{/each}</div>
   {:else if panel==='chat'}
-   <div class="chat-heading"><span class="person-avatar" class:lucia={resource==='lucia'} class:marcos={resource==='marcos'}>{chatName.slice(0,1)}</span><div><h2>{chatName}</h2><p>Conversación</p></div></div>
+   {#if testError}<p role="alert">{testError}</p>{/if}<div class="chat-heading"><span class="person-avatar" class:lucia={resource==='lucia'} class:marcos={resource==='marcos'}>{chatName.slice(0,1)}</span><div><h2>{chatName}</h2><p>Conversación</p></div></div>
    {#key [adventure?.id,scene.id,resourceEntityId,resource].join(':')}
-    <RoutingTalesChat config={embeddedChat(adventure?.chats,resource)} storage={progressStorage} onprogress={node=>record(`Conversación con ${chatName}: ${node==='success'?'completada':'paso '+node}.`)} {resource} progressKey={chatProgressKey(adventure?.id??'',scene.id,resourceEntityId,resource)} onclose={()=>void closePanel()}/>
+    <RoutingTalesChat config={embeddedChat(adventure?.chats,resource)} storage={progressStorage} onstate={chatState} onprogress={node=>record(`Conversación con ${chatName}: ${node==='success'?'completada':'paso '+node}.`)} {resource} progressKey={chatProgressKey(adventure?.id??'',scene.id,resourceEntityId,resource)} onclose={()=>void closePanel()}/>
    {/key}
   {:else if panel==='goal'&&selectedGoal}
    <div class="drawer-icon"><Flag size={27}/></div><h2>{selectedGoal.title}</h2><p class="drawer-description">{selectedGoal.description}</p><div class="goal-callout"><Map size={28}/><p>Cada objetivo es un lugar al que volver. Explora a tu ritmo y marca este paso cuando lo hayas conseguido.</p></div><button class="primary-button" onclick={finishGoal} disabled={selectedGoal.done}>{#if selectedGoal.done}<Check size={18}/> Objetivo completado{:else}<Flag size={18}/> Marcar como completado{/if}</button>

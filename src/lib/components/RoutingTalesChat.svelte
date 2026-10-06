@@ -1,23 +1,25 @@
 <script lang="ts">
+ import type {ModuleStatus} from '$lib/story/types';
  import {onMount} from 'svelte';
  import {chatUrl,parseChat,resumeNode,type ChatConfig} from '$lib/chat/routingtales';
- let {storage,resource,config:embedded,progressKey,onclose,onprogress}:{storage?:Pick<Storage,'getItem'|'setItem'>;resource:string;config?:ChatConfig;progressKey:string;onclose:()=>void;onprogress?:(node:string)=>void}=$props();
+ let {storage,resource,config:embedded,progressKey,onclose,onprogress,onstate}:{storage?:Pick<Storage,'getItem'|'setItem'>;resource:string;config?:ChatConfig;progressKey:string;onclose:()=>void;onprogress?:(node:string)=>void;onstate?:(status:ModuleStatus)=>void}=$props();
  let frame=$state<HTMLIFrameElement>();
  let error=$state(''),loading=$state(true),completed=$state(false);
  onMount(()=>{
-  const abort=new AbortController();let config:ChatConfig|undefined,ready=false,sent=false;
+  const abort=new AbortController();let config:ChatConfig|undefined,ready=false,sent=false,startNode='';
+  const report=(node:string)=>onstate?.(node==='success'?'completed':node==='fail'?'failed':'started');
   const timeout=setTimeout(()=>{if(loading)error='La conversación está tardando demasiado. Puedes volver a intentarlo.';},15000);
   function configure(){if(!config||!ready||sent)return;sent=true;let saved:string|null=null;try{saved=(storage??localStorage).getItem(progressKey);}catch{/* Storage can be unavailable. */}
-   frame?.contentWindow?.postMessage({channel:'routingtales-chat-v1',type:'configure',config,startNode:resumeNode(config,saved)},'*');
+   startNode=resumeNode(config,saved)??config.chatNodes[0].id;frame?.contentWindow?.postMessage({channel:'routingtales-chat-v1',type:'configure',config,startNode},'*');
   }
   function receive(event:MessageEvent){
    if(event.source!==frame?.contentWindow||event.data?.channel!=='routingtales-chat-v1')return;
    if(event.data.type==='ready'){ready=true;configure();}
-   if(event.data.type==='configured'){loading=false;clearTimeout(timeout);}
+   if(event.data.type==='configured'){loading=false;clearTimeout(timeout);report(startNode);}
    if(event.data.type==='error'){loading=false;error='No se ha podido mostrar esta conversación.';clearTimeout(timeout);}
    if(event.data.type==='close')onclose();
    if(event.data.type==='node'&&config?.chatNodes.some(n=>n.id===event.data.id)){
-    completed=event.data.id==='success';
+    completed=event.data.id==='success';report(event.data.id);
     try{const previous=(storage??localStorage).getItem(progressKey);(storage??localStorage).setItem(progressKey,event.data.id);if(previous!==event.data.id)onprogress?.(event.data.id);}catch{/* Continue playing without persistence. */}
    }
   }

@@ -18,10 +18,14 @@
  import {resolveGraphics,localAdventures} from '$lib/storage/local-adventures';
  import {selectMainPlayer} from '$lib/storage/player-selection';
  import ChatEditor from '$lib/chat/ChatEditor.svelte';
+ import BehaviorEditor from '$lib/story/BehaviorEditor.svelte';
+ import {replaceBehavior} from '$lib/story/engine';
+ import {validateStory,storyUsesItem} from '$lib/story/validation';
+ import type {EntityBehavior} from '$lib/story/types';
  import EntityModules from '$lib/modules/EntityModules.svelte';
  import type {ContentModuleCard,ContentModuleType} from '$lib/modules/types';
  import {fly} from 'svelte/transition';
- let inspectorTab=$state<'properties'|'modules'>('properties');
+ let inspectorTab=$state<'properties'|'modules'|'conditions'>('properties');
  function leaveChat(){if(chatDirty&&!confirm('¿Descartar los cambios de esta conversación?'))return false;chatEditing=null;chatDirty=false;return true;}
  async function closeChatLayer(){chatEditing=null;chatDirty=false;await tick();if(!disposed)(document.querySelector<HTMLButtonElement>('.module-list [data-edit-chat]')??document.querySelector<HTMLButtonElement>('.module-add button'))?.focus({preventScroll:true});}
  function closeInspector(){if(!leaveChat())return;selected=null;mapProperties=false;}
@@ -48,7 +52,8 @@
  }
  function addContentModule(type:ContentModuleType){if(type==='chat')void openChatEditor(true);}
  function editContentModule(type:ContentModuleType){if(type==='chat')void openChatEditor();}
- function removeContentModule(type:ContentModuleType){if(type==='chat'&&entity?.interaction?.action==='chat.open'){update({interaction:undefined});notice='Módulo eliminado del elemento. Puedes deshacer o guardar la aventura.';}}
+ function removeContentModule(type:ContentModuleType){if(type==='chat'&&entity?.interaction?.action==='chat.open'){try{const next={...bundle(),maps:bundle().maps.map(m=>m.id!==draft.id?m:{...m,entities:m.entities.map(e=>e.id!==entity!.id?e:{...e,interaction:undefined})})};validateStory(next);update({interaction:undefined});notice='Módulo eliminado del elemento. Puedes deshacer o guardar la aventura.';}catch(e){error=(e as Error).message;}}}
+ function editBehavior(b:EntityBehavior){try{const next=replaceBehavior(bundle(),b);validateStory(next);snapshot();adventure=next;error='';notice='Condiciones actualizadas. Guarda la aventura para conservarlas.';}catch(e){error=(e as Error).message;}}
  import {onDestroy} from 'svelte';
  let graphics=$state.raw(defaultGraphics);
  let playerChanging=$state(false),graphicsReady=$state(false);
@@ -87,7 +92,7 @@
  let inventorySelection=$state('');
  function addInventoryArticle(){snapshot();const id=crypto.randomUUID();adventure={...adventure,items:[...(adventure.items??[]),{id,name:'Nuevo artículo',description:'',stackable:false}]};inventorySelection=id;}
  function editInventoryArticle(values:Partial<NonNullable<Adventure['items']>[number]>){snapshot();adventure={...adventure,items:adventure.items?.map(i=>i.id===inventorySelection?{...i,...values}:i)};}
- function inventoryInUse(id:string){return bundle().maps.some(m=>m.entities.some(e=>e.pickup?.itemId===id))||adventure.exits.some(e=>e.requirement?.itemId===id);}
+ function inventoryInUse(id:string){return bundle().maps.some(m=>m.entities.some(e=>e.pickup?.itemId===id))||adventure.exits.some(e=>e.requirement?.itemId===id)||storyUsesItem(bundle(),id);}
  function removeInventoryArticle(){if(inventoryInUse(inventorySelection))return;snapshot();adventure={...adventure,items:adventure.items?.filter(i=>i.id!==inventorySelection)};inventorySelection='';}
  let toolPanel=$state<ToolPanel|null>(null),mapProperties=$state(false),fileMenu=$state(false);
  let toolCollapsed=$state(false),inspectorCollapsed=$state(false);
@@ -217,7 +222,7 @@
   catch(e){error=(e instanceof Error?e.message:'Mapa no válido.')+' La vista conserva el último mapa válido.';}
  });
  function snapshot(){future=[];history=[...history.slice(-29),JSON.stringify({adventure:bundle(),mapId:draft.id})];}
- function update(values:Partial<WorldEntity>){snapshot();draft={...draft,entities:draft.entities.map(e=>e.id===selected?{...e,...values}:e)};error='';}
+ function update(values:Partial<WorldEntity>){const next={...draft,entities:draft.entities.map(e=>e.id===selected?{...e,...values}:e)};try{validateStory({...bundle(),maps:bundle().maps.map(m=>m.id===next.id?next:m)});snapshot();draft=next;error='';}catch(e){error=(e as Error).message;}}
  function position(axis:'x'|'y',value:number){if(entity)update({position:{...entity.position,[axis]:value}});}
  function apply(){clearTools();try{adventure=validateAdventure(bundle());preview=parseScene(draft);revision++;error='';notice='Aventura validada. Pulsa una salida para caminar hasta ella y viajar.';testing=true;}catch(e){error=e instanceof Error?e.message:'Mapa no válido.';}}
  function historyState(){return JSON.stringify({adventure:bundle(),mapId:draft.id});}
@@ -241,7 +246,7 @@
   try{const next=flipEntity(draft,entity.id);snapshot();draft=next;testing=false;error='';notice='Elemento volteado. Su huella y asiento se han ajustado; puedes deshacer.';}
   catch(e){error=`No se puede voltear aquí: ${(e as Error).message}`;}
  }
- function remove(){snapshot();adventure={...adventure,exits:adventure.exits.filter(e=>!(e.fromMap===draft.id&&e.entityId===selected)).map(e=>e.toMap===draft.id&&e.destinationEntityId===selected?{...e,destinationEntityId:undefined}:e)};draft={...draft,entities:draft.entities.filter(e=>e.id!==selected),...(draft.walls?{walls:draft.walls.map(w=>w.exitId===selected?{...w,exitId:undefined}:w)}:{})};selected=null;}
+ function remove(){const remaining={...bundle(),story:adventure.story?{...adventure.story,entities:adventure.story.entities.filter(e=>e.mapId!==draft.id||e.entityId!==selected)}:undefined,maps:bundle().maps.map(m=>m.id!==draft.id?m:{...m,entities:m.entities.filter(e=>e.id!==selected)})};try{validateStory(remaining);}catch(e){error=(e as Error).message;return;}snapshot();adventure={...adventure,story:remaining.story};adventure={...adventure,exits:adventure.exits.filter(e=>!(e.fromMap===draft.id&&e.entityId===selected)).map(e=>e.toMap===draft.id&&e.destinationEntityId===selected?{...e,destinationEntityId:undefined}:e)};draft={...draft,entities:draft.entities.filter(e=>e.id!==selected),...(draft.walls?{walls:draft.walls.map(w=>w.exitId===selected?{...w,exitId:undefined}:w)}:{})};selected=null;}
  function changeWorld(value:string){if(!leaveChat())return;pickingExitId=null;try{const a=parseAdventure(bundle());adopt(a,value);syncUrl();testing=false;error='';}catch(e){error=(e as Error).message;}}
  function newMap(duplicate=false){try{const a=parseAdventure(bundle());snapshot();const id=crypto.randomUUID();
   const map:WorldScene=duplicate?{...parseScene(draft),id,name:`${draft.name} (copia)`,...(draft.walls?{walls:draft.walls.map(w=>({...w,exitId:undefined}))}:{}),entities:(JSON.parse(JSON.stringify(draft.entities)) as WorldEntity[]).filter(e=>e.interaction?.action!=='adventure.exit')}:{schemaVersion:1,id,name:`Mapa ${a.maps.length+1}`,theme:'outdoors',width:12,height:12,spawn:{x:1,y:1},entities:[]};
@@ -325,7 +330,7 @@
    {#each adventure.exits.filter(e=>e.fromMap===draft.id) as exit}<button class="connection-row" onclick={()=>selectObject(exit.entityId)}><Link size={15}/><span>{adventure.maps.find(m=>m.id===exit.toMap)?.name}</span><Settings2 size={15}/></button>{/each}</details>
    <button class="panel-primary" onclick={()=>showTool('maps')}><Layers size={16}/> Gestionar mapas</button>
 
-   {:else if entity}<div class="inspector-tabs" role="group" aria-label="Secciones del elemento"><button aria-pressed={inspectorTab==='properties'} onclick={()=>inspectorTab='properties'}>Propiedades</button><button aria-pressed={inspectorTab==='modules'} onclick={()=>inspectorTab='modules'}>Módulos</button></div><div hidden={inspectorTab!=='modules'}>{#if selectedExit||entity.pickup}<p class="environment-note">Este elemento utiliza su acción para viajar o recoger un artículo. Puedes añadir chats a los demás objetos y personajes.</p>{:else}
+   {:else if entity}<div class="inspector-tabs" role="group" aria-label="Secciones del elemento"><button aria-pressed={inspectorTab==='properties'} onclick={()=>inspectorTab='properties'}>Propiedades</button><button aria-pressed={inspectorTab==='modules'} onclick={()=>inspectorTab='modules'}>Módulos</button><button aria-pressed={inspectorTab==='conditions'} onclick={()=>inspectorTab='conditions'}>Condiciones</button></div><div hidden={inspectorTab!=='conditions'}><BehaviorEditor adventure={bundle()} ref={{mapId:draft.id,entityId:entity.id}} onchange={editBehavior}/></div><div hidden={inspectorTab!=='modules'}>{#if selectedExit||entity.pickup}<p class="environment-note">Este elemento utiliza su acción para viajar o recoger un artículo. Puedes añadir chats a los demás objetos y personajes.</p>{:else}
     <EntityModules modules={entityModules} loading={chatLoading} onadd={addContentModule} onedit={editContentModule} onremove={removeContentModule}/>{/if}</div><div hidden={inspectorTab!=='properties'}><label for="entityname">Nombre del objeto</label><input id="entityname" value={entity.label} onchange={e=>update({label:e.currentTarget.value})}/><label>Descripción<input value={entity.description??''} onchange={e=>update({description:e.currentTarget.value})}/></label>{#if selectedExit}<p class="environment-note">{draft.walls?.some(w=>w.exitId===entity.id)?'Puerta conectada a otro mapa.':'Loseta de salida con flecha hacia el borde más cercano.'}</p>{:else if visualCatalog.filter(a=>a.kind===entity.kind).length>1}<label>Gráfico<select value={entity.visualId??`pixel.${entity.kind}`} onchange={e=>{const asset=visualCatalog.find(a=>a.id===e.currentTarget.value)!;update({visualId:asset.id,...(asset.color!==undefined?{color:asset.color}:{})});}}>{#each visualCatalog.filter(a=>a.kind===entity.kind) as asset}<option value={asset.id}>{asset.label}</option>{/each}</select></label>{/if}<button class="flip-button" aria-pressed={entity.flipX??false} onclick={flip}>↔ Voltear horizontalmente</button><small>{entity.flipX?'Orientación reflejada':'Orientación original'}</small><small class="asset-id">{selectedExit?(draft.walls?.some(w=>w.exitId===entity.id)?'Puerta de salida':'Loseta de salida'):entity.visualId??`pixel.${entity.kind}`}</small>
     {#if !selectedExit}<label>Objeto de inventario<select value={entity.pickup?.itemId??''} onchange={e=>{const id=e.currentTarget.value;update(id?{pickup:{itemId:id,quantity:1},solid:false,interaction:{label:'Recoger',action:'inventory.collect',resourceId:id}}:{pickup:undefined,interaction:undefined});}}><option value="">No es recogible</option>{#each adventure.items??[] as item}<option value={item.id}>{item.name}</option>{/each}</select></label>
     <button onclick={()=>{inventorySelection=entity?.pickup?.itemId??'';showTool('inventory');}}>Gestionar artículos</button>

@@ -491,6 +491,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   const engine = {
     application:app,
     setPaused(value:boolean){paused=value;},
+    getPlayerCell(){return {x:Math.round(px),y:Math.round(py)};},
     getPlayerAnchor(){const bounds=avatar.getBounds(),rect=app.canvas.getBoundingClientRect();return {x:rect.left+(bounds.x+bounds.width/2)*rect.width/app.screen.width,y:rect.top+bounds.y*rect.height/app.screen.height};},
     getEntityAnchor(id:string){const view=entityViews.get(id);if(!view)return null;const bounds=view.getBounds(),rect=app.canvas.getBoundingClientRect();return {x:rect.left+(bounds.x+bounds.width/2)*rect.width/app.screen.width,y:rect.top+bounds.y*rect.height/app.screen.height};},
     renderFrame(){updateFrame(app.ticker);app.renderer.render(app.stage);},

@@ -64,3 +64,18 @@ added types cannot be added twice. Removal clears the element's interaction in
 the map draft and is undoable, without deleting shared chat content or static
 JSON. The supported-type registry is separate from the list component so future
 module editors can use the same interface once their runtime is implemented.
+
+## Estado del módulo y reglas de historia
+
+El objeto identifica la instancia de conversación con el módulo `chat`; el recurso
+JSON se puede sustituir sin romper sus condiciones. El iframe comunica `Iniciado`
+cuando ha cargado un nodo normal, `Completado` en `success` y `Fallado` en `fail`.
+Cerrar el panel o un error de carga no completan la actividad. El avance de nodos
+sigue conservando la compatibilidad con las conversaciones anteriores.
+
+Las reglas de `Adventure.story` consultan el progreso por mapa, objeto y módulo.
+El resultado del módulo puede cambiar estados de objetos o dar/consumir artículos.
+Reabrir un resultado guardado no vuelve a ejecutar el evento de finalización.
+Cada reacción tiene además su propia opción «una sola vez». Los futuros módulos
+deben exponer un identificador estable por objeto y comunicar el mismo contrato
+de progreso; el motor de condiciones no depende del tipo de actividad.

@@ -58,6 +58,7 @@ export interface WorldAdapter {
   interact: (event: WorldInteraction) => void | Promise<void>;
 }
 export interface WorldController {
+  getPlayerCell?: () => Cell;
   getPlayerAnchor: () => {x:number;y:number};
   getEntityAnchor: (id:string) => {x:number;y:number}|null;
   goTo: (entityId: string) => void;

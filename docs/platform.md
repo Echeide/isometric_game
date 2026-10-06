@@ -45,3 +45,44 @@ El límite de recursos guardados incluye imágenes históricas y ZIP de bibliote
 ## Verificación
 
 `npm run check`, `npm test` y `npm run build`. Las pruebas de PostgreSQL requieren PLATFORM_TEST_DATABASE_URL y una base **aislada cuyo nombre termine en _test**. `npm run test:platform` limpia únicamente las tablas de esa base de pruebas y verifica aislamiento, publicaciones, permisos, cuotas concurrentes y suplantación auditada. El rol de pruebas también debe carecer de SUPERUSER/BYPASSRLS.
+
+## Condiciones y progreso de la historia
+
+La pestaña **Condiciones** del inspector configura estados con nombre, un estado
+inicial, requisitos de visibilidad/interacción y reacciones. Los estados pueden
+cambiar el gráfico (compatible con el tipo del objeto), su descripción, el bloqueo
+del paso y la disponibilidad. Un objeto oculto desaparece también de navegación;
+un objeto visible con interacción bloqueada conserva sus colisiones y explica el
+requisito mediante un mensaje configurable.
+
+Las reglas combinan «todas»/«alguna», con negación por requisito, y consultan estados
+de objetos, progreso de módulos (`not-started`, `started`, `completed`, `failed`) o
+cantidades de inventario, incluyendo referencias a otros mapas. Las referencias a
+objetos, módulos, estados y artículos se validan al guardar/importar. No se puede
+eliminar un recurso aún utilizado por una regla. La identidad del módulo es local
+al objeto, independiente de su contenido; por ahora el adaptador disponible es
+Conversación (`chat`).
+
+Una interacción ejecutada, un inicio o un resultado de módulo dispara sus
+reacciones en el orden configurado. Estas pueden cambiar estados y dar/consumir
+artículos. Se aplica todo el evento conjuntamente; si una consecuencia falla, no
+se conserva ninguno de sus cambios. Cambiar un estado reevalúa los requisitos,
+pero no dispara nuevas reacciones implícitas. Las marcas «una sola vez» persisten
+por mapa, objeto y reacción. No se ejecutan consecuencias al seleccionar el objeto,
+al cancelar un panel o al fallar un requisito.
+
+La definición se almacena en `Adventure.story` y viaja en el ZIP y en la publicación
+inmutable. El progreso del jugador permanece separado, en el almacenamiento del
+navegador con el ámbito ya existente de espacio/vista previa o publicación; no
+sincroniza partidas entre dispositivos. Las aventuras sin `story` mantienen su
+comportamiento. Las conversaciones anteriores aportan su estado guardado sin
+reproducir recompensas antiguas.
+
+El panel **Pruebas de aventura** permite simular estados de objetos y módulos,
+consultar requisitos y reacciones ejecutadas, y modificar el inventario de prueba.
+La ejecución de consecuencias al simular un módulo está desactivada por defecto.
+La simulación de progreso no edita los nodos del chat ni el estado inicial de la
+aventura. Reiniciar borra conjuntamente progreso, inventario, conversaciones y
+marcas de reacciones; conserva los mapas y gráficos. Los cambios físicos del
+escenario conservan la posición y cámara del jugador; si su casilla queda ocupada,
+se usa una casilla libre cercana. Un estado sin casillas libres se rechaza.

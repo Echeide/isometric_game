@@ -1,3 +1,5 @@
+import type {StoryDefinition} from '../story/types';
+import {validateStory} from '../story/validation';
 import type {InventoryItem} from './inventory';
 import {entranceFacing} from '../../../packages/world/src/exits';
 import { parseScene, isCustomVisual, validateCustomCatalog, validateCatalogOverrides, type VisualCatalogOverrides, type VisualAsset, type Cell, type Facing, type WorldScene } from '@isometrico/world';
@@ -7,7 +9,7 @@ import {defaultAdventurePalette,validateAdventurePalette,type AdventurePalette} 
 import {validateChats,embeddedChat,type AdventureChat,CHAT_PREFIX} from '../chat/editor';
 
 export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; destinationEntityId?:string; requirement?:{itemId:string;quantity:number;consume:boolean} }
-export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides; palette?:AdventurePalette; chats?:AdventureChat[] }
+export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides; palette?:AdventurePalette; chats?:AdventureChat[]; story?:StoryDefinition }
 export const ADVENTURE_KEY='isometrico.adventure.v1';
 export function createAdventure(maps:WorldScene[]):Adventure {
  return parseAdventure({kind:'isometric-adventure',version:1,id:'my-adventure',name:'Mi aventura',startMap:maps[0]?.id,maps,exits:[],palette:defaultAdventurePalette()});
@@ -45,6 +47,7 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
   if(!options.allowUnreachable&&findPath(from,from.spawn,interactionCells(from,entity))===null)throw new Error(`No se puede llegar a la salida ${entity.label}.`);
  }
  for(const m of maps)for(const e of m.entities)if(e.interaction?.action==='adventure.exit'&&!a.exits.some(x=>x.fromMap===m.id&&x.entityId===e.id))throw new Error(`Falta el destino de ${e.label}.`);
+ validateStory({...a,maps});
  return JSON.parse(JSON.stringify({...a,maps})) as Adventure;
 }
 export function saveAdventure(storage:Pick<Storage,'setItem'>,value:unknown){const a=parseAdventure(value);storage.setItem(ADVENTURE_KEY,JSON.stringify(a));return a;}

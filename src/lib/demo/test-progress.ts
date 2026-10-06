@@ -1,3 +1,4 @@
+import {resetStory} from '../story/progress';
 import type {Adventure} from './adventure';
 import {initialTasks,type Task} from './scenes';
 import {objectiveKey} from './playable-adventure';
@@ -22,9 +23,9 @@ export function appendActivity(log:Activity[],message:string):Activity[]{return 
 export function resetProgress(storage:Storage,id:string):TestProgress{
  const progress=freshProgress(),chatKeys:string[]=[];
  for(let i=0;i<storage.length;i++){const k=storage.key(i);if(!k?.startsWith('isometrico.chat.v1:'))continue;try{const scope=JSON.parse(k.slice('isometrico.chat.v1:'.length));if(Array.isArray(scope)&&scope[0]===id)chatKeys.push(k);}catch{}}
- const keys=[key(id),`isometrico.inventory.v1:${id}`,...chatKeys],previous=keys.map(k=>[k,storage.getItem(k)] as const);
+ const keys=[key(id),`isometrico.inventory.v1:${id}`,`isometrico.story.v1:${id}`,...chatKeys],previous=keys.map(k=>[k,storage.getItem(k)] as const);
  progress.log=appendActivity([],'Aventura reiniciada desde el panel de pruebas.');
- try{writeProgress(storage,id,progress);saveInventory(storage,id,emptyInventory());chatKeys.forEach(k=>storage.removeItem(k));}
+ try{writeProgress(storage,id,progress);saveInventory(storage,id,emptyInventory());resetStory(storage,id);chatKeys.forEach(k=>storage.removeItem(k));}
  catch(error){for(const [k,value] of previous)try{if(value===null)storage.removeItem(k);else storage.setItem(k,value);}catch{}throw error;}
  return progress;
 }
