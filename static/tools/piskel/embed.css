@@ -9,3 +9,18 @@ html, body { min-width: 760px; }
 body.isometrico-animation .left-column, body.isometrico-animation .preview-container { display: block !important; }
 body.isometrico-animation .add-frame-action, body.isometrico-animation .delete-frame-action,
 body.isometrico-animation .duplicate-frame-action { display: none !important; }
+
+/* Palette actions live inside Piskel, below its native color selector. */
+.isometrico-palette-controls{display:flex;flex-direction:column;gap:6px;padding:10px 0 4px;border-top:1px solid #444;margin-top:8px}
+.isometrico-palette-controls .button{width:100%;height:auto;min-height:28px;font:11px Arial,sans-serif;white-space:normal;padding:6px;color:#ddd;cursor:pointer}
+.isometrico-palette-controls .button:disabled{opacity:.4;cursor:default}
+.isometrico-palette-controls .button:focus-visible{outline:2px solid #ffda00;outline-offset:2px}
+.isometrico-palette-status,.isometrico-palette-controls small{font:10px/1.4 Arial,sans-serif;color:#aaa;overflow-wrap:anywhere}
+.isometrico-palette-status{min-height:14px}
+.palettes-list-colors{max-height:150px;overflow-y:auto}
+
+.right-column{overflow-y:auto;overflow-x:hidden}
+.right-column .toolbox-container{flex-shrink:0}
+.palettes-list-container{min-height:0}
+.palettes-list-colors{height:auto}
+.isometrico-palette-controls{flex-shrink:0}

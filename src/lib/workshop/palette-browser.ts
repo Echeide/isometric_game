@@ -1,7 +1,9 @@
 import {zlibSync,strToU8} from 'fflate';
 import {pngSize} from '$lib/storage/adventure-package';
 import type {Frame} from '../../../packages/character-generator/src/types';
-import {adaptFrame} from './palette';
+import {adaptFrameToColors} from './palette';
+import type {EditorPalette} from './image-edit';
+import {validateAdventurePalette} from '$lib/demo/adventure-palette';
 import type {AdventurePalette} from '$lib/demo/adventure-palette';
 export async function decodePaletteImage(blob:Blob):Promise<Frame>{
  if(blob.size>10_000_000)throw Error('El PNG no puede superar 10 MB.');
@@ -20,11 +22,14 @@ export function encodePalettePNG(frame:Frame):Uint8Array {
  const chunks=[new Uint8Array([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',zlibSync(scanlines)),chunk('IEND',new Uint8Array())],bytes=new Uint8Array(chunks.reduce((n,c)=>n+c.length,0));let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}return bytes;
 }
 export async function adaptedPNG(frame:Frame,palette:AdventurePalette,signal?:AbortSignal){
+ return adaptedColorsPNG(frame,validateAdventurePalette(palette),signal);
+}
+export async function adaptedColorsPNG(frame:Frame,palette:EditorPalette,signal?:AbortSignal){
  const adapted={...frame,data:new Uint8ClampedArray(frame.data)};
  // Bound color-cache memory and yield between blocks on large source sheets.
  for(let offset=0;offset<frame.data.length;offset+=65536*4){
   signal?.throwIfAborted();const data=frame.data.subarray(offset,Math.min(offset+65536*4,frame.data.length));
-  adapted.data.set(adaptFrame({width:data.length/4,height:1,data},palette).data,offset);
+  adapted.data.set(adaptFrameToColors({width:data.length/4,height:1,data},palette).data,offset);
   await new Promise<void>(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});
  }
  signal?.throwIfAborted();return {frame:adapted,blob:new Blob([new Uint8Array(encodePalettePNG(adapted))],{type:'image/png'})};

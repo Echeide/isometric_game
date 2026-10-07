@@ -5,7 +5,7 @@
  const preloadAbort=new AbortController();let loadProgress=$state<Progress|null>(null);
  import {beforeNavigate,goto} from '$app/navigation';
  import {ArrowLeft,Plus,Search,Box,UserRound,Users,Layers,Upload,Download,Copy,Save,Trash2,Play,Pause,Check,Minus,RotateCcw,Move,Scissors,Pencil} from 'lucide-svelte';
- import {actorPoses,characterImage,resolveVisualCatalog,type PixelArtPack,type ObjectSprite,type CharacterPack,type ActorPose,type TileKind,type VisualAsset} from '@isometrico/world';
+ import {actorPoses,characterImage,resolveVisualCatalog,type PixelArtPack,type ObjectSprite,type CharacterPack,type ActorPose,type TileKind,type VisualAsset,type Facing} from '@isometrico/world';
  import {graphics as defaultGraphics} from '$lib/demo/pixelart';
  import type {Adventure} from '$lib/demo/adventure';
  import {localAdventures,resourceBlob,imageUrls,saveWorkshopDraft,loadWorkshopDraft,clearWorkshopDraft} from '$lib/storage/local-adventures';
@@ -13,10 +13,9 @@
  import {validateGraphics,type ImageSize} from '@isometrico/world';
  import {workshopEntries,workshopNpc,standaloneCharacter,supportOrigin,resourceUsages,actionLabels,type ResourceKind,type ResourceEntry} from './resources';
  import AdventurePaletteEditor from './AdventurePaletteEditor.svelte';
- import PaletteAdapter from './PaletteAdapter.svelte';
  import {defaultAdventurePalette,type AdventurePalette} from '$lib/demo/adventure-palette';
  import {mapResourceImages,resourceImages,prunePaletteOriginals,paletteFromColors,type PaletteResource} from './palette';
- import {decodePaletteImage} from './palette-browser';
+ import {decodePaletteImage,encodePalettePNG,adaptedColorsPNG} from './palette-browser';
  import {extractSpritePalette} from '../../../packages/character-generator/src/pipeline';
  import {readPng,visibleCrop} from './images';
  import {readCharacterZip} from './character-package';
@@ -27,7 +26,9 @@
  import {packResource,instantiateResource,addSharedResource,type SharedResource,type SharedSummary} from './shared-resource';
  import {objectReference,type PreparedObjectImage} from './object-image-browser';
  import ImageEditor from '$lib/components/ImageEditor.svelte';
- import {validateEditedImage,withEditedImage,type ImageEditSession} from './image-edit';
+ import {validateEditedImage,withEditedImage,playerEditClip,extractAnimationStrip,replaceAnimationStrip,type AnimationSheetClip,type ImageEditSession,type ImageEditOptions,cycleActions,cycleDirections,validateCycleSelection,type CycleSelection,type CycleNavigation} from './image-edit';
+ import type {Frame} from '../../../packages/character-generator/src/types';
+ import {npcClipRow} from '../../../packages/world/src/pixelart';
 
  const clone=<T,>(v:T):T=>JSON.parse(JSON.stringify(v));
  const tabs=[{id:'object',label:'Objetos',icon:Box},{id:'npc',label:'PNJ',icon:Users},{id:'player',label:'Jugador',icon:UserRound},{id:'tile',label:'Suelos',icon:Layers}] as const;
@@ -42,7 +43,8 @@
  let paletteDialogOpen=$state(false),paletteLinks=$state<Record<string,string>>({});
  const paletteOriginals=$derived({...pack.paletteOriginalImages,...paletteLinks});
  const paletteResource=$derived({kind,item,character,tileImage});
- let imageEdit=$state.raw<ImageEditSession>(),imageEditDirty=$state(false);
+ type WorkshopImageEdit=ImageEditSession&{source:string;original?:Frame;clip?:AnimationSheetClip;action?:ActorPose;direction?:Facing};
+ let imageEdit=$state.raw<WorkshopImageEdit>(),imageEditDirty=$state(false);
  let pose=$state<ActorPose>('idle'),direction=$state(1),playing=$state(true),zoom=$state(2),reuseSit=$state(false),locked=$state(true);
  let search=$state(''),dirty=$state(false),busy=$state(false),loading=$state(true),loadFailed=$state(false),error=$state(''),notice=$state(''),hasDraft=$state(false);
  let imageRevision=$state(0),fileInput:HTMLInputElement,characterZipInput:HTMLInputElement,confirmDialog:HTMLDialogElement;
@@ -63,6 +65,10 @@
  const scalePercent=$derived(Math.round(item.width/(crop[2]||1)*100));
  const isActivePlayer=$derived(kind==='player'&&(pack.activePlayer??'default')===selected);
  const activeClip=$derived(kind==='npc'?(pose==='talk'?item.animations?.talk??item.animations?.idle:item.animations?.idle):undefined);
+ const editSource=$derived(activeClip?.image??source);
+ const editSize=$derived.by(()=>{imageRevision;return sizes.get(editSource);});
+ const editAction=$derived(kind==='npc'&&pose==='talk'&&!item.animations?.talk?'idle':pose);
+ const editingAnimation=$derived(kind==='player'||!!activeClip);
  function resolve(url:string){imageRevision;return urls.get(url)??(url.startsWith('asset:')?'':url);}
  function message(cause:unknown){error=cause instanceof Error?cause.message:'No se pudo completar la operación.';}
  function ask(action:()=>void){if(dirty||objectProposal){pendingAction=action;confirmDialog.showModal();}else action();}
@@ -154,22 +160,69 @@
  }
  async function downloadGeneration(){if(item.generationImage){const blob=pending.get(item.generationImage.slice(6))??await resourceBlob(item.generationImage);downloadBlob(blob,`${name}-original-ia.png`);}}
  function syncSit(){if(reuseSit)character.animations.sit={...character.animations.work,frames:1};}
- async function editImage(){
-  if(busy||!source||!sourceSize||kind==='player')return;busy=true;error='';
-  try{const blob=pending.get(source.slice(6))??await resourceBlob(source);imageEditDirty=false;imageEdit={blob,name,width:sourceSize.width,height:sourceSize.height};}
+ const cycleNavigation=$derived.by<CycleNavigation|undefined>(()=>{
+  if(!imageEdit?.clip||!imageEdit.action||(kind!=='player'&&kind!=='npc'))return;
+  const labels={ne:'NE ↗',se:'SE ↘',sw:'SW ↙',nw:'NW ↖'};
+  return {name,action:imageEdit.action,direction:imageEdit.direction,actions:cycleActions(kind,character,item).map(value=>({value,label:actionLabels[value]})),directions:cycleDirections(kind,character,item,imageEdit.action).map(value=>({value,label:labels[value]}))};
+ });
+ async function prepareImageEdit(action:ActorPose,view:number,staticImage=false):Promise<WorkshopImageEdit>{
+  const owner=selected,ownerKind=kind,facing=(['ne','se','sw','nw'] as const)[view]??'se';
+  const npc=kind==='npc'?(action==='talk'?item.animations?.talk??item.animations?.idle:item.animations?.idle):undefined;
+  const actualAction=kind==='npc'&&action==='talk'&&!item.animations?.talk?'idle':action;
+  const image=staticImage?source:kind==='player'?characterImage(character,action):npc?.image??source,dimensions=sizes.get(image);
+  if(!image||!dimensions)throw Error('No hay una imagen para esta acción.');
+  const blob=await paletteBlob(image),clip=staticImage?undefined:kind==='player'?playerEditClip(character,action,view):npc?{...npc,row:npcClipRow(npc,facing)}:undefined;
+  if(clip){
+   const original=await decodePaletteImage(blob),strip=extractAnimationStrip(original,clip);
+   if(disposed||selected!==owner||kind!==ownerKind)throw Error('El recurso cambió mientras se cargaba el ciclo.');
+   const directional=kind==='player'||!!npc?.directions,title=`${name} · ${actionLabels[actualAction]}${directional?' / '+facing.toUpperCase():''}`;
+   return {blob:new Blob([new Uint8Array(encodePalettePNG(strip))],{type:'image/png'}),name:title,width:strip.width,height:strip.height,frames:clip.frames,fps:Math.max(1,Math.min(30,clip.fps)),source:image,original,clip:clone(clip),action:actualAction,direction:directional?facing:undefined};
+  }
+  if(disposed||selected!==owner||kind!==ownerKind)throw Error('El recurso cambió mientras se cargaba la imagen.');
+  return {blob,name,width:dimensions.width,height:dimensions.height,source:image};
+ }
+ async function editImage(staticImage=false){
+  if(busy)return;busy=true;error='';
+  try{const prepared=await prepareImageEdit(pose,direction,staticImage);imageEditDirty=false;imageEdit=prepared;}
   catch(e){message(e);}finally{busy=false;}
  }
- async function applyImage(blob:Blob){
+ async function selectEditCycle(selection:CycleSelection){
+  if(!imageEdit?.clip||(kind!=='player'&&kind!=='npc'))throw Error('No hay un ciclo seleccionado.');
+  const chosen=validateCycleSelection(kind,character,item,selection),view=chosen.direction?(['ne','se','sw','nw'] as const).indexOf(chosen.direction):direction;
+  const prepared=await prepareImageEdit(chosen.action,view);
+  pose=chosen.action;direction=view;imageEdit=prepared;imageEditDirty=false;
+ }
+ async function applyImage(blob:Blob,options:ImageEditOptions={}){
   if(!imageEdit)return;
   await validateEditedImage(blob,imageEdit);
+  const {original,clip,source:editedSource}=imageEdit;
+  if(options.palette){
+   const edited=options.pixels??await decodePaletteImage(blob),blobs:Record<string,Blob>={};
+   for(const source of resourceImages(paletteResource)){
+    if(source===editedSource){
+     if(original&&clip){const adapted=await adaptedColorsPNG(original,options.palette,preloadAbort.signal),merged=replaceAnimationStrip(adapted.frame,clip,edited);blobs[source]=new Blob([new Uint8Array(encodePalettePNG(merged))],{type:'image/png'});}
+     else blobs[source]=blob;
+    }else blobs[source]=(await adaptedColorsPNG(await decodePaletteImage(await paletteBlob(source)),options.palette,preloadAbort.signal)).blob;
+   }
+   // Validate the entire set before publishing any pending image to the workshop.
+   for(const [source,result] of Object.entries(blobs))await validateEditedImage(result,sizes.get(source)!);
+   await acceptPalette(blobs);return;
+  }
+  if(original&&clip){const merged=replaceAnimationStrip(original,clip,options.pixels??await decodePaletteImage(blob));blob=new Blob([new Uint8Array(encodePalettePNG(merged))],{type:'image/png'});await validateEditedImage(blob,original);}
   const id=crypto.randomUUID(),url=`asset:${id}`;await addImage(url,blob);if(disposed)return;pending.set(id,blob);
-  if(kind==='tile'){tileOriginalImage??=tileImage;tileImage=url;}else item=withEditedImage(item,url);
-  dirty=true;notice='Retoques aplicados. Revisa la vista previa y pulsa «Guardar en aventura». La imagen original se conserva.';
+  if(clip){
+   const updated=mapResourceImages(paletteResource,u=>u===editedSource?url:u);
+   if(kind==='npc'&&item.image===editedSource)updated.item.originalImage=item.originalImage??item.image;
+   usePaletteResource(updated);
+  }else if(kind==='tile'){tileOriginalImage??=tileImage;tileImage=url;}else item=withEditedImage(item,url);
+  dirty=true;notice=clip?'Ciclo retocado. Las demás filas, los fotogramas, FPS y apoyo se conservan. Pulsa «Guardar en aventura».':'Retoques aplicados. Revisa la vista previa y pulsa «Guardar en aventura». La imagen original se conserva.';
  }
  function closeImageEditor(){imageEdit=undefined;imageEditDirty=false;}
  function restoreOriginalImage(){
   if(!originalImage)return;
-  if(kind==='tile')tileImage=originalImage;else item.image=originalImage;
+  if(kind==='tile')tileImage=originalImage;
+  else if(kind==='npc'&&activeClip?.image===item.image){const image=item.image;usePaletteResource(mapResourceImages(paletteResource,u=>u===image?originalImage!:u));}
+  else item.image=originalImage;
   dirty=true;notice='Imagen original recuperada. Guarda en el catálogo para aplicar el cambio.';
  }
  $effect(()=>{if(kind==='player'&&reuseSit){const work={...character.animations.work};untrack(()=>{character.animations.sit={...work,frames:1};});}});
@@ -240,7 +293,7 @@
   }catch(e){message(e);}finally{busy=false;}}
  async function saveDraft(){if(!adventure)return false;busy=true;try{const draft:Draft={kind,selected,name,category,size:clone(size),item:clone(item),character:clone(character),tileImage,tileOriginalImage,tileFrame:clone(tileFrame),reuseSit,paletteLinks:clone(paletteLinks),pending:Object.fromEntries(pending)};await saveWorkshopDraft(adventure.id,draft);hasDraft=true;notice='Borrador guardado en este navegador. Aún no modifica el juego.';return true;}catch(e){message(e);return false;}finally{busy=false;}}
  async function restoreDraft(){if(!adventure)return;busy=true;try{const draft=await loadWorkshopDraft<Draft>(adventure.id);if(!draft)return;for(const [id,blob]of Object.entries(draft.pending)){pending.set(id,blob);await addImage(`asset:${id}`,blob);}kind=draft.kind;selected=draft.selected;name=draft.name;category=draft.category;size=draft.size;item=draft.item;character=draft.character;tileImage=draft.tileImage;tileOriginalImage=draft.tileOriginalImage;tileFrame=draft.tileFrame;reuseSit=draft.reuseSit;paletteLinks=draft.paletteLinks??{};dirty=true;notice='Borrador recuperado. Revisa los campos y guarda en la aventura.';}catch(e){message(e);}finally{busy=false;}}
- async function download(){try{if(source)downloadBlob(pending.get(source.slice(6))??await resourceBlob(source),`${name||'recurso'}.png`);}catch(e){message(e);}}
+ async function download(){try{if(editSource)downloadBlob(await paletteBlob(editSource),`${name||'recurso'}.png`);}catch(e){message(e);}}
  async function exportZip(){busy=true;try{const a=(await localAdventures.load()).adventures.find(a=>a.id===adventure!.id)!;downloadBlob(await exportAdventure(a),`${a.id}.zip`);notice='ZIP exportado con el catálogo y sus imágenes guardadas.';}catch(e){message(e);}finally{busy=false;}}
 </script>
 
@@ -267,15 +320,15 @@
   {#if selected}
   <main class="stage-column"><div class="resource-heading"><div><p class="eyebrow">{kind==='npc'?'PERSONAJE NO JUGABLE':kind==='player'?'PERSONAJE JUGABLE':kind==='tile'?'TEXTURA DE SUELO':'OBJETO DEL MUNDO'}</p><h2>{name}</h2></div><span class:unsaved={dirty} class="state-badge">{objectProposal?'Propuesta IA':dirty?'Sin guardar':'Guardado'}</span></div>
    <ResourceStage {kind} item={previewItem} {character} {pose} {direction} {playing} {zoom} {size} {tileImage} {tileFrame} reference={pack.activePlayer?pack.players![pack.activePlayer].character:pack.character} floorImage={defaultGraphics.tiles.office} {resolve} onshift={shift}/>
-   <div class="preview-tools"><div>{#if kind==='player'||kind==='npc'}<button aria-label={playing?'Pausar animación':'Reproducir animación'} onclick={()=>playing=!playing}>{#if playing}<Pause size={16}/>{:else}<Play size={16}/>{/if}</button><select aria-label="Acción de vista previa" bind:value={pose}>{#each kind==='npc'?npcPoses:actorPoses as p}<option value={p}>{actionLabels[p]}</option>{/each}</select>{/if}{#if kind==='player'}<select aria-label="Dirección de vista previa" bind:value={direction}><option value={0}>NE ↗</option><option value={1}>SE ↘</option><option value={2}>SW ↙</option><option value={3}>NW ↖</option></select>{/if}</div><div><span>Vista</span><button aria-label="Alejar vista previa" disabled={zoom<=.5} onclick={()=>zoom=Math.max(.5,zoom-.5)}><Minus size={15}/></button><output>{zoom}×</output><button aria-label="Acercar vista previa" disabled={zoom>=4} onclick={()=>zoom=Math.min(4,zoom+.5)}><Plus size={15}/></button></div></div>
+   <div class="preview-tools"><div>{#if kind==='player'||kind==='npc'}<button aria-label={playing?'Pausar animación':'Reproducir animación'} onclick={()=>playing=!playing}>{#if playing}<Pause size={16}/>{:else}<Play size={16}/>{/if}</button><select aria-label="Acción de vista previa" bind:value={pose}>{#each kind==='npc'?npcPoses:actorPoses as p}<option value={p}>{actionLabels[p]}</option>{/each}</select>{/if}{#if kind==='player'||activeClip?.directions}<select aria-label="Dirección de vista previa" bind:value={direction}><option value={0}>NE ↗</option><option value={1}>SE ↘</option><option value={2}>SW ↙</option><option value={3}>NW ↖</option></select>{/if}</div><div><span>Vista</span><button aria-label="Alejar vista previa" disabled={zoom<=.5} onclick={()=>zoom=Math.max(.5,zoom-.5)}><Minus size={15}/></button><output>{zoom}×</output><button aria-label="Acercar vista previa" disabled={zoom>=4} onclick={()=>zoom=Math.min(4,zoom+.5)}><Plus size={15}/></button></div></div>
    {#if kind==='npc'}<p class="preview-note">{activeClip?`${pose==='talk'&&item.animations?.talk?'Conversación animada':'Animación de reposo'} · ${activeClip.frames} fotogramas a ${activeClip.fps} fps`:'Imagen estática · lista para usar sin animaciones.'}</p>{/if}
    {#if kind==='player'}<div class="action-strip">{#each actorPoses as p}<button class:active={pose===p} onclick={()=>pose=p}><span>{actionLabels[p]}</span><small>{characterImage(character,p)?`${character.animations[p].frames} fotogramas`:'Sin imagen'}</small></button>{/each}</div>{/if}
-   {#key `${adventure.id}:${selected}`}<PaletteAdapter palette={adventure.palette} resource={paletteResource} originals={paletteOriginals} disabled={busy||!!objectProposal} {size} {tileFrame} reference={pack.activePlayer?pack.players![pack.activePlayer].character:pack.character} floorImage={defaultGraphics.tiles.office} {resolve} load={paletteBlob} onaccept={acceptPalette} onrestore={restorePalette} onopen={open=>paletteDialogOpen=open}/>{/key}
-   <div class="source-card"><div><h3>Imagen original</h3><p>{sourceSize?`${sourceSize.width} × ${sourceSize.height} px`:'Carga un PNG para empezar'} · PNG transparente</p></div><div class="source-actions">{#if kind!=='player'}<button disabled={busy||!source||!!objectProposal} onclick={editImage}><Pencil size={15}/> Editar imagen</button>{/if}<button disabled={busy||!source||!!objectProposal} onclick={download}><Download size={15}/> Descargar</button></div></div>
+   {#if resourceImages(paletteResource).some(u=>!!paletteOriginals[u])}<button class="restore-image" disabled={busy||!!objectProposal} onclick={restorePalette}><RotateCcw size={15}/> Recuperar colores originales</button>{/if}
+   <div class="source-card"><div><h3>{editingAnimation?`Hoja · ${actionLabels[editAction]}`:'Imagen original'}</h3><p>{editSize?`${editSize.width} × ${editSize.height} px`:'Carga un PNG para empezar'} · PNG transparente</p></div><div class="source-actions"><button disabled={busy||!editSource||!!objectProposal} onclick={()=>editImage()}><Pencil size={15}/>{editingAnimation?'Editar ciclo':'Editar imagen'}</button>{#if kind==='npc'&&activeClip}<button disabled={busy||!source||!!objectProposal} onclick={()=>editImage(true)}>Editar imagen estática</button>{/if}<button disabled={busy||!editSource||!!objectProposal} onclick={download}><Download size={15}/> Descargar</button></div></div>
    {#if kind==='object' && item.generationImage}<button class="restore-image" disabled={busy} onclick={()=>downloadGeneration().catch(message)}><Download size={14}/> Descargar original de IA</button>{/if}
    {#if originalImage&&source!==originalImage}<button class="restore-image" disabled={busy} onclick={restoreOriginalImage}><RotateCcw size={14}/> Recuperar imagen original</button>{/if}
-   {#if kind==='npc'}<p class="source-hint">Editar imagen retoca el PNG estático del PNJ. Sus animaciones se conservan.</p>{/if}
-   {#if source}<details class="source-detail"><summary>Ver {kind==='player'?'hoja de la acción':'imagen y márgenes'} originales</summary><div><img src={resolve(source)} alt={`Original de ${name}`}/></div></details>{/if}
+   {#if editingAnimation}<p class="source-hint">Se edita {actionLabels[editAction].toLowerCase()}{kind==='player'||activeClip?.directions?' / '+(['NE','SE','SW','NW'][direction]??'SE'):''}, fotograma a fotograma. Las demás filas de la hoja se conservan.</p>{/if}
+   {#if editSource}<details class="source-detail"><summary>Ver {editingAnimation?'hoja de la acción':'imagen y márgenes'} originales</summary><div><img src={resolve(editSource)} alt={`Original de ${name}`}/></div></details>{/if}
    <div class="usage-card"><h3>Uso en la aventura</h3><p>{kind==='player'?(isActivePlayer?'Es el personaje controlado al jugar esta aventura.':'Guárdalo y actívalo para usarlo al jugar.'):usages.length?`Este recurso se utiliza en: ${usages.join(', ')}. Guardar su aspecto actualizará esos usos.`:'Disponible para colocar al guardar. Las variantes mantienen su propio gráfico.'}</p>{#if current}<button disabled={busy} onclick={duplicate}><Copy size={15}/> Duplicar como variante</button>{/if}</div>
   </main>
   <form class="inspector" onsubmit={e=>{e.preventDefault();void save();}} oninput={()=>dirty=true} onchange={()=>dirty=true} aria-label="Propiedades del recurso"><fieldset disabled={busy}><div class="inspector-title"><h2>Propiedades</h2><span>{kind==='tile'?'Textura':kind==='player'?'Jugador':kind==='npc'?'PNJ':'Objeto'}</span></div>
@@ -287,7 +340,7 @@
     <section class="fields-section"><h3>Escala en el mundo</h3><label>Tamaño proporcional <span>{scalePercent}%</span><input aria-label="Escala del objeto" type="range" min="5" max="400" step="1" value={scalePercent} oninput={e=>setScale(e.currentTarget.valueAsNumber)}/></label><div class="two-fields"><label>Ancho (px)<input aria-label="Ancho del dibujo" type="number" min="1" max="4096" step="any" value={Math.round(item.width*100)/100} oninput={e=>dimension('width',e.currentTarget.valueAsNumber)}/></label><label>Alto (px)<input aria-label="Alto del dibujo" type="number" min="1" max="4096" step="any" value={Math.round(item.height*100)/100} oninput={e=>dimension('height',e.currentTarget.valueAsNumber)}/></label></div><label class="checkbox"><input type="checkbox" bind:checked={locked}/> Mantener proporciones</label><p>La ampliación de la vista previa no cambia este tamaño.</p></section>
     <section class="fields-section"><h3>Huella y apoyo</h3><div class="two-fields"><label>Casillas X<input aria-label="Huella X" type="number" min="1" max="16" bind:value={size.x} disabled={!custom}/></label><label>Casillas Y<input aria-label="Huella Y" type="number" min="1" max="16" bind:value={size.y} disabled={!custom}/></label></div><button type="button" onclick={support}><Move size={15}/> Apoyar sobre la huella</button><p>También puedes arrastrar el dibujo. La huella es el tamaño predeterminado de las nuevas instancias.</p><details><summary>Ajustar apoyo con precisión</summary><div class="two-fields"><label>Origen X<input aria-label="Origen X" type="number" step="any" bind:value={item.origin[0]}/></label><label>Origen Y<input aria-label="Origen Y" type="number" step="any" bind:value={item.origin[1]}/></label></div></details></section>
     <details class="fields-section"><summary>Recorte del PNG</summary><p>Selecciona un objeto de una hoja o elimina sus márgenes.</p><div class="two-fields">{#each ['X','Y','Ancho','Alto'] as title,i}<label>{title}<input aria-label={`Recorte ${title}`} type="number" min={i<2?0:1} value={crop[i]} oninput={e=>setCrop(i,e.currentTarget.valueAsNumber)}/></label>{/each}</div><button type="button" disabled={!item.image} onclick={trim}><Scissors size={15}/> Recortar transparencia</button></details>
-    {#if kind==='npc'}<section class="fields-section"><h3>Animaciones opcionales</h3><p>Una imagen estática basta. Añade animación cuando la tengas.</p>{#each npcPoses as p}<details class="clip-editor"><summary>{actionLabels[p]} <span>{item.animations?.[p]?'Configurada':'Opcional'}</span></summary><button type="button" onclick={()=>chooseUpload(p)}><Upload size={15}/>{item.animations?.[p]?'Cambiar hoja':'Añadir hoja PNG'}</button>{#if item.animations?.[p]}{@const clip=item.animations[p]!}<div class="two-fields"><label>Ancho celda<input aria-label={`PNJ ${p} ancho`} type="number" min="1" bind:value={clip.frameWidth}/></label><label>Alto celda<input aria-label={`PNJ ${p} alto`} type="number" min="1" bind:value={clip.frameHeight}/></label><label>Fotogramas<input aria-label={`PNJ ${p} fotogramas`} type="number" min="1" max="64" bind:value={clip.frames}/></label><label>FPS<input aria-label={`PNJ ${p} fps`} type="number" min="1" max="60" bind:value={clip.fps}/></label><label>Fila (desde 0)<input type="number" min="0" bind:value={clip.row}/></label></div><button type="button" class="text-danger" onclick={()=>{delete item.animations![p];dirty=true;}}>Quitar animación</button>{/if}</details>{/each}</section>{/if}
+    {#if kind==='npc'}<section class="fields-section"><h3>Animaciones opcionales</h3><p>Una imagen estática basta. Añade animación cuando la tengas.</p>{#each npcPoses as p}<details class="clip-editor"><summary>{actionLabels[p]} <span>{item.animations?.[p]?'Configurada':'Opcional'}</span></summary><button type="button" onclick={()=>chooseUpload(p)}><Upload size={15}/>{item.animations?.[p]?'Cambiar hoja':'Añadir hoja PNG'}</button>{#if item.animations?.[p]}{@const clip=item.animations[p]!}<div class="two-fields"><label>Ancho celda<input aria-label={`PNJ ${p} ancho`} type="number" min="1" bind:value={clip.frameWidth}/></label><label>Alto celda<input aria-label={`PNJ ${p} alto`} type="number" min="1" bind:value={clip.frameHeight}/></label><label>Fotogramas<input aria-label={`PNJ ${p} fotogramas`} type="number" min="1" max="64" bind:value={clip.frames}/></label><label>FPS<input aria-label={`PNJ ${p} fps`} type="number" min="1" max="60" bind:value={clip.fps}/></label><label>Vistas de la hoja<select aria-label={`PNJ ${p} direcciones`} value={clip.directions?'four':'single'} onchange={e=>{if(e.currentTarget.value==='four')clip.directions=['ne','se','sw','nw'];else delete clip.directions;dirty=true;}}><option value="single">Una dirección</option><option value="four">4 direcciones: NE, SE, SW, NW</option></select></label><label>{clip.directions?'Primera fila (NE)':'Fila (desde 0)'}<input type="number" min="0" bind:value={clip.row}/></label></div><button type="button" class="text-danger" onclick={()=>{delete item.animations![p];dirty=true;}}>Quitar animación</button>{/if}</details>{/each}</section>{/if}
    {:else if kind==='player'}
     <section class="fields-section"><h3>Formato del personaje</h3><div class="two-fields"><label>Ancho celda<input aria-label="Ancho de fotograma" type="number" min="1" bind:value={character.frameWidth}/></label><label>Alto celda<input aria-label="Alto de fotograma" type="number" min="1" bind:value={character.frameHeight}/></label></div><label>Escala (%)<input aria-label="Escala del jugador" type="number" min="5" max="800" value={Math.round((character.scale??1)*100)} oninput={e=>character.scale=e.currentTarget.valueAsNumber/100}/></label><div class="two-fields"><label>Apoyo X<input type="number" step="any" bind:value={character.anchor[0]}/></label><label>Apoyo Y<input type="number" step="any" bind:value={character.anchor[1]}/></label></div><p>Las seis acciones comparten tamaño de celda y apoyo. Filas: NE, SE, SW y NW.</p></section>
     <section class="fields-section"><h3>Acción · {actionLabels[pose]}</h3>{#if pose==='sit'}<label class="checkbox"><input type="checkbox" bind:checked={reuseSit} onchange={syncSit}/> Usar primer fotograma de trabajar</label>{/if}{#if pose!=='sit'||!reuseSit}<button type="button" class="upload" onclick={()=>chooseUpload(pose)}><Upload size={15}/>{characterImage(character,pose)?'Sustituir hoja':'Subir hoja PNG'}</button><div class="two-fields"><label>Fotogramas<input aria-label="Fotogramas de la acción" type="number" min="1" max="64" bind:value={character.animations[pose].frames}/></label><label>FPS<input aria-label="FPS de la acción" type="number" min="1" max="60" bind:value={character.animations[pose].fps}/></label><label>Primera fila<input aria-label="Fila de la acción" type="number" min="0" bind:value={character.animations[pose].row}/></label></div><p>Se leen cuatro filas consecutivas desde la indicada.</p>{:else}<p>La postura sentada utiliza la hoja de trabajar.</p>{/if}</section>
@@ -300,7 +353,7 @@
   {:else}<main class="empty-stage"><Users size={40}/><h2>Un nuevo habitante para tu mundo</h2><p>Sube una imagen, ajusta su tamaño junto al jugador y colócala en el mapa. Las animaciones son opcionales.</p><button class="primary" onclick={create}><Plus size={17}/>Añadir PNJ</button></main>{/if}
  </div></div>{/if}
 </div>
-{#if imageEdit}<ImageEditor session={imageEdit} saveHint="Los retoques se guardarán cuando pulses «Guardar en aventura»." onapply={applyImage} onclose={closeImageEditor} onchange={value=>imageEditDirty=value}/>{/if}
+{#if imageEdit}<ImageEditor session={imageEdit} palette={adventure?.palette} navigation={cycleNavigation} onselect={selectEditCycle} saveHint="Los retoques se guardarán cuando pulses «Guardar en aventura»." onapply={applyImage} onclose={closeImageEditor} onchange={value=>imageEditDirty=value}/>{/if}
 <input class="sr-only" bind:this={fileInput} type="file" accept="image/png,.png" aria-label="Archivo PNG del recurso" onchange={upload}/>
 <input class="sr-only" bind:this={characterZipInput} type="file" accept=".zip,application/zip" aria-label="ZIP del personaje" onchange={importCharacterZip}/>
 <dialog bind:this={confirmDialog} class="confirm"><h2>Tienes cambios sin guardar</h2><p>{objectProposal?'Usa o descarta la propuesta de IA antes de guardar.':'Puedes conservarlos como borrador antes de continuar.'}</p><div><button onclick={()=>confirmDialog.close()}>Seguir editando</button><button onclick={continueAction}>Descartar cambios</button><button class="primary" disabled={busy||!!objectProposal} onclick={async()=>{if(await saveDraft())continueAction();}}>Guardar borrador y continuar</button></div></dialog>

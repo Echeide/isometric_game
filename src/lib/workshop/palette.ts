@@ -1,6 +1,7 @@
 import type {CharacterPack,ObjectSprite,PixelArtPack} from '@isometrico/world';
 import type {Frame} from '../../../packages/character-generator/src/types';
-import {paletteRGB,validateAdventurePalette,type AdventurePalette} from '$lib/demo/adventure-palette';
+import {validateAdventurePalette,type AdventurePalette} from '$lib/demo/adventure-palette';
+import {validateEditorPalette,type EditorPalette} from './image-edit';
 import type {ResourceKind} from './resources';
 export type PaletteResource={kind:ResourceKind;item:ObjectSprite;character:CharacterPack;tileImage:string};
 export function mapResourceImages(resource:PaletteResource,replace:(url:string)=>string):PaletteResource {
@@ -37,8 +38,11 @@ function lab(rgb:number[]){
 }
 /** No resizing, dithering or frame-by-frame palette extraction: alpha and geometry stay intact. */
 export function adaptFrame(frame:Frame,palette:AdventurePalette):Frame {
+ return adaptFrameToColors(frame,validateAdventurePalette(palette));
+}
+export function adaptFrameToColors(frame:Frame,palette:EditorPalette):Frame {
  if(!Number.isInteger(frame.width)||!Number.isInteger(frame.height)||frame.width<1||frame.height<1||frame.data.length!==frame.width*frame.height*4)throw Error('Imagen no válida para adaptar.');
- const colors=paletteRGB(palette),labs=colors.map(lab),cache=new Map<number,number[]>(),data=new Uint8ClampedArray(frame.data);
+ const colors=validateEditorPalette(palette).colors.map(c=>[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)]),labs=colors.map(lab),cache=new Map<number,number[]>(),data=new Uint8ClampedArray(frame.data);
  for(let i=0;i<data.length;i+=4){if(!data[i+3])continue;const key=(data[i]<<16)|(data[i+1]<<8)|data[i+2];let color=cache.get(key);
   if(!color){const sample=lab([data[i],data[i+1],data[i+2]]);let best=Infinity,index=0;labs.forEach((p,j)=>{const distance=p.reduce((sum,v,k)=>sum+(v-sample[k])**2,0);if(distance<best){best=distance;index=j;}});color=colors[index];if(cache.size<65536)cache.set(key,color);}
   data.set(color,i);

@@ -1,6 +1,7 @@
 <script lang="ts">
  import {onMount} from 'svelte';
  import {characterImage,type ActorPose,type CharacterPack,type ObjectSprite} from '@isometrico/world';
+ import {npcClipRow} from '../../../packages/world/src/pixelart';
  import type {ResourceKind} from '$lib/workshop/resources';
  let {kind,item,character,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,reference,floorImage,resolve,onshift}:{kind:ResourceKind;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
  let canvas:HTMLCanvasElement;
@@ -31,7 +32,8 @@
     if(clip)paint(ctx,characterImage(c,pose),[index*c.frameWidth,(clip.row+direction)*c.frameHeight,c.frameWidth,c.frameHeight],-c.anchor[0]*scale,16-c.anchor[1]*scale,c.frameWidth*scale,c.frameHeight*scale);
    }else if(item){
     const clip=kind==='npc'?(pose==='talk'?(item.animations?.talk??item.animations?.idle):item.animations?.idle):undefined;
-    const frame=clip?[Math.floor(elapsed*clip.fps)%clip.frames*clip.frameWidth,clip.row*clip.frameHeight,clip.frameWidth,clip.frameHeight]:item.frame;
+    const facing=(['ne','se','sw','nw'] as const)[direction]??'se';
+    const frame=clip?[Math.floor(elapsed*clip.fps)%clip.frames*clip.frameWidth,npcClipRow(clip,facing)*clip.frameHeight,clip.frameWidth,clip.frameHeight]:item.frame;
     paint(ctx,clip?.image??item.image,frame,-item.origin[0],-item.origin[1],item.width,item.height);
    }
    const cx=(size.x-size.y)*16,cy=(size.x+size.y)*8;

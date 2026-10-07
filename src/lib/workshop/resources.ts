@@ -14,11 +14,18 @@ export function standaloneCharacter(character:CharacterPack,variant='default'):C
 }
 function characterThumbnail(c:CharacterPack):[number,number,number,number]{return [0,(c.animations.idle.row+1)*c.frameHeight,c.frameWidth,c.frameHeight];}
 export function workshopNpc(pack:PixelArtPack,id:string):ObjectSprite{
- if(pack.objects[id])return pack.objects[id];
+ if(pack.objects[id]){
+  const stored=pack.objects[id],asset=visualCatalog.find(a=>a.id===id&&a.kind==='person');
+  if(!asset)return stored;
+  const c=pack.character,variant=asset.color?.toString(16)??'default',animations={...stored.animations};let upgraded=false;
+  // Recognize only original builtin sheets; never guess directions in custom PNGs.
+  for(const pose of ['idle','talk'] as const){const clip=animations[pose],original=c.animations[pose];if(clip&&!clip.directions&&clip.image===characterImage(c,pose,variant)&&clip.frameWidth===c.frameWidth&&clip.frameHeight===c.frameHeight&&clip.row===original.row+1&&clip.frames===original.frames){animations[pose]={...clip,row:original.row,directions:[...c.directions]};upgraded=true;}}
+  return upgraded?{...stored,animations}:stored;
+ }
  const asset=visualCatalog.find(a=>a.id===id&&a.kind==='person');
  if(!asset)throw new Error('No se encuentra el PNJ.');
  const c=pack.character,variant=asset.color?.toString(16)??'default',scale=c.scale??1;
- const clip=(pose:'idle'|'talk')=>({image:characterImage(c,pose,variant),frameWidth:c.frameWidth,frameHeight:c.frameHeight,row:c.animations[pose].row+1,frames:c.animations[pose].frames,fps:c.animations[pose].fps});
+ const clip=(pose:'idle'|'talk')=>({image:characterImage(c,pose,variant),frameWidth:c.frameWidth,frameHeight:c.frameHeight,row:c.animations[pose].row,frames:c.animations[pose].frames,fps:c.animations[pose].fps,directions:[...c.directions]});
  return {image:characterImage(c,'idle',variant),width:c.frameWidth*scale,height:c.frameHeight*scale,origin:[c.anchor[0]*scale,c.anchor[1]*scale-16],frame:characterThumbnail(c),animations:{idle:clip('idle'),talk:clip('talk')}};
 }
 export function catalogAssetName(asset:VisualAsset,overrides:VisualCatalogOverrides={}){return asset.id.startsWith('custom.')||overrides[asset.id]?.label!==undefined?asset.label:asset.label.replace(' · Pixel','');}

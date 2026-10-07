@@ -7,7 +7,7 @@ import {mapImages,imageUrls} from '../src/lib/storage/local-adventures';
 import {exportAdventure,unpackAdventure,pngSize,validateCatalogGraphics} from '../src/lib/storage/adventure-package';
 import {validateGraphics} from '../packages/world/src/graphics-validation';
 import {parseScene,validateCustomCatalog,type VisualAsset} from '../packages/world/src/scene';
-import {npcClip} from '../packages/world/src/pixelart';
+import {npcClip,npcClipRow} from '../packages/world/src/pixelart';
 import {standaloneCharacter,supportOrigin,workshopEntries,workshopNpc} from '../src/lib/workshop/resources';
 
 const object:VisualAsset={id:'custom.locker',label:'Taquilla',kind:'object',category:'office',size:{x:2,y:1}};
@@ -51,10 +51,28 @@ describe('custom resource catalogue',()=>{
  });
 });
 describe('resource graphics validation',()=>{
+ it('supports NPC direction previews without reinterpreting legacy single-row clips',()=>{
+  const pack=customPack(),item=workshopNpc(pack,'pixel.person-lucia'),clip=item.animations!.idle!;
+  expect(['ne','se','sw','nw'].map(d=>npcClipRow(clip,d as 'ne'|'se'|'sw'|'nw'))).toEqual([0,1,2,3]);
+  expect(npcClipRow({...clip,row:2,directions:undefined},'nw')).toBe(2);
+  pack.objects['pixel.person-lucia']=item;expect(()=>validateGraphics(pack,dimensions)).not.toThrow();
+  clip.row=1;expect(()=>validateGraphics(pack,dimensions)).toThrow('PNJ sale de su hoja');clip.row=0;
+  clip.directions=['ne','ne','sw','nw'];expect(()=>validateGraphics(pack,dimensions)).toThrow('Direcciones');
+ });
+ it('upgrades only recognizable builtin NPC sheets and retains their original SE appearance',()=>{
+  const pack=customPack(),item=workshopNpc(pack,'pixel.person-lucia'),legacy=structuredClone(item);
+  for(const clip of Object.values(legacy.animations!)){clip.row++;delete clip.directions;}
+  pack.objects['pixel.person-lucia']=legacy;const snapshot=structuredClone(legacy),upgraded=workshopNpc(pack,'pixel.person-lucia');
+  expect(npcClipRow(upgraded.animations!.idle!)).toBe(legacy.animations!.idle!.row);
+  expect(upgraded.animations!.idle!.directions).toEqual(['ne','se','sw','nw']);expect(legacy).toEqual(snapshot);
+  legacy.animations!.idle!.image='asset:custom-sheet';expect(workshopNpc(pack,'pixel.person-lucia').animations!.idle!.directions).toBeUndefined();
+  pack.objects['custom.guide']=legacy;expect(workshopNpc(pack,'custom.guide')).toBe(legacy);
+ });
  it('exposes existing PNJs with their original palette and optional animation rows',()=>{
   const pack=customPack(),lucia=workshopNpc(pack,'pixel.person-lucia');
   expect(lucia.image).toContain('/lucia/');
-  expect(lucia.animations?.idle?.row).toBe(1);
+  expect(lucia.animations?.idle?.row).toBe(0);
+  expect(lucia.animations?.idle?.directions).toEqual(['ne','se','sw','nw']);
   expect(workshopEntries(pack).filter(e=>e.kind==='npc')).toHaveLength(3);
   pack.objects['pixel.person-lucia']=lucia;
   expect(()=>validateGraphics(pack,dimensions)).not.toThrow();
@@ -92,13 +110,13 @@ describe('resource graphics validation',()=>{
 });
 it('round-trips originals, custom catalogue, NPC clips, player selection, scale and floor crops in a ZIP',async()=>{
  const base=customPack(),guide=base.objects[npc.id];
- guide.animations={talk:{image:base.character.animations.talk.image!,frameWidth:64,frameHeight:96,row:0,frames:4,fps:8}};
+ guide.animations={talk:{image:base.character.animations.talk.image!,frameWidth:64,frameHeight:96,row:0,frames:4,fps:8,directions:['ne','se','sw','nw']}};
  const source=mapImages(base,url=>'asset:'+url),before=JSON.stringify(source);
  const adventure=parseAdventure({...createAdventure([empty]),catalog:[object,npc]});
  const blob=await exportAdventure(adventure,{pack:async()=>source,blob:async id=>new Blob([readFileSync('static'+id)])});
  const restored=unpackAdventure(new Uint8Array(await blob.arrayBuffer()));
  expect(restored.adventure.catalog).toEqual([object,npc]);
- expect(restored.pack.objects[npc.id]).toMatchObject({width:64,height:96,origin:[32,80],frame:[0,96,64,96],animations:{talk:{frames:4,fps:8}}});
+ expect(restored.pack.objects[npc.id]).toMatchObject({width:64,height:96,origin:[32,80],frame:[0,96,64,96],animations:{talk:{frames:4,fps:8,directions:['ne','se','sw','nw']}}});
  expect(restored.pack.activePlayer).toBe('custom.player');
  expect(restored.pack.players!['custom.player'].character.scale).toBe(1.5);
  expect(restored.pack.tileFrames).toEqual(base.tileFrames);

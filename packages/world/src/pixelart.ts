@@ -1,7 +1,7 @@
 import { Assets, Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import type { ActorPose, Facing, TileKind } from './types';
 import {characterFps,characterImage,characterVariants,type CharacterPack} from './character';
-export interface NpcClip {image:string;frameWidth:number;frameHeight:number;row:number;frames:number;fps:number}
+export interface NpcClip {image:string;frameWidth:number;frameHeight:number;row:number;frames:number;fps:number;directions?:Facing[]}
 export interface ObjectSprite {image:string;originalImage?:string;generationImage?:string;width:number;height:number;origin:[number,number];frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
 export interface PixelArtPack {
  version:1;
@@ -81,10 +81,12 @@ export function pixelActor(art:LoadedPixelArt,color:number,me:boolean){
 }
 
 export function npcClip(item:ObjectSprite,pose:ActorPose){return pose==='talk'?(item.animations?.talk??item.animations?.idle):item.animations?.idle;}
+/** Legacy NPC clips use one absolute row; directional sheets start at their NE row. */
+export function npcClipRow(clip:NpcClip,facing:Facing='se'){return clip.row+(clip.directions?Math.max(0,clip.directions.indexOf(facing)):0);}
 export function pixelNpc(art:LoadedPixelArt,id:string){
  const item=art.pack.objects[id],view=new Container(),sprite=pixelObject(art,id)!;view.addChild(sprite);
  const still=sprite.texture,clips=new Map<NpcClip,Texture[]>();
- for(const clip of Object.values(item.animations??{}))clips.set(clip,Array.from({length:clip.frames},(_,i)=>new Texture({source:art.textures.get(clip.image)!.source,frame:new Rectangle(i*clip.frameWidth,clip.row*clip.frameHeight,clip.frameWidth,clip.frameHeight)})));
+ for(const clip of Object.values(item.animations??{}))clips.set(clip,Array.from({length:clip.frames},(_,i)=>new Texture({source:art.textures.get(clip.image)!.source,frame:new Rectangle(i*clip.frameWidth,npcClipRow(clip)*clip.frameHeight,clip.frameWidth,clip.frameHeight)})));
  let last:ActorPose='idle',elapsed=0;
  function update(_time:number,dt:number,pose:ActorPose,_facing:Facing,reduced=false){
   if(pose!==last){elapsed=0;last=pose;}elapsed+=dt;

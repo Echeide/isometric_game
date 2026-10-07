@@ -5,7 +5,7 @@ Pinned upstream: https://github.com/piskelapp/piskel/commit/a6b9c02daefceb10093f
 The compiled distribution is committed under `static/tools/piskel/`. Normal development,
 builds and Railway deploys serve these files directly; they need no extra process or network fetch.
 Only the image editor dialog loads this distribution. `bridge.js` and `embed.css` here
-are the source of our adapter; generated copies live alongside the distribution.
+and `palette.js` are the source of our adapter; generated copies live alongside the distribution.
 
 To rebuild (Node compatible with upstream Vite 8):
 
@@ -28,10 +28,16 @@ session ID. Parent sends `open` (PNG Blob, name, dimensions) after `ready`. Chil
 `loaded`, `dirty`, `error`; `apply` returns `result` (PNG Blob, changed). Ctrl/Cmd+S emits
 `apply-request`. Parent revalidates PNG size/dimensions before accepting a result.
 
-Scope: one original PNG for objects, floors and the static image of an NPC. Dimensions and
-transparency are preserved, layers flatten into that PNG, and image edits remain pending in
-the workshop until saved. Animation timelines and authoring-project/layer persistence are
-outside this first integration. Piskel's tools retain their upstream English labels.
+Scope: static PNGs or a selected animation/direction strip. Dimensions and transparency are
+preserved. Layers flatten only on export; edits remain pending in the workshop until saved.
+Palette controls are injected below the native Palettes panel. `open.palette` initializes a
+session-only palette store (never a cross-tenant localStorage palette list). The selected native
+palette drives OKLab matching on every frame/layer, with an atomic history snapshot. Undo/Redo
+also determines `result.paletteApplied`; the host recolors the other resource sheets only when
+an adaptation remains active. Palette selection/loading does not recolor pixels. Palette changes
+never change the shared adventure palette. `palette-start/progress/done` report busy state.
+A single layer at opacity 1 also returns straight RGBA; the host validates and encodes it without canvas premultiplication rounding translucent palette RGB. Multi-layer export uses Piskel’s normal flattening.
+Native tools retain their upstream English labels; our controls use Spanish.
 
 ### Ciclos del generador
 

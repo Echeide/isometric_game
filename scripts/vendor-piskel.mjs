@@ -10,9 +10,9 @@ if (!process.argv[2] || execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'],
 const build = join(source, 'dest/prod'), target = resolve('static/tools/piskel');
 let html = await readFile(join(build, 'index.html'), 'utf8');
 if (!html.includes('pskl.app.init();')) throw new Error('Unexpected Piskel boot code.');
-html = html.replace('<head>', '<head>\n<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; font-src \'self\' data:; worker-src \'self\' blob:; connect-src \'none\'; object-src \'none\'; base-uri \'none\'; form-action \'none\'">\n<script src="bridge.js?v=frames-2"></script>')
+html = html.replace('<head>', '<head>\n<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; font-src \'self\' data:; worker-src \'self\' blob:; connect-src \'none\'; object-src \'none\'; base-uri \'none\'; form-action \'none\'">\n<script src="palette.js?v=palette-4"></script>\n<script src="bridge.js?v=palette-4"></script>')
   .replace('pskl.app.init();', 'window.isometricoBeforePiskelInit();\n    pskl.app.init();')
-  .replace(/<\/body>\s*<\/html>\s*$/, '<link rel="stylesheet" href="embed.css?v=frames-2">\n</body>\n</html>');
+  .replace(/<\/body>\s*<\/html>\s*$/, '<link rel="stylesheet" href="embed.css?v=palette-4">\n</body>\n</html>');
 await mkdir(target, {recursive:true});
 // This directory contains only generated, vendored assets.
 await rm(target, {recursive:true}); await mkdir(target, {recursive:true});
@@ -27,6 +27,7 @@ for (const name of await readdir(join(build,'js'))) {
 await writeFile(join(target,'index.html'),html);
 await cp(join(source,'LICENSE'),join(target,'LICENSE'));
 await cp('vendor/piskel/bridge.js',join(target,'bridge.js'));
+await cp('vendor/piskel/palette.js',join(target,'palette.js'));
 await cp('vendor/piskel/embed.css',join(target,'embed.css'));
 // Preserve upstream bundled license notices in a readable, distributed copy.
 const scriptList = await readFile(join(source,'src/piskel-script-list.js'),'utf8');

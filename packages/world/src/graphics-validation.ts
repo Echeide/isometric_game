@@ -68,6 +68,7 @@ export function validateObjectGraphics(o:ObjectSprite,sizes:Map<string,ImageSize
    if(!['idle','talk'].includes(pose))fail('Un PNJ solo admite idle y talk.');
    const c=clip as NpcClip;
    if(!c||!integer(c.frameWidth)||!integer(c.frameHeight)||!integer(c.frames)||c.frames>64||!Number.isInteger(c.row)||c.row<0||!Number.isFinite(c.fps)||c.fps<1||c.fps>60)fail(`Animación ${pose} del PNJ no válida.`);
-   const s=image(c.image);if(c.frameWidth*c.frames>s.width||(c.row+1)*c.frameHeight>s.height)fail(`La animación ${pose} del PNJ sale de su hoja.`);
+   if(c.directions!==undefined&&JSON.stringify(c.directions)!=='["ne","se","sw","nw"]')fail('Direcciones del PNJ no válidas. Usa NE, SE, SW y NW.');
+   const s=image(c.image);if(c.frameWidth*c.frames>s.width||(c.row+(c.directions?.length??1))*c.frameHeight>s.height)fail(`La animación ${pose} del PNJ sale de su hoja.`);
   }
  }
