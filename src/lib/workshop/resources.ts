@@ -1,6 +1,16 @@
 import {characterImage,actorPoses,visualCatalog,resolveVisualCatalog,isCustomTile,type CharacterPack,type ObjectSprite,type PixelArtPack,type VisualAsset,type TileKind,type BuiltinTileKind,type VisualCatalogOverrides} from '@isometrico/world';
 export type ResourceKind='object'|'npc'|'player'|'tile';
 export type ResourceEntry={id:string;kind:ResourceKind;name:string;image:string;custom:boolean;frame?:[number,number,number,number]};
+/** Family names are searchable too; every visible tile occurs in exactly one section. */
+export function groupWorkshopTiles(entries:ResourceEntry[],families:import('@isometrico/world').TileFamilies,query=''){
+ const tiles=entries.filter(e=>e.kind==='tile'),byId=new Map(tiles.map(e=>[e.id,e])),grouped=new Set<string>(),search=query.trim().toLocaleLowerCase();
+ const matches=(name:string)=>name.toLocaleLowerCase().includes(search);
+ const groups=Object.entries(families).map(([id,family])=>{
+  const members=Object.keys(family.tiles).flatMap(tile=>{const entry=byId.get(tile);if(!entry||grouped.has(tile))return [];grouped.add(tile);return [entry];});
+  return {id,name:family.name,entries:matches(family.name)?members:members.filter(e=>matches(e.name))};
+ }).filter(group=>group.entries.length);
+ return {groups,ungrouped:tiles.filter(e=>!grouped.has(e.id)&&matches(e.name))};
+}
 export const actionLabels={idle:'Reposo',walk:'Caminar',sit:'Sentarse',work:'Trabajar',talk:'Conversar',celebrate:'Celebrar'};
 export const tileLabels:Record<BuiltinTileKind,string>={office:'Oficina',grass:'Césped',path:'Camino',parquet:'Parquet',asphalt:'Asfalto',sidewalk:'Acera',cobble:'Empedrado',sand:'Arena',dirt:'Tierra'};
 /** One resolved palette for the workshop and map editor, including cropped custom tiles. */

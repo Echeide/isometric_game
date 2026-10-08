@@ -3,7 +3,8 @@
  import {characterImage,type ActorPose,type CharacterPack,type ObjectSprite} from '@isometrico/world';
  import {npcClipRow} from '../../../packages/world/src/pixelart';
  import type {ResourceKind} from '$lib/workshop/resources';
- let {kind,item,character,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,reference,floorImage,resolve,onshift}:{kind:ResourceKind;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
+ import {sampleTileVariant} from '../../../packages/world/src/tile-families';
+ let {kind,item,character,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,tileVariants,reference,floorImage,resolve,onshift}:{kind:ResourceKind;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];tileVariants?:{image:string;frame?:[number,number,number,number];weight:number}[];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
  let canvas:HTMLCanvasElement;
  const images=new Map<string,HTMLImageElement>();
  let elapsed=0,previousPose='',drag:{id:number;x:number;y:number}|null=null;
@@ -19,7 +20,7 @@
   const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,680,430);ctx.imageSmoothingEnabled=false;
   ctx.save();ctx.translate(340,kind==='tile'?82:170);ctx.scale(zoom,zoom);
   const floor=kind==='tile'?tileImage:floorImage;
-  for(let sum=0;sum<=6;sum++)for(let x=0;x<=3;x++){const y=sum-x;if(y<0||y>3)continue;const px=(x-y)*32,py=(x+y)*16;paint(ctx,floor,kind==='tile'?tileFrame:undefined,px-32,py,64,32);}
+  for(let sum=0;sum<=6;sum++)for(let x=0;x<=3;x++){const y=sum-x;if(y<0||y>3)continue;const px=(x-y)*32,py=(x+y)*16,variant=kind==='tile'&&tileVariants?sampleTileVariant(tileVariants,x,y):undefined;paint(ctx,variant?.image??floor,variant?variant.frame:kind==='tile'?tileFrame:undefined,px-32,py,64,32);}
   if(kind!=='tile'){
    // Match the same grid origin and 2:1 projection as the world renderer.
    ctx.translate(0,32);
@@ -48,7 +49,7 @@
 </script>
 <div class="stage">
  <canvas width="680" height="430" bind:this={canvas} style:cursor={onshift&&kind!=='tile'?'grab':'default'} aria-label={kind==='tile'?'Vista previa del suelo repetido':'Vista previa del recurso sobre la retícula con un personaje de referencia'} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>Vista previa del recurso.</canvas>
- <div class="legend"><span>{kind==='tile'?'Mosaico · 4 × 4 casillas':'Referencia a la izquierda · Recurso a la derecha'}</span><span>{kind==='tile'?'Comprueba las uniones':onshift?'Arrastra el dibujo para ajustar su apoyo':'Mismo tamaño y apoyo'}</span></div>
+ <div class="legend"><span>{kind==='tile'?(tileVariants?'Familia · mosaico mixto 4 × 4':'Mosaico · 4 × 4 casillas'):'Referencia a la izquierda · Recurso a la derecha'}</span><span>{kind==='tile'?'Comprueba las uniones':onshift?'Arrastra el dibujo para ajustar su apoyo':'Mismo tamaño y apoyo'}</span></div>
 </div>
 <style>
  .stage{background:radial-gradient(ellipse at 50% 50%,#f3f5e8,#e7eddd);border:1px solid #d8e1d0;border-radius:16px;overflow:hidden}.stage canvas{display:block;width:100%;height:auto;touch-action:none;cursor:grab}.stage canvas:active{cursor:grabbing}.legend{display:flex;justify-content:space-between;gap:12px;padding:14px 18px;border-top:1px solid #d7dfcf;font-size:11px;color:#68795c;background:#f2f5e9}@media(max-width:700px){.legend{flex-direction:column;gap:4px}}

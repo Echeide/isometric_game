@@ -12,6 +12,7 @@ export type {ImageSize} from './graphics-validation';
 export type { Facing, ActorPose, WorldEditor } from './types';
 
 export type { PixelArtPack } from './pixelart';
+export type {TileFamily,TileFamilies} from './tile-families';
 
 export { characterFps, characterImage, characterVariants } from './character';
 export type { CharacterPack, CharacterClip } from './character';

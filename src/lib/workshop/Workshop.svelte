@@ -11,13 +11,17 @@
  import {localAdventures,resourceBlob,imageUrls,saveWorkshopDraft,loadWorkshopDraft,clearWorkshopDraft} from '$lib/storage/local-adventures';
  import {downloadBlob,exportAdventure,pngSize,validateCatalogGraphics} from '$lib/storage/adventure-package';
  import {validateGraphics,type ImageSize} from '@isometrico/world';
- import {workshopEntries,workshopNpc,standaloneCharacter,supportOrigin,resourceUsages,actionLabels,type ResourceKind,type ResourceEntry} from './resources';
+ import {workshopEntries,workshopNpc,standaloneCharacter,supportOrigin,resourceUsages,actionLabels,groupWorkshopTiles,type ResourceKind,type ResourceEntry} from './resources';
  import AdventurePaletteEditor from './AdventurePaletteEditor.svelte';
  import ColorVariantEditor from './ColorVariantEditor.svelte';
  import {colorVariantResource} from './color-variant';
  import {defaultAdventurePalette,type AdventurePalette} from '$lib/demo/adventure-palette';
  import {mapResourceImages,resourceImages,prunePaletteOriginals,paletteFromColors,type PaletteResource} from './palette';
  import {decodePaletteImage,encodePalettePNG,adaptedColorsPNG} from './palette-browser';
+ import {createTileBase} from './tile-base';
+ import TileFamilyEditor from './TileFamilyEditor.svelte';
+ import TileCatalog from './TileCatalog.svelte';
+ import {detachTile,tileFamilyId,type TileFamilies} from '../../../packages/world/src/tile-families';
  import {extractSpritePalette} from '../../../packages/character-generator/src/pipeline';
  import {readPng,visibleCrop} from './images';
  import {readCharacterZip} from './character-package';
@@ -40,6 +44,9 @@
  let item=$state<ObjectSprite>({image:'',width:64,height:64,origin:[32,48]});
  let character=$state<CharacterPack>(standaloneCharacter(defaultGraphics.character,'728da5'));
  let tileImage=$state(''),tileOriginalImage=$state<string>(),tileFrame=$state<[number,number,number,number]>([0,0,64,32]);
+ let tileFamilies=$state.raw<TileFamilies>({}),tilePreview=$state<'single'|'family'>('single');
+ const activeTileFamily=$derived(tileFamilyId(tileFamilies,selected));
+
  let libraryScope=$state<'adventure'|'general'|'global'>('adventure'),libraryKind=$state<ResourceKind>('object');
  let objectProposal=$state<string|null>(null);
  let paletteDialogOpen=$state(false),paletteLinks=$state<Record<string,string>>({});
@@ -54,11 +61,15 @@
  let imageRevision=$state(0),fileInput:HTMLInputElement,characterZipInput:HTMLInputElement,confirmDialog:HTMLDialogElement;
  let pendingAction:(()=>void)|undefined,uploadSlot='base',packSignature='',catalogSignature='',disposed=false;
  const pending=new Map<string,Blob>(),urls=new Map<string,string>(),sizes=new Map<string,ImageSize>();
- type Draft={kind:ResourceKind;selected:string;name:string;category:VisualAsset['category'];size:{x:number;y:number};item:ObjectSprite;character:CharacterPack;tileImage:string;tileOriginalImage?:string;tileFrame:[number,number,number,number];reuseSit:boolean;paletteLinks?:Record<string,string>;pending:Record<string,Blob>};
+ type Draft={kind:ResourceKind;selected:string;name:string;category:VisualAsset['category'];size:{x:number;y:number};item:ObjectSprite;character:CharacterPack;tileImage:string;tileOriginalImage?:string;tileFrame:[number,number,number,number];tileFamilies?:TileFamilies;reuseSit:boolean;paletteLinks?:Record<string,string>;pending:Record<string,Blob>};
  const entries=$derived(workshopEntries(pack,adventure?.catalog,adventure?.catalogOverrides));
+ const current=$derived(entries.find(e=>e.id===selected&&e.kind===kind));
+ const tileChoices=$derived([...entries.filter(e=>e.kind==='tile'&&e.id!==selected),...(kind==='tile'&&tileImage?[{id:selected,kind:'tile' as const,name,image:tileImage,frame:tileFrame,custom:current?.custom??true}]:[])]);
+ const tileFamilyPreview=$derived(activeTileFamily?Object.entries(tileFamilies[activeTileFamily].tiles).map(([id,weight])=>{const entry=tileChoices.find(e=>e.id===id);return {image:entry?.image??'',frame:entry?.frame,weight:weight??0};}).filter(e=>e.image):[]);
+ const tileCatalog=$derived(groupWorkshopTiles(tileChoices,tileFamilies,search));
+ const tileCount=$derived(tileCatalog.ungrouped.length+tileCatalog.groups.reduce((sum,g)=>sum+g.entries.length,0));
  function catalogVersion(a:Adventure){return JSON.stringify([a.catalog??[],a.catalogOverrides??{},a.palette??null]);}
  const filtered=$derived(entries.filter(e=>e.kind===kind&&e.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())));
- const current=$derived(entries.find(e=>e.id===selected&&e.kind===kind));
  const custom=$derived(selected.startsWith('custom.'));
  const usages=$derived(adventure&&current?resourceUsages(adventure.maps,current):[]);
  const previewItem=$derived(objectProposal && kind==='object'?{...item,image:objectProposal,frame:[0,0,Math.round(item.width),Math.round(item.height)] as [number,number,number,number]}:item);
@@ -95,17 +106,37 @@
   paletteLinks={};kind=entry.kind;selected=entry.id;name=entry.name;pose='idle';error='';notice='';dirty=false;zoom=2;locked=true;
   const asset=resolveVisualCatalog(adventure?.catalog,adventure?.catalogOverrides).find(a=>a.id===entry.id);category=asset?.category??'office';size=clone(asset?.size??{x:1,y:1});
   if(kind==='player'){character=entry.id==='default'?standaloneCharacter(pack.character,'728da5'):clone(pack.players![entry.id].character);reuseSit=characterImage(character,'sit')===characterImage(character,'work')&&character.animations.sit.frames===1;}
-  else if(kind==='tile'){tileImage=pack.tiles[entry.id as TileKind];tileOriginalImage=pack.tileOriginalImages?.[entry.id as TileKind];const dimensions=sizes.get(tileImage)!;tileFrame=clone(pack.tileFrames?.[entry.id as TileKind]??[0,0,dimensions.width,dimensions.height]);}
+  else if(kind==='tile'){tileFamilies=clone(pack.tileFamilies??{});tilePreview='single';tileImage=pack.tiles[entry.id as TileKind];tileOriginalImage=pack.tileOriginalImages?.[entry.id as TileKind];const dimensions=sizes.get(tileImage)!;tileFrame=clone(pack.tileFrames?.[entry.id as TileKind]??[0,0,dimensions.width,dimensions.height]);}
   else item=clone(kind==='npc'?workshopNpc(pack,entry.id):pack.objects[entry.id]);
  }
  function tab(next:ResourceKind){ask(()=>{kind=next;search='';const entry=entries.find(e=>e.kind===next);if(entry)select(entry);else{selected='';dirty=false;}});}
- function create(){ask(()=>{
+ function create(){ask(()=>void createResource());}
+ async function createResource(){
+  if(busy)return;busy=true;error='';
+  try{
+  let baseImage='';
+  if(kind==='tile'){
+   const base=createTileBase(adventure?.palette),blob=new Blob([new Uint8Array(encodePalettePNG(base))],{type:'image/png'}),id=crypto.randomUUID();
+   baseImage=`asset:${id}`;await addImage(baseImage,blob);if(disposed)return;pending.set(id,blob);
+  }
   paletteLinks={};selected=`custom.${crypto.randomUUID()}`;name=kind==='npc'?'Nuevo PNJ':kind==='player'?'Nuevo jugador':kind==='tile'?'Nuevo suelo':'Nuevo objeto';size={x:1,y:1};category=kind==='npc'?'people':'office';pose='idle';error='';notice='';dirty=true;
   if(kind==='player'){character=standaloneCharacter(defaultGraphics.character);character.image='';for(const p of actorPoses)character.animations[p].image='';reuseSit=true;}
-  else if(kind==='tile'){tileImage='';tileOriginalImage=undefined;tileFrame=[0,0,64,32];}
+  else if(kind==='tile'){tileFamilies=clone(pack.tileFamilies??{});tilePreview='single';tileImage=baseImage;tileOriginalImage=undefined;tileFrame=[0,0,64,32];notice='Base de 64 × 32 preparada. Pulsa «Editar imagen» para dibujar el suelo en Piskel.';}
   else item={image:'',width:64,height:64,origin:[32,48]};
- });}
+  }catch(e){message(e);}finally{busy=false;}
+ }
  function duplicate(){ask(()=>{selected=`custom.${crypto.randomUUID()}`;name=`${name} · copia`;dirty=true;notice='Variante independiente. Guarda para añadirla al catálogo.';});}
+ function addTileVariant(){
+  if(busy||dirty||kind!=='tile'||!current)return;
+  if(Object.keys(pack.tiles).filter(id=>id.startsWith('custom.')).length>=128){error='La biblioteca admite hasta 128 suelos propios.';return;}
+  const base=selected,id=`custom.${crypto.randomUUID()}` as TileKind,next=clone(pack.tileFamilies??{});
+  let familyId=tileFamilyId(next,base);
+  if(!familyId){familyId=`family.${crypto.randomUUID()}`;next[familyId]={name,tiles:{[base]:70}};}
+  next[familyId].tiles[id]=30;
+  selected=id;name=`${name.slice(0,109)} · variante`;tileFamilies=next;tilePreview='family';paletteLinks={};dirty=true;error='';
+  notice='Variante preparada en su familia. Retócala con «Editar imagen» y guarda en la aventura.';
+ }
+ function selectTileVariant(id:string){const entry=entries.find(e=>e.kind==='tile'&&e.id===id);if(entry)ask(()=>select(entry));}
  function openColorVariant(){
   if(busy||dirty||objectProposal||!current||!adventure)return;
   colorVariantSession={resource:clone(paletteResource),name,sourceId:selected,adventureId:adventure.id,tileFrame:clone(tileFrame),size:clone(size),palette:clone(adventure.palette??defaultAdventurePalette())};
@@ -299,6 +330,7 @@
    if(kind==='player'){syncSit();if(id==='default')id=`custom.${crypto.randomUUID()}`;currentPack.players={...currentPack.players,[id]:{name:name.trim(),character:clone(character)}};}
    else if(kind==='tile'){currentPack.tiles[id as TileKind]=tileImage;currentPack.tileFrames={...currentPack.tileFrames,[id]:clone(tileFrame)};currentPack.tileNames={...currentPack.tileNames,[id]:name.trim()};if(tileOriginalImage)currentPack.tileOriginalImages={...currentPack.tileOriginalImages,[id]:tileOriginalImage};else if(currentPack.tileOriginalImages)delete currentPack.tileOriginalImages[id as TileKind];}
    else{currentPack.objects[id]=clone(item);if(custom){const entry:VisualAsset={id,label:name.trim(),kind:kind==='npc'?'person':'object',category:kind==='npc'?'people':category,size:clone(size)};currentAdventure.catalog=[...(currentAdventure.catalog??[]).filter(e=>e.id!==id),entry];}else currentAdventure.catalogOverrides={...currentAdventure.catalogOverrides,[id]:{label:name.trim(),category:kind==='npc'?'people':category}};}
+   if(kind==='tile')currentPack.tileFamilies=clone(tileFamilies);
    currentPack.paletteOriginalImages={...currentPack.paletteOriginalImages,...paletteLinks};prunePaletteOriginals(currentPack);
    validateGraphics(currentPack,sizes);validateCatalogGraphics(currentAdventure,currentPack);
    const used=new Set(imageUrls(currentPack).filter(u=>u.startsWith('asset:')).map(u=>u.slice(6))),blobs=Object.fromEntries([...pending].filter(([key])=>used.has(key)));
@@ -311,12 +343,13 @@
     if(currentAdventure.maps.some(m=>Object.values(m.tiles??{}).includes(selected as TileKind)))throw new Error('Este suelo se utiliza en un mapa. Sustituye las baldosas pintadas antes de eliminarlo.');
     delete currentPack.tiles[selected as TileKind];delete currentPack.tileFrames?.[selected as TileKind];delete currentPack.tileNames?.[selected as TileKind];
     delete currentPack.tileOriginalImages?.[selected as TileKind];
+    currentPack.tileFamilies=detachTile(currentPack.tileFamilies??{},selected);
    }else{if(currentAdventure.maps.some(m=>m.entities.some(e=>e.visualId===selected)))throw new Error('Este recurso se utiliza en un mapa. Retira sus instancias antes de eliminarlo.');delete currentPack.objects[selected];currentAdventure.catalog=currentAdventure.catalog?.filter(e=>e.id!==selected);}
    prunePaletteOriginals(currentPack);validateGraphics(currentPack,sizes);validateCatalogGraphics(currentAdventure,currentPack);
    await localAdventures.save(currentAdventure,{pack:currentPack,blobs:{}});dirty=false;await load(adventure!.id);notice='Recurso eliminado del catálogo.';
   }catch(e){message(e);}finally{busy=false;}}
- async function saveDraft(){if(!adventure)return false;busy=true;try{const draft:Draft={kind,selected,name,category,size:clone(size),item:clone(item),character:clone(character),tileImage,tileOriginalImage,tileFrame:clone(tileFrame),reuseSit,paletteLinks:clone(paletteLinks),pending:Object.fromEntries(pending)};await saveWorkshopDraft(adventure.id,draft);hasDraft=true;notice='Borrador guardado en este navegador. Aún no modifica el juego.';return true;}catch(e){message(e);return false;}finally{busy=false;}}
- async function restoreDraft(){if(!adventure)return;busy=true;try{const draft=await loadWorkshopDraft<Draft>(adventure.id);if(!draft)return;for(const [id,blob]of Object.entries(draft.pending)){pending.set(id,blob);await addImage(`asset:${id}`,blob);}kind=draft.kind;selected=draft.selected;name=draft.name;category=draft.category;size=draft.size;item=draft.item;character=draft.character;tileImage=draft.tileImage;tileOriginalImage=draft.tileOriginalImage;tileFrame=draft.tileFrame;reuseSit=draft.reuseSit;paletteLinks=draft.paletteLinks??{};dirty=true;notice='Borrador recuperado. Revisa los campos y guarda en la aventura.';}catch(e){message(e);}finally{busy=false;}}
+ async function saveDraft(){if(!adventure)return false;busy=true;try{const draft:Draft={kind,selected,name,category,size:clone(size),item:clone(item),character:clone(character),tileImage,tileOriginalImage,tileFrame:clone(tileFrame),tileFamilies:clone(tileFamilies),reuseSit,paletteLinks:clone(paletteLinks),pending:Object.fromEntries(pending)};await saveWorkshopDraft(adventure.id,draft);hasDraft=true;notice='Borrador guardado en este navegador. Aún no modifica el juego.';return true;}catch(e){message(e);return false;}finally{busy=false;}}
+ async function restoreDraft(){if(!adventure)return;busy=true;try{const draft=await loadWorkshopDraft<Draft>(adventure.id);if(!draft)return;for(const [id,blob]of Object.entries(draft.pending)){pending.set(id,blob);await addImage(`asset:${id}`,blob);}kind=draft.kind;selected=draft.selected;name=draft.name;category=draft.category;size=draft.size;item=draft.item;character=draft.character;tileImage=draft.tileImage;tileOriginalImage=draft.tileOriginalImage;tileFrame=draft.tileFrame;tileFamilies=clone(draft.tileFamilies??pack.tileFamilies??{});tilePreview='single';reuseSit=draft.reuseSit;paletteLinks=draft.paletteLinks??{};dirty=true;notice='Borrador recuperado. Revisa los campos y guarda en la aventura.';}catch(e){message(e);}finally{busy=false;}}
  async function download(){try{if(editSource)downloadBlob(await paletteBlob(editSource),`${name||'recurso'}.png`);}catch(e){message(e);}}
  async function exportZip(){busy=true;try{const a=(await localAdventures.load()).adventures.find(a=>a.id===adventure!.id)!;downloadBlob(await exportAdventure(a),`${a.id}.zip`);notice='ZIP exportado con el catálogo y sus imágenes guardadas.';}catch(e){message(e);}finally{busy=false;}}
 </script>
@@ -340,16 +373,16 @@
  {#if libraryScope!=='adventure'}{#key libraryScope}<SharedLibrary scope={libraryScope==='global'?'global':'tenant'} kind={libraryKind} {busy} onincorporate={entry=>ask(()=>void incorporateResource(entry))}/>{/key}{/if}
  <div hidden={libraryScope!=='adventure'}>
  <div class="workspace">
-  <aside class="library" aria-label="Catálogo de recursos"><div class="library-title"><h2>{tabs.find(t=>t.id===kind)?.label}</h2><span>{filtered.length}</span></div><label class="search"><Search size={15}/><input aria-label="Buscar recurso" placeholder="Buscar recurso…" bind:value={search}/></label>
-   <button class="add" disabled={busy} onclick={create}><Plus size={16}/> Añadir {kind==='npc'?'PNJ':kind==='player'?'jugador':kind==='tile'?'suelo':'objeto'}</button>{#if kind==='tile'}<p class="library-note">Añade un suelo propio o selecciona uno existente. Al guardar, podrás pintarlo desde Baldosas en el editor.</p>{/if}
+  <aside class="library" aria-label="Catálogo de recursos"><div class="library-title"><h2>{tabs.find(t=>t.id===kind)?.label}</h2><span>{kind==='tile'?tileCount:filtered.length}</span></div><label class="search"><Search size={15}/><input aria-label="Buscar recurso" placeholder="Buscar recurso…" bind:value={search}/></label>
+   <button class="add" disabled={busy} onclick={create}><Plus size={16}/> Añadir {kind==='npc'?'PNJ':kind==='player'?'jugador':kind==='tile'?'suelo':'objeto'}</button>{#if kind==='tile'}<p class="library-note">Abre una familia para ver sus texturas. Los suelos independientes aparecen aparte.</p>{/if}
    {#if kind==='player'}<button class="upload" disabled={busy} onclick={()=>characterZipInput.click()}><Upload size={16}/> Importar ZIP del personaje</button><p class="zip-note">Usa «Descargar personaje ZIP» del generador, con el perfil de 4 direcciones. Las hojas, fotogramas, FPS y apoyo se cargan automáticamente.</p>{/if}
-   <div class="resource-list">{#each filtered as entry}<button class:selected={selected===entry.id} aria-pressed={selected===entry.id} disabled={busy} onclick={()=>ask(()=>select(entry))}><span class="thumb"><SpriteThumbnail image={resolve(entry.image)} frame={entry.frame}/></span><span class="resource-name"><strong>{entry.name}</strong><small>{entry.kind==='player'&&(pack.activePlayer??'default')===entry.id?'Jugador activo':entry.custom?'Personalizado':'Catálogo base'}</small></span>{#if entry.id===selected}<span class="selection-dot"></span>{/if}</button>{:else}<p class="empty-list">{search?'No hay coincidencias.':'Tu primer PNJ puede ser una sola imagen. Añádelo y ajusta su tamaño.'}</p>{/each}</div>
+   <div class="resource-list">{#if kind==='tile'}<TileCatalog {...tileCatalog} {selected} {dirty} {busy} {search} {resolve} onselect={selectTileVariant}/>{:else}{#each filtered as entry}<button class:selected={selected===entry.id} aria-pressed={selected===entry.id} disabled={busy} onclick={()=>ask(()=>select(entry))}><span class="thumb"><SpriteThumbnail image={resolve(entry.image)} frame={entry.frame}/></span><span class="resource-name"><strong>{entry.name}</strong><small>{entry.kind==='player'&&(pack.activePlayer??'default')===entry.id?'Jugador activo':entry.custom?'Personalizado':'Catálogo base'}</small></span>{#if entry.id===selected}<span class="selection-dot"></span>{/if}</button>{:else}<p class="empty-list">{search?'No hay coincidencias.':'Tu primer PNJ puede ser una sola imagen. Añádelo y ajusta su tamaño.'}</p>{/each}{/if}</div>
    <p class="storage-note">Guardado local en este navegador.<br/>El ZIP lleva tus recursos a otro dispositivo.</p>
   </aside>
   {#if selected}
   <main class="stage-column"><div class="resource-heading"><div><p class="eyebrow">{kind==='npc'?'PERSONAJE NO JUGABLE':kind==='player'?'PERSONAJE JUGABLE':kind==='tile'?'TEXTURA DE SUELO':'OBJETO DEL MUNDO'}</p><h2>{name}</h2></div><span class:unsaved={dirty} class="state-badge">{objectProposal?'Propuesta IA':dirty?'Sin guardar':'Guardado'}</span></div>
-   <ResourceStage {kind} item={previewItem} {character} {pose} {direction} {playing} {zoom} {size} {tileImage} {tileFrame} reference={pack.activePlayer?pack.players![pack.activePlayer].character:pack.character} floorImage={defaultGraphics.tiles.office} {resolve} onshift={shift}/>
-   <div class="preview-tools"><div>{#if kind==='player'||kind==='npc'}<button aria-label={playing?'Pausar animación':'Reproducir animación'} onclick={()=>playing=!playing}>{#if playing}<Pause size={16}/>{:else}<Play size={16}/>{/if}</button><select aria-label="Acción de vista previa" bind:value={pose}>{#each kind==='npc'?npcPoses:actorPoses as p}<option value={p}>{actionLabels[p]}</option>{/each}</select>{/if}{#if kind==='player'||activeClip?.directions}<select aria-label="Dirección de vista previa" bind:value={direction}><option value={0}>NE ↗</option><option value={1}>SE ↘</option><option value={2}>SW ↙</option><option value={3}>NW ↖</option></select>{/if}</div><div><span>Vista</span><button aria-label="Alejar vista previa" disabled={zoom<=.5} onclick={()=>zoom=Math.max(.5,zoom-.5)}><Minus size={15}/></button><output>{zoom}×</output><button aria-label="Acercar vista previa" disabled={zoom>=4} onclick={()=>zoom=Math.min(4,zoom+.5)}><Plus size={15}/></button></div></div>
+   <ResourceStage tileVariants={kind==='tile'&&tilePreview==='family'&&tileFamilyPreview.length>1?tileFamilyPreview:undefined} {kind} item={previewItem} {character} {pose} {direction} {playing} {zoom} {size} {tileImage} {tileFrame} reference={pack.activePlayer?pack.players![pack.activePlayer].character:pack.character} floorImage={defaultGraphics.tiles.office} {resolve} onshift={shift}/>
+   <div class="preview-tools"><div>{#if kind==='tile'&&tileFamilyPreview.length>1}<select aria-label="Vista del suelo" bind:value={tilePreview}><option value="single">Solo esta textura</option><option value="family">Mosaico de familia</option></select>{/if}{#if kind==='player'||kind==='npc'}<button aria-label={playing?'Pausar animación':'Reproducir animación'} onclick={()=>playing=!playing}>{#if playing}<Pause size={16}/>{:else}<Play size={16}/>{/if}</button><select aria-label="Acción de vista previa" bind:value={pose}>{#each kind==='npc'?npcPoses:actorPoses as p}<option value={p}>{actionLabels[p]}</option>{/each}</select>{/if}{#if kind==='player'||activeClip?.directions}<select aria-label="Dirección de vista previa" bind:value={direction}><option value={0}>NE ↗</option><option value={1}>SE ↘</option><option value={2}>SW ↙</option><option value={3}>NW ↖</option></select>{/if}</div><div><span>Vista</span><button aria-label="Alejar vista previa" disabled={zoom<=.5} onclick={()=>zoom=Math.max(.5,zoom-.5)}><Minus size={15}/></button><output>{zoom}×</output><button aria-label="Acercar vista previa" disabled={zoom>=4} onclick={()=>zoom=Math.min(4,zoom+.5)}><Plus size={15}/></button></div></div>
    {#if kind==='npc'}<p class="preview-note">{activeClip?`${pose==='talk'&&item.animations?.talk?'Conversación animada':'Animación de reposo'} · ${activeClip.frames} fotogramas a ${activeClip.fps} fps`:'Imagen estática · lista para usar sin animaciones.'}</p>{/if}
    {#if kind==='player'}<div class="action-strip">{#each actorPoses as p}<button class:active={pose===p} onclick={()=>pose=p}><span>{actionLabels[p]}</span><small>{characterImage(character,p)?`${character.animations[p].frames} fotogramas`:'Sin imagen'}</small></button>{/each}</div>{/if}
    {#if resourceImages(paletteResource).some(u=>!!paletteOriginals[u])}<button class="restore-image" disabled={busy||!!objectProposal} onclick={restorePalette}><RotateCcw size={15}/> Recuperar colores originales</button>{/if}
@@ -358,7 +391,7 @@
    {#if originalImage&&source!==originalImage}<button class="restore-image" disabled={busy} onclick={restoreOriginalImage}><RotateCcw size={14}/> Recuperar imagen original</button>{/if}
    {#if editingAnimation}<p class="source-hint">Se edita {actionLabels[editAction].toLowerCase()}{kind==='player'||activeClip?.directions?' / '+(['NE','SE','SW','NW'][direction]??'SE'):''}, fotograma a fotograma. Las demás filas de la hoja se conservan.</p>{/if}
    {#if editSource}<details class="source-detail"><summary>Ver {editingAnimation?'hoja de la acción':'imagen y márgenes'} originales</summary><div><img src={resolve(editSource)} alt={`Original de ${name}`}/></div></details>{/if}
-   <div class="usage-card"><h3>Uso en la aventura</h3><p>{kind==='player'?(isActivePlayer?'Es el personaje controlado al jugar esta aventura.':'Guárdalo y actívalo para usarlo al jugar.'):usages.length?`Este recurso se utiliza en: ${usages.join(', ')}. Guardar su aspecto actualizará esos usos.`:'Disponible para colocar al guardar. Las variantes mantienen su propio gráfico.'}</p>{#if current}<button disabled={busy} onclick={duplicate}><Copy size={15}/> Duplicar como variante</button><button disabled={busy||dirty||!!objectProposal||!resourceImages(paletteResource).length} title={dirty?'Guarda el recurso antes de crear una variante de color':'Cambiar colores en todas las hojas y crear una copia'} onclick={openColorVariant}><Palette size={15}/> Crear variante de color</button>{/if}</div>
+   <div class="usage-card"><h3>Uso en la aventura</h3><p>{kind==='player'?(isActivePlayer?'Es el personaje controlado al jugar esta aventura.':'Guárdalo y actívalo para usarlo al jugar.'):usages.length?`Este recurso se utiliza en: ${usages.join(', ')}. Guardar su aspecto actualizará esos usos.`:'Disponible para colocar al guardar. Las variantes mantienen su propio gráfico.'}</p>{#if current}{#if kind==='tile'}<button disabled={busy||dirty} title={dirty?'Guarda el suelo antes de añadir una variante':'Crea una copia dentro de la misma familia'} onclick={addTileVariant}><Plus size={15}/> Añadir variante de textura</button>{:else}<button disabled={busy} onclick={duplicate}><Copy size={15}/> Duplicar como variante</button>{/if}<button disabled={busy||dirty||!!objectProposal||!resourceImages(paletteResource).length} title={dirty?'Guarda el recurso antes de crear una variante de color':'Cambiar colores en todas las hojas y crear una copia'} onclick={openColorVariant}><Palette size={15}/> Crear variante de color</button>{/if}</div>
   </main>
   <form class="inspector" onsubmit={e=>{e.preventDefault();void save();}} oninput={()=>dirty=true} onchange={()=>dirty=true} aria-label="Propiedades del recurso"><fieldset disabled={busy}><div class="inspector-title"><h2>Propiedades</h2><span>{kind==='tile'?'Textura':kind==='player'?'Jugador':kind==='npc'?'PNJ':'Objeto'}</span></div>
    <label>Nombre<input aria-label="Nombre del recurso" maxlength="120" bind:value={name} disabled={kind==='tile'&&!custom}/></label>
@@ -374,8 +407,9 @@
     <section class="fields-section"><h3>Formato del personaje</h3><div class="two-fields"><label>Ancho celda<input aria-label="Ancho de fotograma" type="number" min="1" bind:value={character.frameWidth}/></label><label>Alto celda<input aria-label="Alto de fotograma" type="number" min="1" bind:value={character.frameHeight}/></label></div><label>Escala (%)<input aria-label="Escala del jugador" type="number" min="5" max="800" value={Math.round((character.scale??1)*100)} oninput={e=>character.scale=e.currentTarget.valueAsNumber/100}/></label><div class="two-fields"><label>Apoyo X<input type="number" step="any" bind:value={character.anchor[0]}/></label><label>Apoyo Y<input type="number" step="any" bind:value={character.anchor[1]}/></label></div><p>Las seis acciones comparten tamaño de celda y apoyo. Filas: NE, SE, SW y NW.</p></section>
     <section class="fields-section"><h3>Acción · {actionLabels[pose]}</h3>{#if pose==='sit'}<label class="checkbox"><input type="checkbox" bind:checked={reuseSit} onchange={syncSit}/> Usar primer fotograma de trabajar</label>{/if}{#if pose!=='sit'||!reuseSit}<button type="button" class="upload" onclick={()=>chooseUpload(pose)}><Upload size={15}/>{characterImage(character,pose)?'Sustituir hoja':'Subir hoja PNG'}</button><div class="two-fields"><label>Fotogramas<input aria-label="Fotogramas de la acción" type="number" min="1" max="64" bind:value={character.animations[pose].frames}/></label><label>FPS<input aria-label="FPS de la acción" type="number" min="1" max="60" bind:value={character.animations[pose].fps}/></label><label>Primera fila<input aria-label="Fila de la acción" type="number" min="0" bind:value={character.animations[pose].row}/></label></div><p>Se leen cuatro filas consecutivas desde la indicada.</p>{:else}<p>La postura sentada utiliza la hoja de trabajar.</p>{/if}</section>
    {:else}
-    <p class="metadata-note">El nombre del catálogo se usa al colocar objetos nuevos. Cada objeto del mapa tiene su propio nombre.</p>
+    <p class="metadata-note">Una baldosa ocupa una casilla del mapa. Puedes dibujar sobre la base en Piskel o importar una textura.</p>
     <button type="button" class="upload" onclick={()=>chooseUpload()}><Upload size={16}/> {tileImage?'Sustituir textura PNG':'Subir textura PNG'}</button><section class="fields-section"><h3>Recorte de la baldosa</h3><div class="two-fields">{#each ['X','Y','Ancho','Alto'] as title,i}<label>{title}<input aria-label={`Baldosa ${title}`} type="number" min={i<2?0:1} bind:value={tileFrame[i]}/></label>{/each}</div><p>El recorte se adapta a una baldosa de 64 × 32. Usa un dibujo isométrico y revisa las uniones del mosaico.</p></section><p class="tile-info">{current?`Guardar «${name}» cambia su aspecto en las casillas que utilizan este suelo.`:'El nuevo suelo aparecerá en la paleta de Baldosas del editor. La imagen se conserva con su recorte.'}</p>
+    <TileFamilyEditor families={tileFamilies} {selected} choices={tileChoices} {resolve} {busy} canAdd={!dirty&&!!current} onchange={next=>{tileFamilies=next;dirty=true;}} onselect={selectTileVariant} onadd={addTileVariant}/>
    {/if}
    <div class="save-actions"><button type="button" disabled={dirty||!current||!!objectProposal} onclick={publishResource}>Añadir a mi biblioteca</button>{#if dirty}<small>Guarda en la aventura antes de añadirlo a la biblioteca.</small>{/if}<button class="primary" type="submit" disabled={!dirty||!!objectProposal}><Save size={16}/>{busy?'Guardando…':'Guardar en aventura'}</button>{#if kind==='player'&&current}<button type="button" disabled={dirty||isActivePlayer} onclick={activate}>{#if isActivePlayer}<Check size={16}/>Jugador activo{:else}<UserRound size={16}/>Usar como jugador{/if}</button>{/if}<button type="button" disabled={!dirty||!!objectProposal} onclick={saveDraft}>Guardar borrador</button>{#if current&&dirty}<button type="button" onclick={()=>ask(()=>select(current!))}><RotateCcw size={14}/> Restaurar guardado</button>{/if}{#if custom&&current}<button type="button" class="text-danger" disabled={usages.length>0||isActivePlayer} onclick={()=>ask(()=>void remove())}><Trash2 size={14}/> Eliminar del catálogo</button>{/if}</div>
   </fieldset></form>

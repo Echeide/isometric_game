@@ -3,7 +3,7 @@ import type {PixelArtPack} from '@isometrico/world';
 /** Use exactly the same playable graphics for publication and pending-change detection. */
 export function publicGraphics(pack:PixelArtPack):PixelArtPack {
  const graphics=structuredClone(pack);
- delete graphics.resourceOrigins;delete graphics.tileOriginalImages;delete graphics.paletteOriginalImages;
+ delete graphics.resourceOrigins;delete graphics.tileOriginalImages;delete graphics.paletteOriginalImages;delete graphics.tileFamilies;
  for(const object of Object.values(graphics.objects)){
   delete object.originalImage;delete object.generationImage;
   for(const key of Object.keys(object))if(/prompt|generation|source/i.test(key))delete (object as unknown as Record<string,unknown>)[key];

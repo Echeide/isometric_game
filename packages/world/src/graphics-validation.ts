@@ -1,6 +1,7 @@
 import {actorPoses,characterImage,characterVariants,type CharacterPack} from './character';
 import type {PixelArtPack,NpcClip,ObjectSprite} from './pixelart';
 import {tileKinds,isTileKind,isCustomTile,type TileKind} from './types';
+import {validateTileFamilies} from './tile-families';
 export type ImageSize={width:number;height:number};
 export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
  const fail=(message:string):never=>{throw new Error(message);};
@@ -24,6 +25,7 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
  }
  for(const [kind,name]of Object.entries(pack.tileNames??{}))if(!Object.hasOwn(pack.tiles,kind)||typeof name!=='string'||!name.trim()||name.length>120)fail('Nombre de suelo no válido.');
  if(Object.keys(pack.tileFrames??{}).some(k=>!Object.hasOwn(pack.tiles,k)))fail('El recorte referencia un suelo que no existe.');
+ validateTileFamilies(pack.tileFamilies,pack.tiles);
  for(const [kind,url]of Object.entries(pack.tileOriginalImages??{})){
   if(!Object.hasOwn(pack.tiles,kind))fail('El original referencia un suelo que no existe.');
   const original=image(url!),current=image(pack.tiles[kind as TileKind]);if(original.width!==current.width||original.height!==current.height)fail('El original y el suelo retocado deben tener las mismas dimensiones.');
