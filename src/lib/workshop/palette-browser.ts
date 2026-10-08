@@ -5,6 +5,7 @@ import {adaptFrameToColors} from './palette';
 import type {EditorPalette} from './image-edit';
 import {validateAdventurePalette} from '$lib/demo/adventure-palette';
 import type {AdventurePalette} from '$lib/demo/adventure-palette';
+import {replaceFrameColors,type ColorReplacement} from './color-variant';
 export async function decodePaletteImage(blob:Blob):Promise<Frame>{
  if(blob.size>10_000_000)throw Error('El PNG no puede superar 10 MB.');
  pngSize(new Uint8Array(await blob.arrayBuffer()));
@@ -33,4 +34,13 @@ export async function adaptedColorsPNG(frame:Frame,palette:EditorPalette,signal?
   await new Promise<void>(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});
  }
  signal?.throwIfAborted();return {frame:adapted,blob:new Blob([new Uint8Array(encodePalettePNG(adapted))],{type:'image/png'})};
+}
+export async function replacedColorsPNG(frame:Frame,replacements:ColorReplacement[],signal?:AbortSignal){
+ const result={width:frame.width,height:frame.height,data:new Uint8ClampedArray(frame.data)};
+ for(let offset=0;offset<frame.data.length;offset+=65536*4){
+  signal?.throwIfAborted();const data=frame.data.subarray(offset,Math.min(offset+65536*4,frame.data.length));
+  result.data.set(replaceFrameColors({width:data.length/4,height:1,data},replacements).data,offset);
+  await new Promise<void>(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};channel.port2.postMessage(null);});
+ }
+ signal?.throwIfAborted();return new Blob([new Uint8Array(encodePalettePNG(result))],{type:'image/png'});
 }
