@@ -5,6 +5,7 @@ Estado: primera versión implementada. El resto del documento conserva los crite
 ## Disponible
 
 - `/sprites?adventure=…` y `/resources?adventure=…` abren el mismo taller, con biblioteca por aventura y pestañas Objetos, PNJ, Jugador y Suelos.
+- La cabecera compacta agrupa título, aventura, exportación ZIP y ámbitos de biblioteca. La paleta aparece a la derecha de los tipos de recurso mediante su nombre, icono y configuración; los colores se muestran en el diálogo. En pantallas estrechas, los controles se distribuyen en varias filas sin desbordar.
 - Importación de PNG original, recorte por coordenadas o eliminación de transparencia dentro de la selección, escala proporcional o dimensiones independientes, apoyo numérico o arrastrando sobre la retícula y huella predeterminada.
 - «Editar imagen», a la izquierda de «Descargar» en Imagen original, abre Piskel para objetos, suelos e imagen estática de PNJ. Permite retocar, deshacer/rehacer, aplicar al taller o descartar. Conserva dimensiones, recorte, escala, apoyo y animaciones asociadas; los retoques se hacen efectivos al guardar en el catálogo.
 - «Editar ciclo» abre la acción y dirección seleccionadas del PJ o PNJ como fotogramas de Piskel, con reproducción. Aplicar reconstruye la hoja completa y conserva las demás filas, columnas sobrantes, FPS, escala y apoyo. El PNJ conserva «Editar imagen estática» como opción aparte.
