@@ -57,6 +57,23 @@ del paso y la disponibilidad. Un objeto oculto desaparece también de navegació
 un objeto visible con interacción bloqueada conserva sus colisiones y explica el
 requisito mediante un mensaje configurable.
 
+Cada estado muestra una miniatura del gráfico elegido. **Preparar abierto/cerrado**
+añade ambos estados y dos reacciones repetibles a un objeto sin estados ni
+reacciones; no sustituye reglas existentes, módulos, salidas ni recogidas de
+inventario. Conserva la interacción activa; si falta o solo muestra información,
+añade `story.interact`, que ejecuta las consecuencias sin abrir un panel de contenido.
+Ambos estados heredan el gráfico y las propiedades actuales hasta que el autor
+los cambie. Para evitar saltos, los gráficos deben tener tamaño y apoyo coherentes.
+
+El taller agrupa objetos en **familias de gráficos**, con aspectos nombrados como
+«Cerrado», «Abierto» o «Roto». En cada estado, el selector elige automáticamente la
+familia del gráfico actual y muestra sus aspectos con miniaturas; también permite
+buscar otra familia o consultar todos los objetos. Un gráfico personalizado puede
+representar un estado de un objeto del catálogo base sin cambiar su tipo, identidad,
+posición, huella o interacción. Los gráficos de PNJ siguen separados de los objetos.
+La familia organiza el taller; no cambia estados por sí misma ni se necesita en la
+partida publicada, que conserva el identificador concreto de cada aspecto.
+
 Las reglas combinan «todas»/«alguna», con negación por requisito, y consultan estados
 de objetos, progreso de módulos (`not-started`, `started`, `completed`, `failed`) o
 cantidades de inventario, incluyendo referencias a otros mapas. Las referencias a
@@ -66,7 +83,10 @@ al objeto, independiente de su contenido; por ahora el adaptador disponible es
 Conversación (`chat`).
 
 Una interacción ejecutada, un inicio o un resultado de módulo dispara sus
-reacciones en el orden configurado. Estas pueden cambiar estados y dar/consumir
+reacciones en el orden configurado. Sus condiciones se evalúan sobre el progreso
+y el inventario al recibir el evento, antes de sus consecuencias. Así, un clic
+puede abrir un cofre y el siguiente cerrarlo sin ejecutar ambos cambios a la vez.
+Estas pueden cambiar estados y dar/consumir
 artículos. Se aplica todo el evento conjuntamente; si una consecuencia falla, no
 se conserva ninguno de sus cambios. Cambiar un estado reevalúa los requisitos,
 pero no dispara nuevas reacciones implícitas. Las marcas «una sola vez» persisten

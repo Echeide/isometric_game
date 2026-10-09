@@ -2,7 +2,7 @@ import type {StoryDefinition} from '../story/types';
 import {validateStory} from '../story/validation';
 import type {InventoryItem} from './inventory';
 import {entranceFacing} from '../../../packages/world/src/exits';
-import { parseScene, isCustomVisual, validateCustomCatalog, validateCatalogOverrides, type VisualCatalogOverrides, type VisualAsset, type Cell, type Facing, type WorldScene } from '@isometrico/world';
+import { parseScene, isCustomVisual, compatibleVisualKind, validateCustomCatalog, validateCatalogOverrides, type VisualCatalogOverrides, type VisualAsset, type Cell, type Facing, type WorldScene } from '@isometrico/world';
 import { findPath, interactionCells, walkable } from '../../../packages/world/src/navigation';
 import { insertEntity } from './editor';
 import {defaultAdventurePalette,validateAdventurePalette,type AdventurePalette} from './adventure-palette';
@@ -25,7 +25,7 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
  if(a.palette!==undefined)validateAdventurePalette(a.palette);
  validateChats(a.chats);
  for(const map of maps)for(const entity of map.entities)if(entity.interaction?.action==='chat.open'&&entity.interaction.resourceId.startsWith(CHAT_PREFIX))embeddedChat(a.chats,entity.interaction.resourceId);
- for(const map of maps)for(const e of map.entities)if(isCustomVisual(e.visualId)&&!catalog.some(r=>r.id===e.visualId&&r.kind===e.kind))throw new Error(`Falta ${e.visualId} en el catálogo de la aventura.`);
+ for(const map of maps)for(const e of map.entities)if(isCustomVisual(e.visualId)&&!catalog.some(r=>r.id===e.visualId&&compatibleVisualKind(e.kind,r.kind)))throw new Error(`Falta ${e.visualId} en el catálogo de la aventura.`);
  if(byId.size!==maps.length)throw new Error('Hay mapas con identificadores repetidos.');
  if(!byId.has(a.startMap))throw new Error('El mapa inicial no existe.');
  const items=a.items??[];

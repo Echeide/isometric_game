@@ -149,6 +149,7 @@
     return;
    }
    if(event.action!=='info.open'){try{storyEvent({mapId:event.sceneId,entityId:event.entityId},'interact');}catch(e){conditionMessage=(e as Error).message;panel='condition';return;}}
+   if(event.action==='story.interact')return;
    opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
    resource=event.resourceId;resourceEntityId=event.entityId;
    if(event.action==='chat.open')controller?.setConversation(event.entityId);

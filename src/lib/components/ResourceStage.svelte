@@ -35,7 +35,8 @@
     const clip=kind==='npc'?(pose==='talk'?(item.animations?.talk??item.animations?.idle):item.animations?.idle):undefined;
     const facing=(['ne','se','sw','nw'] as const)[direction]??'se';
     const frame=clip?[Math.floor(elapsed*clip.fps)%clip.frames*clip.frameWidth,npcClipRow(clip,facing)*clip.frameHeight,clip.frameWidth,clip.frameHeight]:item.frame;
-    paint(ctx,clip?.image??item.image,frame,-item.origin[0],-item.origin[1],item.width,item.height);
+    ctx.save();ctx.rotate((item.rotation??0)*Math.PI/180);
+    paint(ctx,clip?.image??item.image,frame,-item.origin[0],-item.origin[1],item.width,item.height);ctx.restore();
    }
    const cx=(size.x-size.y)*16,cy=(size.x+size.y)*8;
    ctx.strokeStyle='#d17943';ctx.lineWidth=1/zoom;ctx.beginPath();ctx.moveTo(cx-5,cy);ctx.lineTo(cx+5,cy);ctx.moveTo(cx,cy-5);ctx.lineTo(cx,cy+5);ctx.stroke();

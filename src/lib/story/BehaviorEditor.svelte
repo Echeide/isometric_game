@@ -1,16 +1,18 @@
 <script lang="ts">
  import {ArrowUp,ArrowDown} from 'lucide-svelte';
  import type {Adventure} from '../demo/adventure';
- import {resolveVisualCatalog} from '@isometrico/world';
+ import type {PixelArtPack} from '@isometrico/world';
+ import {canPrepareOpenClosed} from './open-closed';
+ import StateGraphic from './StateGraphic.svelte';
+ import StateGraphicPicker from './StateGraphicPicker.svelte';
  import {behavior,entityModules} from './engine';
  import {eventLabels,type EntityRef,type EntityBehavior,type ObjectState,type StoryReaction,type StoryEffect,type StoryEvent} from './types';
  import ConditionEditor from './ConditionEditor.svelte';
  import EffectsEditor from './EffectsEditor.svelte';
- let {adventure,ref,onchange}:{adventure:Adventure;ref:EntityRef;onchange:(b:EntityBehavior)=>void}=$props();
+ let {adventure,ref,graphics,onchange,onprepare}:{adventure:Adventure;ref:EntityRef;graphics:PixelArtPack;onchange:(b:EntityBehavior)=>void;onprepare:()=>void}=$props();
  const config=$derived(behavior(adventure,ref)??{...ref,states:[],reactions:[]});
  const entity=$derived(adventure.maps.find(m=>m.id===ref.mapId)?.entities.find(e=>e.id===ref.entityId));
  const modules=$derived(entityModules(adventure,ref));
- const visuals=$derived(resolveVisualCatalog(adventure.catalog,adventure.catalogOverrides).filter(v=>v.kind===entity?.kind));
  function patch(values:Partial<EntityBehavior>){onchange({...config,...values});}
  function editState(id:string,values:Partial<ObjectState>){patch({states:config.states.map(s=>s.id===id?{...s,...values}:s)});}
  function addState(){const id=crypto.randomUUID();patch({states:[...config.states,{id,name:'Estado '+(config.states.length+1)}],initialState:config.initialState??id});}
@@ -25,8 +27,9 @@
 <section class="behavior" aria-label="Condiciones del objeto">
  <p class="intro">Requisitos y consecuencias de este objeto en la partida.</p>
  <details open><summary>Estados del objeto <span>{config.states.length}</span></summary>
+ {#if !config.states.length&&!config.reactions.length}<div class="starter"><button disabled={!canPrepareOpenClosed(adventure,ref)} onclick={onprepare}>Preparar abierto/cerrado</button><p>Dos estados y una reacción para cada cambio. Elige después sus gráficos. Se conserva la acción actual; si no hay ninguna, se añade «Abrir / cerrar».</p></div>{/if}
  {#if config.states.length}<label>Estado inicial<select value={config.initialState} onchange={e=>patch({initialState:e.currentTarget.value})}>{#each config.states as s}<option value={s.id}>{s.name}</option>{/each}</select></label>{:else}<p>Sin estados propios: se usan las propiedades actuales.</p>{/if}
- {#each config.states as s,i (s.id)}<details class="card" open={i===0}><summary>{s.name}</summary><label>Nombre del estado<input value={s.name} maxlength="80" onchange={e=>editState(s.id,{name:e.currentTarget.value})}/></label><label>Descripción en este estado<textarea rows="2" maxlength="2000" value={s.description??''} placeholder="Usar la descripción del objeto" onchange={e=>editState(s.id,{description:e.currentTarget.value||undefined})}></textarea></label><label>Gráfico<select value={s.visualId??''} onchange={e=>editState(s.id,{visualId:e.currentTarget.value||undefined})}><option value="">Usar gráfico del objeto</option>{#each visuals as v}<option value={v.id}>{v.label}</option>{/each}</select></label>
+ {#each config.states as s,i (s.id)}<details class="card" open={i===0}><summary class="state-heading"><StateGraphic {graphics} visualId={s.visualId??entity?.visualId} label={s.name}/><strong>{s.name}</strong></summary><label>Nombre del estado<input value={s.name} maxlength="80" onchange={e=>editState(s.id,{name:e.currentTarget.value})}/></label><label>Descripción en este estado<textarea rows="2" maxlength="2000" value={s.description??''} placeholder="Usar la descripción del objeto" onchange={e=>editState(s.id,{description:e.currentTarget.value||undefined})}></textarea></label>{#if entity}<StateGraphicPicker {adventure} {entity} {graphics} value={s.visualId} label={s.name} onchange={visualId=>editState(s.id,{visualId})}/>{/if}<p class="graphic-hint">Usa gráficos del mismo tamaño y con el mismo punto de apoyo para evitar saltos.</p>
  {#each [{key:'solid' as const,label:'Bloquea el paso'},{key:'visible' as const,label:'Visible'},{key:'interactive' as const,label:'Permite interacción'}] as field}<label>{field.label}<select value={booleanValue(s[field.key])} onchange={e=>editState(s.id,{[field.key]:booleanFrom(e.currentTarget.value)})}><option value="inherit">Heredar configuración</option><option value="yes">Sí</option><option value="no">No</option></select></label>{/each}
  <button class="delete" onclick={()=>removeState(s.id)}>Eliminar estado</button></details>{/each}
  <button disabled={config.states.length>=16} onclick={addState}>+ Añadir estado</button></details>
@@ -46,5 +49,7 @@
  <p class="hint">Los cambios se guardan con la aventura y se pueden deshacer. Prueba el progreso desde la vista previa.</p>
 </section>
 <style>
+.state-heading{display:flex;align-items:center;gap:10px}.state-heading strong{min-width:0;overflow-wrap:anywhere}.graphic-hint{margin:7px 0;font-size:11px}.starter{margin-top:12px;padding:12px;border:1px dashed #cbd8bf;border-radius:8px}.starter button{width:100%}.starter p{font-size:11px;margin-bottom:0}
+
 .behavior{font-size:12px;color:#35502f}.intro,.hint,p{font-size:12px;color:#718269;line-height:1.6}.intro{margin:4px 0 16px}.hint{font-size:11px;margin-top:20px}details{padding:14px 0;border-top:1px solid #dce5d6}summary{cursor:pointer;font-weight:600;line-height:1.5}summary span{float:right;font-weight:400;border-radius:10px;background:#edf3e5;padding:0 7px}.card{border:1px solid #dce5d6;border-radius:9px;background:white;padding:12px;margin:12px 0}label{display:block;margin:12px 0;color:#62755c}input,select,textarea{display:block;box-sizing:border-box;width:100%;margin-top:5px;border:1px solid #d5dfce;border-radius:6px;padding:8px;background:white;color:#35502f;font:inherit}textarea{resize:vertical}button{padding:9px;border:1px solid #d5dfce;border-radius:7px;background:#edf3e5;color:#35502f;font:inherit;cursor:pointer}button:disabled{opacity:.4;cursor:default}.check{display:flex;align-items:center;gap:8px}.check input{width:15px;margin:0}.order{display:flex;justify-content:flex-end;gap:5px;margin-top:10px}.order button{display:grid;place-items:center;padding:6px}.delete{background:white;color:#a66754}h4{margin:12px 0 4px;font-size:12px}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid #789557;outline-offset:2px}
 </style>

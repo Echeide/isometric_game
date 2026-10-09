@@ -1,3 +1,4 @@
+import {resolveVisualCatalog} from '@isometrico/world';
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
 import {validateSceneTiles,type PixelArtPack} from '@isometrico/world';
 import {characterImage,characterVariants} from '../../../packages/world/src/character';
@@ -31,6 +32,9 @@ export function validatePack(value:unknown,files:Record<string,Uint8Array>):Pixe
 }
 export function validateCatalogGraphics(adventure:Adventure,pack:PixelArtPack){
  for(const map of adventure.maps)validateSceneTiles(map,pack.tiles);
+ const catalog=resolveVisualCatalog(adventure.catalog,adventure.catalogOverrides);
+ for(const family of Object.values(pack.objectFamilies??{}))for(const id of Object.keys(family.aspects))if(!catalog.some(v=>v.id===id&&v.kind!=='person'))throw Error('Una familia de gráficos referencia un objeto que no existe.');
+ for(const behavior of adventure.story?.entities??[])for(const state of behavior.states)if(state.visualId&&!pack.objects[state.visualId]&&!catalog.some(v=>v.id===state.visualId&&v.kind==='person'&&!v.id.startsWith('custom.')))throw Error('Falta el gráfico de un estado: '+state.visualId);
  for(const entry of adventure.catalog??[])if(!Object.hasOwn(pack.objects,entry.id))throw new Error(`Falta el objeto ${entry.label}.`);
  for(const map of adventure.maps)for(const entity of map.entities)if((entity.kind!=='person'||entity.visualId?.startsWith('custom.'))&&entity.interaction?.action!=='adventure.exit'&&!Object.hasOwn(pack.objects,entity.visualId??`pixel.${entity.kind}`))throw new Error(`Falta el objeto ${entity.visualId}.`);
 }

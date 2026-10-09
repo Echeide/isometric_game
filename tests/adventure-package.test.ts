@@ -53,3 +53,10 @@ it('round-trips directional FPS and rejects unsupported directions or invalid sp
   expect(()=>unpackAdventure(zipSync(files))).toThrow('Catálogo');
  }
 });
+it('keeps drawing inclination in portable adventures while preserving footprints and PNGs',async()=>{
+ const rotated=structuredClone(pack);rotated.objects['pixel.sofa'].rotation=6.5;
+ const restored=unpackAdventure(new Uint8Array(await (await exportAdventure(adventure,{...repository,pack:async()=>rotated})).arrayBuffer()));
+ expect(restored.pack.objects['pixel.sofa'].rotation).toBe(6.5);
+ expect(restored.adventure.maps).toEqual(adventure.maps);
+ expect(restored.pack.objects['pixel.sofa'].width).toBe(pack.objects['pixel.sofa'].width);
+});

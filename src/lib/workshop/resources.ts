@@ -11,6 +11,15 @@ export function groupWorkshopTiles(entries:ResourceEntry[],families:import('@iso
  }).filter(group=>group.entries.length);
  return {groups,ungrouped:tiles.filter(e=>!grouped.has(e.id)&&matches(e.name))};
 }
+export function groupWorkshopObjects(entries:ResourceEntry[],families:import('@isometrico/world').ObjectFamilies,query=''){
+ const objects=entries.filter(e=>e.kind==='object'),byId=new Map(objects.map(e=>[e.id,e])),grouped=new Set<string>(),search=query.trim().toLocaleLowerCase();
+ const matches=(text:string)=>text.toLocaleLowerCase().includes(search);
+ const groups=Object.entries(families).map(([id,f])=>({id,name:f.name,entries:Object.entries(f.aspects).flatMap(([visual,label])=>{
+  const e=byId.get(visual);if(!e||grouped.has(visual))return [];grouped.add(visual);
+  return matches(f.name)||matches(label)||matches(e.name)?[{...e,name:label+' · '+e.name}]:[];
+ })})).filter(g=>g.entries.length);
+ return {groups,ungrouped:objects.filter(e=>!grouped.has(e.id)&&matches(e.name))};
+}
 export const actionLabels={idle:'Reposo',walk:'Caminar',sit:'Sentarse',work:'Trabajar',talk:'Conversar',celebrate:'Celebrar'};
 export const tileLabels:Record<BuiltinTileKind,string>={office:'Oficina',grass:'Césped',path:'Camino',parquet:'Parquet',asphalt:'Asfalto',sidewalk:'Acera',cobble:'Empedrado',sand:'Arena',dirt:'Tierra'};
 /** One resolved palette for the workshop and map editor, including cropped custom tiles. */
@@ -49,8 +58,8 @@ export function workshopEntries(pack:PixelArtPack,catalog:VisualAsset[]=[],overr
   ...workshopTiles(pack).map(({id,label,image,frame}):ResourceEntry=>({id,kind:'tile',name:label,image,frame,custom:isCustomTile(id)||image.startsWith('asset:')}))
  ];
 }
-export function supportOrigin(item:Pick<ObjectSprite,'width'|'height'>,size:{x:number;y:number}):[number,number]{return [item.width/2-(size.x-size.y)*16,item.height-(size.x+size.y)*8];}
-export function resourceUsages(maps:import('@isometrico/world').WorldScene[],entry:ResourceEntry){
+export function supportOrigin(item:Pick<ObjectSprite,'width'|'height'|'rotation'>,size:{x:number;y:number}):[number,number]{const cx=(size.x-size.y)*16,cy=(size.x+size.y)*8,a=(item.rotation??0)*Math.PI/180;return [item.width/2-cx*Math.cos(a)-cy*Math.sin(a),item.height+cx*Math.sin(a)-cy*Math.cos(a)];}
+export function resourceUsages(maps:import('@isometrico/world').WorldScene[],entry:ResourceEntry,story?:import('../story/types').StoryDefinition){
  if(entry.kind==='tile')return maps.filter(m=>Object.values(m.tiles??{}).includes(entry.id as TileKind)||({office:'office',castle:'cobble',outdoors:'grass',rock:'cobble',beach:'sand'}[m.theme]===entry.id)||(m.theme==='outdoors'&&entry.id==='path')).map(m=>m.name);
- return maps.filter(m=>m.entities.some(e=>e.visualId===entry.id)).map(m=>m.name);
+ return maps.filter(m=>m.entities.some(e=>e.visualId===entry.id)||story?.entities.some(b=>b.mapId===m.id&&b.states.some(s=>s.visualId===entry.id))).map(m=>m.name);
 }

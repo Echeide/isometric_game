@@ -2,7 +2,7 @@ import { Assets, Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js
 import type { ActorPose, Facing, TileKind } from './types';
 import {characterFps,characterImage,characterVariants,type CharacterPack} from './character';
 export interface NpcClip {image:string;frameWidth:number;frameHeight:number;row:number;frames:number;fps:number;directions?:Facing[]}
-export interface ObjectSprite {image:string;originalImage?:string;generationImage?:string;width:number;height:number;origin:[number,number];frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
+export interface ObjectSprite {image:string;originalImage?:string;generationImage?:string;width:number;height:number;origin:[number,number];rotation?:number;frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
 export interface PixelArtPack {
  version:1;
  character:CharacterPack;
@@ -13,6 +13,7 @@ export interface PixelArtPack {
  tileOriginalImages?:Partial<Record<TileKind,string>>;
  /** Optional editor-only families; each map cell still references one concrete tile. */
  tileFamilies?:import('./tile-families').TileFamilies;
+ objectFamilies?:import('./object-families').ObjectFamilies;
  /** Adapted sheet URL -> original sheet URL; private workshop metadata. */
  paletteOriginalImages?:Record<string,string>;
  players?:Record<string,{name:string;character:CharacterPack}>;
@@ -62,7 +63,7 @@ export function pixelObject(art:LoadedPixelArt,id:string){
  const item=art.pack.objects[id];if(!item)return null;
  let texture=art.textures.get(item.image)!;
  if(item.frame)texture=new Texture({source:texture.source,frame:new Rectangle(...item.frame)});
- const sprite=new Sprite(texture);sprite.width=item.width;sprite.height=item.height;sprite.position.set(-item.origin[0],-item.origin[1]);sprite.roundPixels=true;
+ const sprite=new Sprite(texture);sprite.width=item.width;sprite.height=item.height;sprite.anchor.set(item.origin[0]/item.width,item.origin[1]/item.height);sprite.rotation=(item.rotation??0)*Math.PI/180;sprite.roundPixels=true;
  return sprite;
 }
 export function pixelActor(art:LoadedPixelArt,color:number,me:boolean){

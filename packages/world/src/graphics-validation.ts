@@ -2,6 +2,7 @@ import {actorPoses,characterImage,characterVariants,type CharacterPack} from './
 import type {PixelArtPack,NpcClip,ObjectSprite} from './pixelart';
 import {tileKinds,isTileKind,isCustomTile,type TileKind} from './types';
 import {validateTileFamilies} from './tile-families';
+import {validateObjectFamilies} from './object-families';
 export type ImageSize={width:number;height:number};
 export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
  const fail=(message:string):never=>{throw new Error(message);};
@@ -15,6 +16,7 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
  if(pack.activePlayer&&!Object.hasOwn(pack.players??{},pack.activePlayer))fail('El jugador activo no existe.');
  if(Object.keys(pack.objects).length>256)fail('El catálogo gráfico tiene demasiados objetos.');
  for(const o of Object.values(pack.objects))validateObjectGraphics(o,sizes);
+ validateObjectFamilies(pack.objectFamilies,pack.objects);
 
  for(const kind of tileKinds)if(!Object.hasOwn(pack.tiles,kind))fail(`Falta el suelo base ${kind}.`);
  if(Object.keys(pack.tiles).filter(isCustomTile).length>128)fail('La biblioteca admite hasta 128 suelos propios.');
@@ -63,6 +65,7 @@ export function validateObjectGraphics(o:ObjectSprite,sizes:Map<string,ImageSize
  const image=(url:string)=>sizes.get(url)??fail('Falta una imagen del recurso.');
  const frame=(f:number[],url:string)=>{const s=image(url);if(!Array.isArray(f)||f.length!==4||!f.every(Number.isInteger)||f[0]<0||f[1]<0||f[2]<=0||f[3]<=0||f[0]+f[2]>s.width||f[1]+f[3]>s.height)fail('El recorte sale de la imagen.');};
   if(!o||!positive(o.width)||!positive(o.height)||!point(o.origin))fail('Dimensiones o punto de apoyo no válidos.');
+  if(o.rotation!==undefined&&(!Number.isFinite(o.rotation)||Math.abs(o.rotation)>180))fail('La inclinación debe estar entre −180 y 180 grados.');
   image(o.image);if(o.frame)frame(o.frame,o.image);
   if(o.generationImage!==undefined)image(o.generationImage);
   if(o.originalImage!==undefined){const original=image(o.originalImage),current=image(o.image);if(original.width!==current.width||original.height!==current.height)fail('El original y la imagen retocada deben tener las mismas dimensiones.');}

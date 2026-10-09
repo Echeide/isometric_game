@@ -7,6 +7,8 @@ import { footprint, walkable, createNavigator, interactionCells, cellKey } from 
 export type ObjectCategory='office'|'nature'|'urban'|'people';
 export interface VisualAsset {id:string;kind:import('./types').EntityKind;label:string;category:ObjectCategory;size:Cell;color?:number}
 export type VisualCatalogOverrides=Record<string,Partial<Pick<VisualAsset,'label'|'category'>>>;
+/** A graphic changes appearance, never the object's gameplay type. NPCs remain separate. */
+export function compatibleVisualKind(entity:import('./types').EntityKind,visual:import('./types').EntityKind){return (entity==='person')===(visual==='person');}
 export const isCustomVisual=(id:unknown):id is string=>typeof id==='string'&&/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id);
 export function validateCustomCatalog(value:unknown):VisualAsset[]{
  if(value===undefined)return [];
@@ -96,9 +98,9 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
   if(typeof e.id!=='string'||!e.id.trim()||ids.has(e.id))return fail('Los objetos necesitan identificadores únicos.');ids.add(e.id);
   if(typeof e.label!=='string'||!e.label.trim())return fail(`Falta el nombre de ${e.id}.`);
   if(e.kind!=='object'&&!visualCatalog.some(a=>a.kind===e.kind))return fail(`Tipo de objeto desconocido: ${e.id}.`);
-  const custom=isCustomVisual(e.visualId)&&['object','person'].includes(e.kind as string);
-  if(e.kind==='object'&&!custom)return fail('Un objeto propio necesita su recurso gráfico.');
-  if(!custom&&e.visualId!==undefined&&e.visualId!==`builtin.${e.kind}`&&!visualCatalog.some(a=>a.id===e.visualId&&a.kind===e.kind))return fail(`Recurso visual no compatible: ${e.id}.`);
+  const custom=isCustomVisual(e.visualId);
+  if(e.kind==='object'&&!custom&&!visualCatalog.some(a=>a.id===e.visualId&&a.kind!=='person'))return fail('Un objeto propio necesita su recurso gráfico.');
+  if(!custom&&e.visualId!==undefined&&e.visualId!==`builtin.${e.kind}`&&!visualCatalog.some(a=>a.id===e.visualId&&compatibleVisualKind(e.kind as import('./types').EntityKind,a.kind)))return fail(`Recurso visual no compatible: ${e.id}.`);
   if(!point(e.position))return fail(`Posición no válida: ${e.id}.`);
   if(e.size!==undefined&&(!e.size||typeof e.size!=='object'||!dimension((e.size as Cell).x)||!dimension((e.size as Cell).y)))return fail(`Tamaño no válido: ${e.id}.`);
   for(const flag of ['solid','completed','flipX'])if(e[flag]!==undefined&&typeof e[flag]!=='boolean')return fail(`Valor ${flag} no válido: ${e.id}.`);

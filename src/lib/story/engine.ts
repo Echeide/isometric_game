@@ -21,10 +21,10 @@ export function resolveStoryScene(a:Adventure,scene:WorldScene,p:StoryProgress,i
 }
 export function setObjectState(a:Adventure,p:StoryProgress,ref:EntityRef,stateId:string):StoryProgress{if(!behavior(a,ref)?.states.some(s=>s.id===stateId))throw Error('El estado del objeto ya no existe.');return {...p,states:{...p.states,[entityKey(ref)]:stateId}};}
 export function setModuleStatus(a:Adventure,p:StoryProgress,ref:EntityRef,moduleId:string,status:ModuleStatus):StoryProgress{if(!moduleStatuses.includes(status))throw Error('Progreso de módulo no válido.');if(!entityModules(a,ref).some(m=>m.id===moduleId))throw Error('El módulo ya no existe en este objeto.');return {...p,modules:{...p.modules,[moduleKey(ref,moduleId)]:status}};}
-/** One explicit event, ordered reactions, no implicit cascading. All effects succeed together or throw. */
+/** Conditions use the event's incoming snapshot; effects remain ordered and atomic. */
 export function react(a:Adventure,p:StoryProgress,i:InventoryProgress,ref:EntityRef,event:StoryEvent,moduleId?:string){
  let progress=structuredClone(p);const inventory=structuredClone(i),messages:string[]=[];
- for(const r of behavior(a,ref)?.reactions??[]){const key=reactionKey(ref,r.id);if(r.event!==event||(event!=='interact'&&r.moduleId!==moduleId)||(r.once&&progress.fired.includes(key))||!allows(a,progress,inventory,r.when))continue;
+ for(const r of behavior(a,ref)?.reactions??[]){const key=reactionKey(ref,r.id);if(r.event!==event||(event!=='interact'&&r.moduleId!==moduleId)||(r.once&&progress.fired.includes(key))||!allows(a,p,i,r.when))continue;
   for(const effect of r.effects){if(effect.kind==='state'){progress=setObjectState(a,progress,effect,effect.stateId);}else{const item=a.items?.find(item=>item.id===effect.itemId);if(!item)throw Error('El artículo de la consecuencia ya no existe.');const count=inventory.counts[item.id]??0;if(effect.kind==='consume'&&count<effect.quantity)throw Error('Necesitas '+effect.quantity+' × '+item.name+' para esta acción.');const next=effect.kind==='consume'?count-effect.quantity:item.stackable?count+effect.quantity:1;if(!Number.isSafeInteger(next))throw Error('Cantidad de inventario fuera de rango.');inventory.counts[item.id]=next;}}
   if(r.once)progress.fired.push(key);messages.push('Reacción '+((behavior(a,ref)?.reactions.indexOf(r)??0)+1)+' de '+(a.maps.find(m=>m.id===ref.mapId)?.entities.find(e=>e.id===ref.entityId)?.label??ref.entityId)+' · '+eventLabels[event]);
  }

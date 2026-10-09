@@ -3,7 +3,7 @@ export type { Cell, WorldScene, WorldEntity, WorldInteraction, WorldAdapter, Wor
 export { findPath, walkable, interactionCells, project } from './navigation';
 
 export { parseScene, visualCatalog } from './scene';
-export {isCustomVisual,validateCustomCatalog,validateCatalogOverrides,resolveVisualCatalog} from './scene';
+export {isCustomVisual,validateCustomCatalog,validateCatalogOverrides,resolveVisualCatalog,compatibleVisualKind} from './scene';
 export type {VisualAsset,ObjectCategory,VisualCatalogOverrides} from './scene';
 export type {ObjectSprite,NpcClip} from './pixelart';
 export {actorPoses} from './character';
@@ -13,6 +13,7 @@ export type { Facing, ActorPose, WorldEditor } from './types';
 
 export type { PixelArtPack } from './pixelart';
 export type {TileFamily,TileFamilies} from './tile-families';
+export type {ObjectFamily,ObjectFamilies} from './object-families';
 
 export { characterFps, characterImage, characterVariants } from './character';
 export type { CharacterPack, CharacterClip } from './character';

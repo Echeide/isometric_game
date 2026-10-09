@@ -142,6 +142,24 @@ El calibrador adapta tamaño y posición. No transforma automáticamente una vis
 
 ## Catálogo ampliable
 
+### Familias de gráficos de objetos
+
+En **Objetos**, «Añadir aspecto» crea una copia dentro de la familia del recurso:
+conserva PNG, recorte, tamaño, apoyo y huella. En **Aspectos del objeto** se cambia
+el nombre de familia y de aspecto («Cerrado», «Abierto», «Roto»); también se pueden
+agrupar copias ya existentes eligiendo una familia. Guardar en aventura conserva
+la agrupación junto al gráfico. El catálogo muestra las familias colapsables y
+permite buscar por familia, recurso o aspecto. Los borradores y el ZIP conservan
+la agrupación; la biblioteca de espacio sigue incorporando aspectos individuales.
+
+Cada aspecto se retoca en Piskel sin modificar los demás. Al sustituir su PNG en
+una familia se mantiene su tamaño y apoyo en el mundo. En el mapa, **Condiciones →
+Estados del objeto** muestra las familias y sus aspectos con miniaturas para
+asignar el gráfico de cada estado. La imagen de un objeto del catálogo base puede
+ser una copia personalizada; esto no cambia su comportamiento o huella. No se
+mezclan gráficos de PNJ con objetos. No se puede borrar un recurso usado por la
+imagen inicial ni por alguno de sus estados.
+
 Separar tres conceptos:
 
 - Recurso gráfico: imagen original, recorte, tamaño de dibujo y apoyo; después, animaciones.
@@ -177,3 +195,7 @@ La entrega se considera completa al poder subir un objeto de dimensiones distint
 5. Retoque de píxeles integrado, una vez estable el guardado de originales y variantes.
 
 Cada entrega debe cerrar el recorrido de importación, validación, guardado, uso en el editor, juego y exportación/importación. Versionar el formato cuando cambien sus contratos y mantener migraciones para las aventuras existentes.
+
+### Transformación de objetos
+
+La barra sobre la imagen, arriba a la derecha, permite ajustar tamaño, inclinación y posición de objetos y PNJ. La inclinación se expresa en grados y puede restablecerse a cero. Se guarda como `ObjectSprite.rotation` alrededor del punto de apoyo; el PNG y la huella no cambian. El juego y la vista previa aplican el mismo giro y la detección de clic respeta la imagen girada, incluso al reflejar el objeto. El tamaño corresponde al mundo, independientemente del zoom de vista. Guarda en aventura para conservar los ajustes.

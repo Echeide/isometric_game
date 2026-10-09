@@ -27,3 +27,12 @@ it('accounts for horizontal reflection and atlas frame offsets',()=>{
  expect(alphaHitArea(mask,item,true).contains(-5,-5)).toBe(true);
  expect(alphaHitArea(mask,item,true).contains(5,-5)).toBe(false);
 });
+it('maps rotated clicks back to opaque pixels before applying horizontal reflection',()=>{
+ const item={width:40,height:20,origin:[20,20] as [number,number],rotation:12};
+ const a=item.rotation*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+ for(const [x,y,solid]of [[-5,-15,true],[-5,-5,false],[5,-5,true],[-19,-19,false]] as const){
+  const rx=x*c-y*s,ry=x*s+y*c;
+  expect(alphaHitArea(mask,item).contains(rx,ry)).toBe(solid);
+  expect(alphaHitArea(mask,item,true).contains(-rx,ry)).toBe(solid);
+ }
+});

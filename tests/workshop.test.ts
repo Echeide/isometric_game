@@ -126,3 +126,15 @@ it('round-trips originals, custom catalogue, NPC clips, player selection, scale 
  expect(saved).toEqual(new Uint8Array(original));
  expect(JSON.stringify(source)).toBe(before);
 });
+it('retains the footprint support when centring an inclined drawing',()=>{
+ const item={width:100,height:120,rotation:12},origin=supportOrigin(item,{x:2,y:1}),a=item.rotation*Math.PI/180;
+ const x=item.width/2-origin[0],y=item.height-origin[1];
+ expect(x*Math.cos(a)-y*Math.sin(a)).toBeCloseTo(16);
+ expect(x*Math.sin(a)+y*Math.cos(a)).toBeCloseTo(24);
+});
+it('validates and preserves optional drawing rotation without touching image pixels',()=>{
+ const pack=structuredClone(graphics);pack.objects['pixel.sofa'].rotation=-7.5;
+ expect(()=>validateGraphics(pack,dimensions)).not.toThrow();
+ expect(JSON.parse(JSON.stringify(pack)).objects['pixel.sofa'].rotation).toBe(-7.5);
+ for(const rotation of [NaN,Infinity,181,-181]){pack.objects['pixel.sofa'].rotation=rotation;expect(()=>validateGraphics(pack,dimensions)).toThrow('inclinación');}
+});
