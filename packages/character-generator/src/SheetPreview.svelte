@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '@isometrico/editor-ui';const ui=interfaceLanguage();
   import WorkshopIcon from './WorkshopIcon.svelte';
   import { onMount } from 'svelte';
   import type { Sheet, GeneratorSettings, Direction } from './types';
@@ -22,30 +23,30 @@
     return () => clearInterval(timer);
   });
 </script>
-<div class="view-scale"><span>Salida {settings.width} × {settings.height} px · altura objetivo {settings.targetHeight} px</span><label>Zoom <select aria-label="Zoom de revisión" bind:value={zoom}><option value={1}>1× · tamaño real</option><option value={2}>2×</option><option value={3}>3×</option></select></label></div>
+<div class="view-scale"><span>{ui.text("Salida")} {settings.width} × {settings.height} {ui.text("px · altura objetivo")} {settings.targetHeight} px</span><label>{ui.text("Zoom")} <select aria-label={ui.text("Zoom de revisión")} bind:value={zoom}><option value={1}>{ui.text("1× · tamaño real")}</option><option value={2}>2×</option><option value={3}>3×</option></select></label></div>
 <div class="directions">
   {#each sheet.directions as direction, row}
     {#if !onlyDirection || onlyDirection===direction}
     {@const loop = sheet.loops[direction]!}
     {@const index = playing ? frameAt(elapsed,loop.fps) : frame}
     <div class="direction"><div class="stage" style:height={`${settings.height * Math.max(2, zoom)}px`}>
-      <div class="sprite-space" style:width={`${settings.width * zoom}px`} style:height={`${settings.height * zoom}px`}><div class="sprite" style:transform={`scale(${zoom})`} style:width={`${settings.width}px`} style:height={`${settings.height}px`} style:background-image={`url("${url}")`} style:background-position={`${-index * settings.width}px ${-row * settings.height}px`}>
+      <div class="sprite-space" style:width={`${settings.width * zoom}px`} style:height={`${settings.height * zoom}px`}><div class="sprite" style:transform={`scale(${zoom})`} style:width={`${settings.width}px`} style:height={`${settings.height}px`} style:background-image={`url("${url}")`} style:background-position={ui.text("{arg0}px {arg1}px",{arg0:-index * settings.width,arg1:-row * settings.height})}>
         <span class="pivot" style:left={`${settings.anchor[0]}px`} style:top={`${settings.anchor[1]}px`}></span>
       </div></div>
-    </div><strong>{direction.toUpperCase()}</strong><small>{loop.fps} fps{loop.mirroredFrom ? ` · reflejo ${loop.mirroredFrom.toUpperCase()}` : ''}</small></div>
+    </div><strong>{direction.toUpperCase()}</strong><small>{loop.fps} fps{loop.mirroredFrom ? ui.text(" · reflejo {arg0}",{arg0:loop.mirroredFrom.toUpperCase()}) : ''}</small></div>
     {/if}
   {/each}
 </div>
 
-<div class="controls" aria-label="Reproductor de animación">
-  <button class="play" onclick={toggle} aria-label={playing ? 'Pausar' : 'Reproducir'} title={playing ? 'Pausar' : 'Reproducir'}><WorkshopIcon name={playing ? 'pause' : 'play'}/></button>
-  <input aria-label="Fotograma" type="range" min="0" max={sheet.frames - 1} value={currentFrame} oninput={e => seek(e.currentTarget.valueAsNumber)}/>
-  <span class="counter" aria-label={`Fotograma ${currentFrame + 1} de ${sheet.frames}`}>{currentFrame + 1} / {sheet.frames}</span>
-  <div class="playback"><WorkshopIcon name={sheet.playback === 'once' ? 'once' : 'loop'} size={14}/><span>{sheet.playback === 'once' ? 'Una vez' : 'Bucle'}</span></div>
-  <label class="speed">Velocidad <select aria-label="Velocidad de revisión" bind:value={speed}><option value={1}>1×</option><option value={0.5}>0,5×</option></select></label>
+<div class="controls" aria-label={ui.text("Reproductor de animación")}>
+  <button class="play" onclick={toggle} aria-label={playing ? ui.text("Pausar") : ui.text("Reproducir")} title={playing ? ui.text("Pausar") : ui.text("Reproducir")}><WorkshopIcon name={playing ? 'pause' : 'play'}/></button>
+  <input aria-label={ui.text("Fotograma")} type="range" min="0" max={sheet.frames - 1} value={currentFrame} oninput={e => seek(e.currentTarget.valueAsNumber)}/>
+  <span class="counter" aria-label={ui.text("Fotograma {arg0} de {arg1}",{arg0:currentFrame + 1,arg1:sheet.frames})}>{currentFrame + 1} / {sheet.frames}</span>
+  <div class="playback"><WorkshopIcon name={sheet.playback === 'once' ? 'once' : 'loop'} size={14}/><span>{sheet.playback === 'once' ? ui.text("Una vez") : ui.text("Bucle")}</span></div>
+  <label class="speed">{ui.text("Velocidad")} <select aria-label={ui.text("Velocidad de revisión")} bind:value={speed}><option value={1}>1×</option><option value={0.5}>0,5×</option></select></label>
 </div>
 
-<details><summary>Ver hoja completa · {sheet.image.width} × {sheet.image.height} px</summary><div class="full"><img src={url} alt={`Hoja de ${sheet.action}, ${sheet.frames} columnas y ${sheet.directions.length} orientaciones`}/></div></details>
+<details><summary>{ui.text("Ver hoja completa ·")} {sheet.image.width} × {sheet.image.height} px</summary><div class="full"><img src={url} alt={ui.text("Hoja de {arg0}, {arg1} columnas y {arg2} orientaciones",{arg0:sheet.action,arg1:sheet.frames,arg2:sheet.directions.length})}/></div></details>
 <style>
   .view-scale{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:12px;color:#60705c}.view-scale label{display:flex;align-items:center;gap:6px}.view-scale select{font:inherit;padding:5px;border:1px solid #bdcbb0;border-radius:4px;background:white;color:#304535}.sprite-space{flex-shrink:0;margin:auto;}
   .controls{display:grid;grid-template-columns:36px minmax(0,1fr) 5ch;grid-template-rows:36px 32px;gap:8px;align-items:center;font-size:12px;margin-top:12px}

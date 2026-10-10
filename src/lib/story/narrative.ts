@@ -1,13 +1,16 @@
+import {contentModuleReady,contentProgressKey} from '../modules/content';
+import {contentModuleTypes} from '../modules/types';
+import {attachModuleChat} from '../modules/adventure-modules';
 import type {Adventure} from '../demo/adventure';
 import type {InventoryProgress} from '../demo/inventory';
 import {allows,applyStoryEffects} from './engine';
-import {chatResource,type AdventureChat} from '../chat/editor';
+import {type AdventureChat} from '../chat/editor';
 import {moduleStatuses,type NarrativeEvent,type NarrativeModule,type NarrativeRun,type StoryProgress,type ModuleStatus} from './types';
 export const narrativeTriggerLabels={'adventure.start':'Al iniciar la aventura','map.enter':'Al entrar en un mapa'};
-export const narrativeModuleLabels={context:'Contexto',chat:'Conversación'};
+export const narrativeModuleLabels=Object.fromEntries(contentModuleTypes.map(t=>[t.id,t.label]));
 export function narrativeEvent(a:Adventure,id:string){return a.story?.events?.find(event=>event.id===id);}
 export function narrativeStatus(p:StoryProgress,id:string):ModuleStatus{return p.narrative?.[id]?.status??'not-started';}
-export function narrativeReady(a:Adventure,event:NarrativeEvent){return (event.modules.length>0||event.effects.length>0)&&event.modules.every(module=>module.type==='context'?!!module.text.trim():!!a.chats?.some(chat=>chatResource(chat.id)===module.resourceId));}
+export function narrativeReady(a:Adventure,event:NarrativeEvent){return (event.modules.length>0||event.effects.length>0)&&event.modules.every(module=>contentModuleReady(module,a.chats));}
 export function createNarrativeEvent(mapId:string,makeId:()=>string=()=>crypto.randomUUID()):NarrativeEvent{return {id:makeId(),name:'Nuevo evento',trigger:'map.enter',mapId,enabled:false,once:true,modules:[],effects:[]};}
 /** Only actual entry boundaries schedule events; object redraws never do. */
 export function scheduleNarratives(a:Adventure,p:StoryProgress,mapId:string){
@@ -37,9 +40,6 @@ export function restoreNarratives(a:Adventure,raw:Partial<StoryProgress>,p:Story
  for(const event of a.story?.events??[]){const value=raw.narrative[event.id] as NarrativeRun|undefined;if(value&&moduleStatuses.includes(value.status)&&Number.isSafeInteger(value.run)&&value.run>=0&&Number.isInteger(value.module)&&value.module>=0){const index=typeof value.moduleId==='string'?event.modules.findIndex(module=>module.id===value.moduleId):-1,module=index>=0?index:Math.min(value.module,Math.max(0,event.modules.length-1));p.narrative={...p.narrative,[event.id]:{status:value.status,module,run:value.run,moduleId:event.modules[module]?.id}};}}
  return p;
 }
-export function attachNarrativeChat(a:Adventure,eventId:string,moduleId:string,chat:AdventureChat):Adventure{
- const event=narrativeEvent(a,eventId);if(!event?.modules.some(m=>m.id===moduleId&&m.type==='chat'))throw Error('El módulo del evento ya no existe.');
- return {...a,chats:[...(a.chats??[]).filter(c=>c.id!==chat.id),chat],story:{...a.story!,events:a.story!.events!.map(e=>e.id!==eventId?e:{...e,modules:e.modules.map(m=>m.id===moduleId?{...m,resourceId:chatResource(chat.id)}:m)})}};
-}
+export function attachNarrativeChat(a:Adventure,eventId:string,moduleId:string,chat:AdventureChat):Adventure{return attachModuleChat(a,{kind:'event',eventId},moduleId,chat);}
 export function replaceNarrativeEvent(a:Adventure,event:NarrativeEvent):Adventure{return {...a,story:{version:1,...a.story,entities:a.story?.entities??[],events:a.story?.events?.some(e=>e.id===event.id)?a.story.events.map(e=>e.id===event.id?event:e):[...(a.story?.events??[]),event]}};}
-export function narrativeChatKey(adventureId:string,event:NarrativeEvent,module:NarrativeModule,run:number){return 'isometrico.chat.v1:'+JSON.stringify([adventureId,'narrative',event.id,module.id,run]);}
+export function narrativeChatKey(adventureId:string,event:NarrativeEvent,module:NarrativeModule,run:number){return contentProgressKey(adventureId,{kind:'event',eventId:event.id},module,run);}

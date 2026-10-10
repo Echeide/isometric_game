@@ -1,31 +1,32 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import {Maximize2,RotateCw,RotateCcw,Move,ArrowUp,ArrowDown,ArrowLeft,ArrowRight,Crosshair,X,Minus,Plus,Lock,Unlock} from 'lucide-svelte';
  let {disabled=false,width,height,scale,rotation,locked,onlock,onscale,ondimension,onrotate,onshift,onsupport}:{disabled?:boolean;width:number;height:number;scale:number;rotation:number;locked:boolean;onlock:(value:boolean)=>void;onscale:(value:number)=>void;ondimension:(axis:'width'|'height',value:number)=>void;onrotate:(value:number)=>void;onshift:(dx:number,dy:number)=>void;onsupport:()=>void}=$props();
  let tool=$state<'size'|'rotate'|'move'|null>(null);
  function toggle(value:typeof tool){tool=tool===value?null:value;}
 </script>
 <svelte:window onkeydown={e=>{if(e.key==='Escape')tool=null;}}/>
-<div class="transform-tools" role="group" aria-label="Herramientas de transformación">
- <div class="tools" role="group" aria-label="Transformar imagen">
-  <button type="button" {disabled} title="Ajustar tamaño" aria-label="Ajustar tamaño" aria-expanded={tool==='size'} class:active={tool==='size'} onclick={()=>toggle('size')}><Maximize2 size={18}/></button>
-  <button type="button" {disabled} title="Inclinar imagen" aria-label="Inclinar imagen" aria-expanded={tool==='rotate'} class:active={tool==='rotate'} onclick={()=>toggle('rotate')}><RotateCw size={18}/></button>
-  <button type="button" {disabled} title="Ajustar posición" aria-label="Ajustar posición" aria-expanded={tool==='move'} class:active={tool==='move'} onclick={()=>toggle('move')}><Move size={18}/></button>
+<div class="transform-tools" role="group" aria-label={ui.text("Herramientas de transformación")}>
+ <div class="tools" role="group" aria-label={ui.text("Transformar imagen")}>
+  <button type="button" {disabled} title={ui.text("Ajustar tamaño")} aria-label={ui.text("Ajustar tamaño")} aria-expanded={tool==='size'} class:active={tool==='size'} onclick={()=>toggle('size')}><Maximize2 size={18}/></button>
+  <button type="button" {disabled} title={ui.text("Inclinar imagen")} aria-label={ui.text("Inclinar imagen")} aria-expanded={tool==='rotate'} class:active={tool==='rotate'} onclick={()=>toggle('rotate')}><RotateCw size={18}/></button>
+  <button type="button" {disabled} title={ui.text("Ajustar posición")} aria-label={ui.text("Ajustar posición")} aria-expanded={tool==='move'} class:active={tool==='move'} onclick={()=>toggle('move')}><Move size={18}/></button>
  </div>
  {#if tool}
  <fieldset class="panel" {disabled}>
-  <div class="heading"><strong>{tool==='size'?'Tamaño':tool==='rotate'?'Inclinación':'Posición'}</strong><button type="button" title="Cerrar herramientas" aria-label="Cerrar herramientas" onclick={()=>tool=null}><X size={15}/></button></div>
+  <div class="heading"><strong>{tool==='size'?ui.text("Tamaño"):tool==='rotate'?ui.text("Inclinación"):ui.text("Posición")}</strong><button type="button" title={ui.text("Cerrar herramientas")} aria-label={ui.text("Cerrar herramientas")} onclick={()=>tool=null}><X size={15}/></button></div>
   {#if tool==='size'}
-   <label>Escala <span>{scale}%</span><input aria-label="Escala del objeto" type="range" min="5" max="400" step="1" value={scale} oninput={e=>onscale(e.currentTarget.valueAsNumber)}/></label>
-   <div class="dimensions"><label>Ancho (px)<input aria-label="Ancho del dibujo" type="number" min="1" max="4096" step="0.5" value={Math.round(width*100)/100} oninput={e=>ondimension('width',e.currentTarget.valueAsNumber)}/></label><button type="button" title={locked?'Desbloquear proporciones':'Mantener proporciones'} aria-label="Mantener proporciones" aria-pressed={locked} onclick={()=>onlock(!locked)}>{#if locked}<Lock size={15}/>{:else}<Unlock size={15}/>{/if}</button><label>Alto (px)<input aria-label="Alto del dibujo" type="number" min="1" max="4096" step="0.5" value={Math.round(height*100)/100} oninput={e=>ondimension('height',e.currentTarget.valueAsNumber)}/></label></div>
-   <small>Tamaño en el juego; el zoom de vista no cambia.</small>
+   <label>{ui.text("Escala")} <span>{scale}%</span><input aria-label={ui.text("Escala del objeto")} type="range" min="5" max="400" step="1" value={scale} oninput={e=>onscale(e.currentTarget.valueAsNumber)}/></label>
+   <div class="dimensions"><label>{ui.text("Ancho (px)")}<input aria-label={ui.text("Ancho del dibujo")} type="number" min="1" max="4096" step="0.5" value={Math.round(width*100)/100} oninput={e=>ondimension('width',e.currentTarget.valueAsNumber)}/></label><button type="button" title={locked?ui.text("Desbloquear proporciones"):ui.text("Mantener proporciones")} aria-label={ui.text("Mantener proporciones")} aria-pressed={locked} onclick={()=>onlock(!locked)}>{#if locked}<Lock size={15}/>{:else}<Unlock size={15}/>{/if}</button><label>{ui.text("Alto (px)")}<input aria-label={ui.text("Alto del dibujo")} type="number" min="1" max="4096" step="0.5" value={Math.round(height*100)/100} oninput={e=>ondimension('height',e.currentTarget.valueAsNumber)}/></label></div>
+   <small>{ui.text("Tamaño en el juego; el zoom de vista no cambia.")}</small>
   {:else if tool==='rotate'}
-   <label>Grados <input aria-label="Inclinación en grados" type="number" min="-180" max="180" step="0.5" value={rotation} oninput={e=>onrotate(e.currentTarget.valueAsNumber)}/></label>
-   <input aria-label="Ajuste fino de inclinación" type="range" min="-30" max="30" step="0.5" value={rotation} oninput={e=>onrotate(e.currentTarget.valueAsNumber)}/>
-   <div class="rotation-actions"><button type="button" title="Inclinar medio grado a la izquierda" aria-label="Inclinar medio grado a la izquierda" disabled={disabled||rotation<=-180} onclick={()=>onrotate(rotation-.5)}><Minus size={15}/></button><button type="button" disabled={disabled||rotation===0} onclick={()=>onrotate(0)}><RotateCcw size={14}/> Restablecer</button><button type="button" title="Inclinar medio grado a la derecha" aria-label="Inclinar medio grado a la derecha" disabled={disabled||rotation>=180} onclick={()=>onrotate(rotation+.5)}><Plus size={15}/></button></div>
-   <small>Gira alrededor del apoyo. La huella no cambia.</small>
+   <label>{ui.text("Grados")} <input aria-label={ui.text("Inclinación en grados")} type="number" min="-180" max="180" step="0.5" value={rotation} oninput={e=>onrotate(e.currentTarget.valueAsNumber)}/></label>
+   <input aria-label={ui.text("Ajuste fino de inclinación")} type="range" min="-30" max="30" step="0.5" value={rotation} oninput={e=>onrotate(e.currentTarget.valueAsNumber)}/>
+   <div class="rotation-actions"><button type="button" title={ui.text("Inclinar medio grado a la izquierda")} aria-label={ui.text("Inclinar medio grado a la izquierda")} disabled={disabled||rotation<=-180} onclick={()=>onrotate(rotation-.5)}><Minus size={15}/></button><button type="button" disabled={disabled||rotation===0} onclick={()=>onrotate(0)}><RotateCcw size={14}/> {ui.text("Restablecer")}</button><button type="button" title={ui.text("Inclinar medio grado a la derecha")} aria-label={ui.text("Inclinar medio grado a la derecha")} disabled={disabled||rotation>=180} onclick={()=>onrotate(rotation+.5)}><Plus size={15}/></button></div>
+   <small>{ui.text("Gira alrededor del apoyo. La huella no cambia.")}</small>
   {:else}
-   <div class="arrows"><button type="button" title="Subir 1 píxel" aria-label="Subir 1 píxel" onclick={()=>onshift(0,-1)}><ArrowUp size={17}/></button><div><button type="button" title="Mover 1 píxel a la izquierda" aria-label="Mover 1 píxel a la izquierda" onclick={()=>onshift(-1,0)}><ArrowLeft size={17}/></button><button type="button" title="Apoyar sobre la huella" aria-label="Apoyar sobre la huella" onclick={onsupport}><Crosshair size={17}/></button><button type="button" title="Mover 1 píxel a la derecha" aria-label="Mover 1 píxel a la derecha" onclick={()=>onshift(1,0)}><ArrowRight size={17}/></button></div><button type="button" title="Bajar 1 píxel" aria-label="Bajar 1 píxel" onclick={()=>onshift(0,1)}><ArrowDown size={17}/></button></div>
-   <small>También puedes arrastrar la imagen.</small>
+   <div class="arrows"><button type="button" title={ui.text("Subir 1 píxel")} aria-label={ui.text("Subir 1 píxel")} onclick={()=>onshift(0,-1)}><ArrowUp size={17}/></button><div><button type="button" title={ui.text("Mover 1 píxel a la izquierda")} aria-label={ui.text("Mover 1 píxel a la izquierda")} onclick={()=>onshift(-1,0)}><ArrowLeft size={17}/></button><button type="button" title={ui.text("Apoyar sobre la huella")} aria-label={ui.text("Apoyar sobre la huella")} onclick={onsupport}><Crosshair size={17}/></button><button type="button" title={ui.text("Mover 1 píxel a la derecha")} aria-label={ui.text("Mover 1 píxel a la derecha")} onclick={()=>onshift(1,0)}><ArrowRight size={17}/></button></div><button type="button" title={ui.text("Bajar 1 píxel")} aria-label={ui.text("Bajar 1 píxel")} onclick={()=>onshift(0,1)}><ArrowDown size={17}/></button></div>
+   <small>{ui.text("También puedes arrastrar la imagen.")}</small>
   {/if}
  </fieldset>
  {/if}

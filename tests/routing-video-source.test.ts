@@ -1,0 +1,9 @@
+import {describe,it,expect,vi} from 'vitest';
+import {createVideoSource} from '../src/lib/modules/routingtales/video/videoSource';
+function node(native=false){return {src:'',load:vi.fn(),pause:vi.fn(),removeAttribute:vi.fn(),canPlayType:()=>native?'probably':''} as unknown as HTMLVideoElement;}
+describe('copied RoutingTales video source ownership',()=>{
+ it('uses native playback when supported and removes the source when disposed',async()=>{const video=node(true),loader=vi.fn(),source=createVideoSource(video,'https://example.test/movie.m3u8',{onHlsFailure:vi.fn(),loadHls:loader});await source.ready;expect(video.src).toBe('https://example.test/movie.m3u8');expect(loader).not.toHaveBeenCalled();source.destroy();expect(video.pause).toHaveBeenCalledOnce();expect(video.removeAttribute).toHaveBeenCalledWith('src');});
+ it('never attaches an HLS load which resolves after its owner is disposed',async()=>{let resolve:(v:any)=>void=()=>{};const HlsClass=vi.fn();const source=createVideoSource(node(),'https://example.test/movie.m3u8',{onHlsFailure:vi.fn(),loadHls:()=>new Promise(r=>resolve=r)});source.destroy();resolve({default:HlsClass});await source.ready;expect(HlsClass).not.toHaveBeenCalled();});
+ it('reports a fatal HLS failure once and ignores retiring source callbacks',async()=>{let handler:((...args:any[])=>void)|undefined;const failure=vi.fn(),destroy=vi.fn();class FakeHls{static Events={ERROR:'error'};static isSupported(){return true;}on(_name:string,callback:any){handler=callback;}loadSource=vi.fn();attachMedia=vi.fn();destroy=destroy;}
+ const source=createVideoSource(node(),'https://example.test/movie.m3u8',{onHlsFailure:failure,loadHls:async()=>({default:FakeHls as any})});await source.ready;handler?.({}, {fatal:true});handler?.({}, {fatal:true});expect(failure).toHaveBeenCalledOnce();source.destroy();handler?.({}, {fatal:true});expect(failure).toHaveBeenCalledOnce();expect(destroy).toHaveBeenCalledOnce();});
+});

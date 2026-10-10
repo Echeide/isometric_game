@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import {onMount} from 'svelte';
  import {characterImage,type ActorPose,type CharacterPack,type ObjectSprite} from '@isometrico/world';
  import {npcClipRow} from '../../../packages/world/src/pixelart';
@@ -49,8 +50,8 @@
  function up(event:PointerEvent){if(drag?.id===event.pointerId){drag=null;if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);}}
 </script>
 <div class:fit class="stage">
- <div class="surface" bind:this={surface}><canvas width="680" height="430" style:width={fit?fittedWidth+'px':'100%'} style:height={fit?fittedHeight+'px':'auto'} bind:this={canvas} style:cursor={onshift&&kind!=='tile'?'grab':'default'} aria-label={kind==='tile'?'Vista previa del suelo repetido':'Vista previa del recurso sobre la retícula con un personaje de referencia'} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>Vista previa del recurso.</canvas></div>
- <div class="legend"><span>{kind==='tile'?(tileVariants?'Familia · mosaico mixto 4 × 4':'Mosaico · 4 × 4 casillas'):'Referencia a la izquierda · Recurso a la derecha'}</span><span>{kind==='tile'?'Comprueba las uniones':onshift?'Arrastra el dibujo para ajustar su apoyo':'Mismo tamaño y apoyo'}</span></div>
+ <div class="surface" bind:this={surface}><canvas width="680" height="430" style:width={fit?fittedWidth+'px':'100%'} style:height={fit?fittedHeight+'px':'auto'} bind:this={canvas} style:cursor={onshift&&kind!=='tile'?'grab':'default'} aria-label={kind==='tile'?ui.text("Vista previa del suelo repetido"):ui.text("Vista previa del recurso sobre la retícula con un personaje de referencia")} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>{ui.text("Vista previa del recurso.")}</canvas></div>
+ <div class="legend"><span>{kind==='tile'?(tileVariants?ui.text("Familia · mosaico mixto 4 × 4"):ui.text("Mosaico · 4 × 4 casillas")):ui.text("Referencia a la izquierda · Recurso a la derecha")}</span><span>{kind==='tile'?ui.text("Comprueba las uniones"):onshift?ui.text("Arrastra el dibujo para ajustar su apoyo"):ui.text("Mismo tamaño y apoyo")}</span></div>
 </div>
 <style>
  .stage.fit{display:flex;flex-direction:column;min-height:0}.fit .surface{min-height:0;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}.fit .legend{flex:none;padding:8px 12px;font-size:10px}

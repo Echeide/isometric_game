@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import {onMount,tick} from 'svelte';
  import {X, Save, LoaderCircle, RotateCcw, RotateCw} from 'lucide-svelte';
  import {editorChannel,editorRevision,validateEditorLoaded,validateEditedImage,validateEditorPalette,validateEditorPixels,type ImageEditSession,type EditorPalette,type ImageEditOptions,type CycleNavigation,type CycleSelection} from '$lib/workshop/image-edit';
@@ -67,25 +68,25 @@
 <dialog bind:this={dialog} class="image-editor" aria-labelledby="image-editor-title" aria-describedby="image-editor-hint" oncancel={e=>{e.preventDefault();if(confirmSelection)confirmSelection=null;else close();}}>
  <div class="editor-shell">
   <header>
-   <h2 id="image-editor-title" title={navigation?.name??session.name}>{session.frames !== undefined ? 'Editar ciclo' : 'Editar imagen'} · {navigation?.name??session.name}</h2>
-   {#if navigation&&onselect}<div class="cycle-selects" role="group" aria-label="Ciclo que se está editando">
-    <select aria-label="Acción del ciclo" title="Acción" value={navigation.action} disabled={!ready||working} onchange={e=>{const action=e.currentTarget.value;e.currentTarget.value=navigation!.action;requestSelection({action,direction:navigation!.direction});}}>{#each navigation.actions as action}<option value={action.value}>{action.label}</option>{/each}</select>
-    {#if navigation.directions.length}<select aria-label="Dirección del ciclo" title="Dirección" value={navigation.direction} disabled={!ready||working} onchange={e=>{const direction=e.currentTarget.value;e.currentTarget.value=navigation!.direction??'';requestSelection({action:navigation!.action,direction});}}>{#each navigation.directions as direction}<option value={direction.value}>{direction.label}</option>{/each}</select>{/if}
+   <h2 id="image-editor-title" title={navigation?.name??session.name}>{session.frames !== undefined ? ui.text("Editar ciclo") : ui.text("Editar imagen")} · {navigation?.name??session.name}</h2>
+   {#if navigation&&onselect}<div class="cycle-selects" role="group" aria-label={ui.text("Ciclo que se está editando")}>
+    <select aria-label={ui.text("Acción del ciclo")} title={ui.text("Acción")} value={navigation.action} disabled={!ready||working} onchange={e=>{const action=e.currentTarget.value;e.currentTarget.value=navigation!.action;requestSelection({action,direction:navigation!.direction});}}>{#each navigation.actions as action}<option value={action.value}>{action.label}</option>{/each}</select>
+    {#if navigation.directions.length}<select aria-label={ui.text("Dirección del ciclo")} title={ui.text("Dirección")} value={navigation.direction} disabled={!ready||working} onchange={e=>{const direction=e.currentTarget.value;e.currentTarget.value=navigation!.direction??'';requestSelection({action:navigation!.action,direction});}}>{#each navigation.directions as direction}<option value={direction.value}>{direction.label}</option>{/each}</select>{/if}
    </div>{/if}
-   <div class="header-actions" role="group" aria-label="Acciones del editor">
-    <button aria-label="Deshacer" title="Deshacer" disabled={!ready||working} onclick={()=>send('undo')}><RotateCcw size={18} aria-hidden="true"/></button>
-    <button aria-label="Rehacer" title="Rehacer" disabled={!ready||working} onclick={()=>send('redo')}><RotateCw size={18} aria-hidden="true"/></button>
-    <button class="save" aria-label={working?'Procesando retoques':'Aplicar al taller'} title="Guardar · aplicar al taller" aria-busy={working} disabled={!ready||working} onclick={()=>apply()}>{#if working}<LoaderCircle size={18} class="spinner" aria-hidden="true"/>{:else}<Save size={18} aria-hidden="true"/>{/if}</button>
-    <button class="close" aria-label="Cerrar editor de imagen" title="Cerrar · cancelar" disabled={working} onclick={close}><X size={20} aria-hidden="true"/></button>
+   <div class="header-actions" role="group" aria-label={ui.text("Acciones del editor")}>
+    <button aria-label={ui.text("Deshacer")} title={ui.text("Deshacer")} disabled={!ready||working} onclick={()=>send('undo')}><RotateCcw size={18} aria-hidden="true"/></button>
+    <button aria-label={ui.text("Rehacer")} title={ui.text("Rehacer")} disabled={!ready||working} onclick={()=>send('redo')}><RotateCw size={18} aria-hidden="true"/></button>
+    <button class="save" aria-label={working?ui.text("Procesando retoques"):ui.text("Aplicar al taller")} title={ui.text("Guardar · aplicar al taller")} aria-busy={working} disabled={!ready||working} onclick={()=>apply()}>{#if working}<LoaderCircle size={18} class="spinner" aria-hidden="true"/>{:else}<Save size={18} aria-hidden="true"/>{/if}</button>
+    <button class="close" aria-label={ui.text("Cerrar editor de imagen")} title={ui.text("Cerrar · cancelar")} disabled={working} onclick={close}><X size={20} aria-hidden="true"/></button>
    </div>
   </header>
-  <p id="image-editor-hint" class="sr-only">{saveHint} Las capas se combinan al exportar el PNG.</p>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if confirmClose}<div class="discard" role="alert"><span>Hay retoques sin aplicar.</span><button onclick={()=>confirmClose=false}>Seguir editando</button><button onclick={onclose}>Descartar retoques</button></div>{/if}
-  {#if confirmSelection}<div class="discard" role="alert"><span>Hay retoques sin aplicar. Aplica o descarta antes de cambiar de ciclo.</span><button disabled={working} onclick={()=>apply(confirmSelection)}>Aplicar y cambiar</button><button disabled={working} onclick={()=>{if(confirmSelection)void switchCycle(confirmSelection);}}>Descartar y cambiar</button><button disabled={working} onclick={()=>confirmSelection=null}>Seguir editando</button></div>{/if}
+  <p id="image-editor-hint" class="sr-only">{saveHint} {ui.text("Las capas se combinan al exportar el PNG.")}</p>
+  {#if error}<p class="error" role="alert">{ui.text(error)}</p>{/if}
+  {#if confirmClose}<div class="discard" role="alert"><span>{ui.text("Hay retoques sin aplicar.")}</span><button onclick={()=>confirmClose=false}>{ui.text("Seguir editando")}</button><button onclick={onclose}>{ui.text("Descartar retoques")}</button></div>{/if}
+  {#if confirmSelection}<div class="discard" role="alert"><span>{ui.text("Hay retoques sin aplicar. Aplica o descarta antes de cambiar de ciclo.")}</span><button disabled={working} onclick={()=>apply(confirmSelection)}>{ui.text("Aplicar y cambiar")}</button><button disabled={working} onclick={()=>{if(confirmSelection)void switchCycle(confirmSelection);}}>{ui.text("Descartar y cambiar")}</button><button disabled={working} onclick={()=>confirmSelection=null}>{ui.text("Seguir editando")}</button></div>{/if}
   <div class="canvas-area" class:working={working||!ready}>
-   {#if nonce}{#key nonce}<iframe bind:this={frame} title="Editor de píxeles Piskel" src={`/tools/piskel/index.html?v=${editorRevision}#${nonce}`} sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>{/key}{/if}
-   {#if !ready&&!error}<div class="loading" role="status">Preparando la imagen…</div>{/if}
+   {#if nonce}{#key nonce}<iframe bind:this={frame} title={ui.text("Editor de píxeles Piskel")} src={`/tools/piskel/index.html?v=${editorRevision}#${nonce}`} sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>{/key}{/if}
+   {#if !ready&&!error}<div class="loading" role="status">{ui.text("Preparando la imagen…")}</div>{/if}
   </div>
   <footer>{session.width / (session.frames || 1)} × {session.height} px</footer>
  </div>

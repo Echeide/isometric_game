@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import type {Snippet} from 'svelte';
  import {Search,Box,Users,UserRound,Layers} from 'lucide-svelte';
  import type {ObjectFamilies,TileFamilies} from '@isometrico/world';
@@ -10,15 +11,15 @@
  const icons={object:Box,npc:Users,player:UserRound,tile:Layers};
  const catalog=$derived(resourceCatalog(entries,{kind,query,category,objectFamilies,tileFamilies}));
 </script>
-<section class="catalog" aria-label="Catálogo de recursos de la aventura">
- {#if onkindchange&&kinds.length>1}<div class="types" role="group" aria-label="Tipos del catálogo">{#each catalogKinds.filter(item=>kinds.includes(item.id)) as item}{@const Icon=icons[item.id]}<button disabled={busy} aria-pressed={kind===item.id} onclick={()=>onkindchange?.(item.id)}><Icon size={15}/>{item.label}</button>{/each}</div>{/if}
- <div class="heading"><strong>{catalogKinds.find(item=>item.id===kind)?.label}</strong><span aria-label={`${catalog.count} recursos encontrados`}>{catalog.count}</span></div>
- <label class="search"><Search size={16}/><input aria-label="Buscar recurso" placeholder="Recurso, familia o aspecto…" disabled={busy} bind:value={query}/></label>
- {#if kind==='object'||kind==='npc'}<select aria-label="Categoría del catálogo" disabled={busy} bind:value={category}>{#each catalogCategories as item}<option value={item.id}>{item.label}</option>{/each}</select>{/if}
+<section class="catalog" aria-label={ui.text("Catálogo de recursos de la aventura")}>
+ {#if onkindchange&&kinds.length>1}<div class="types" role="group" aria-label={ui.text("Tipos del catálogo")}>{#each catalogKinds.filter(item=>kinds.includes(item.id)) as item}{@const Icon=icons[item.id]}<button disabled={busy} aria-pressed={kind===item.id} onclick={()=>onkindchange?.(item.id)}><Icon size={15}/>{ui.text(item.label??'')}</button>{/each}</div>{/if}
+ <div class="heading"><strong>{ui.text(catalogKinds.find(item=>item.id===kind)?.label??'')}</strong><span aria-label={ui.text("{arg0} recursos encontrados",{arg0:catalog.count})}>{catalog.count}</span></div>
+ <label class="search"><Search size={16}/><input aria-label={ui.text("Buscar recurso")} placeholder={ui.text("Recurso, familia o aspecto…")} disabled={busy} bind:value={query}/></label>
+ {#if kind==='object'||kind==='npc'}<select aria-label={ui.text("Categoría del catálogo")} disabled={busy} bind:value={category}>{#each catalogCategories as item}<option value={item.id}>{ui.text(item.label??'')}</option>{/each}</select>{/if}
  {#if tools}<div class="tools">{@render tools()}</div>{/if}
  <div class="resources">
  {#if kind==='object'||kind==='tile'}<TileCatalog groups={catalog.groups} ungrouped={catalog.ungrouped} {selected} {dirty} {busy} search={query} filtered={category!=='all'} resourceType={kind} {resolve} {onselect}/>
- {:else}{#each catalog.ungrouped as entry (entry.id)}<button class:selected={selected===entry.id} aria-pressed={selected===entry.id} disabled={busy} onclick={()=>onselect(entry.id)}><span class="thumb"><SpriteThumbnail image={resolve(entry.image)} frame={entry.frame}/></span><span class="name"><strong>{entry.name}</strong><small>{dirty&&selected===entry.id?'Sin guardar':kind==='player'&&activePlayer===entry.id?'Jugador activo':entry.custom?'Personalizado':'Catálogo base'}</small></span></button>{:else}<p class="hint">{query.trim()||category!=='all'?'No hay coincidencias.':'No hay recursos de este tipo.'}</p>{/each}{/if}
+ {:else}{#each catalog.ungrouped as entry (entry.id)}<button class:selected={selected===entry.id} aria-pressed={selected===entry.id} disabled={busy} onclick={()=>onselect(entry.id)}><span class="thumb"><SpriteThumbnail image={resolve(entry.image)} frame={entry.frame}/></span><span class="name"><strong>{entry.name}</strong><small>{dirty&&selected===entry.id?ui.text("Sin guardar"):kind==='player'&&activePlayer===entry.id?ui.text("Jugador activo"):entry.custom?ui.text("Personalizado"):ui.text("Catálogo base")}</small></span></button>{:else}<p class="hint">{query.trim()||category!=='all'?ui.text("No hay coincidencias."):ui.text("No hay recursos de este tipo.")}</p>{/each}{/if}
  </div>
 </section>
 <style>

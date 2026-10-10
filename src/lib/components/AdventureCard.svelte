@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import type {Snippet} from 'svelte';
  import {ArrowUpRight} from 'lucide-svelte';
  let {title,eyebrow='',description='',href,cover,coverAlt='',status='',published=false,pending=false,meta='',children}:{title:string;eyebrow?:string;description?:string;href:string;cover?:string;coverAlt?:string;status?:string;published?:boolean;pending?:boolean;meta?:string;children?:Snippet}=$props();
@@ -6,7 +7,7 @@
  $effect(()=>{cover;failed=false;});
 </script>
 <article class="adventure-card">
- <a class="cover" {href} aria-label={`Abrir ${title}`}><img src={!failed&&cover?cover:'/covers/adventure-default.svg'} alt={cover?coverAlt:''} loading="lazy" width="960" height="600" onerror={()=>failed=true}/><span class="open-icon" aria-hidden="true"><ArrowUpRight size={19}/></span>{#if status}<span class:published class:pending class="status"><i></i>{status}</span>{/if}</a>
+ <a class="cover" {href} aria-label={`${ui.locale==='en'?ui.text("Open"):ui.text("Abrir")} ${title}`}><img src={!failed&&cover?cover:'/covers/adventure-default.svg'} alt={cover?coverAlt:''} loading="lazy" width="960" height="600" onerror={()=>failed=true}/><span class="open-icon" aria-hidden="true"><ArrowUpRight size={19}/></span>{#if status}<span class:published class:pending class="status"><i></i>{status}</span>{/if}</a>
  <div class="card-body">{#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}<h3><a {href}>{title}</a></h3>{#if description}<p class="description">{description}</p>{/if}{#if meta}<p class="meta">{meta}</p>{/if}{#if children}<div class="card-actions">{@render children()}</div>{/if}</div>
 </article>
 <style>

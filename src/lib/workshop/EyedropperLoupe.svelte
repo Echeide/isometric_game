@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import {onDestroy,type Snippet} from 'svelte';
  import {eyedropperPixel,eyedropperLoupePosition} from './eyedropper';
  let {active,colors,children}:{active:boolean;colors:Set<string>;children:Snippet}=$props();
@@ -30,11 +31,11 @@
  }
 </script>
 
-<div class="preview" bind:this={wrapper} role="group" aria-label="Vista previa con lupa del cuentagotas" onpointermove={move} onpointerleave={hide} onpointercancel={hide}>
+<div class="preview" bind:this={wrapper} role="group" aria-label={ui.text("Vista previa con lupa del cuentagotas")} onpointermove={move} onpointerleave={hide} onpointercancel={hide}>
  {@render children()}
  <div class="loupe" aria-hidden="true" hidden={!active||!position} style:left={`${position?.left??0}px`} style:top={`${position?.top??0}px`}>
   <canvas bind:this={lens} width={size} height={size}></canvas>
-  <span class:invalid={!valid}><i style:background={color}></i>{valid?color:'Fuera del recurso'}</span>
+  <span class:invalid={!valid}><i style:background={color}></i>{valid?color:ui.text("Fuera del recurso")}</span>
  </div>
 </div>
 

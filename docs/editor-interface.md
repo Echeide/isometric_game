@@ -33,3 +33,9 @@ Los cinco pasos permanecen visibles. La vista central muestra la referencia o la
 ## Desarrollo
 
 Vite utiliza `.svelte-kit/vite-cache` para aislar el optimizador de cada checkout. Así una copia de pruebas que comparte `node_modules` no reemplaza los fragmentos dinámicos de Pixi del servidor principal.
+
+Objetos y eventos comparten el catálogo de módulos (Contexto y Conversación), su formulario y su reproductor. La lista permite añadir varias instancias, reordenarlas, editar en una capa propia, quitar una instancia o reutilizar una conversación de la aventura. El progreso pertenece a cada asociación, aunque el contenido se reutilice. Los módulos de un objeto viven en `story.entities[].modules`; la interacción de los chats antiguos se adapta al identificador histórico `chat` sin cambiar su progreso ni las condiciones que lo referencian.
+
+Los módulos de un objeto se ejecutan en orden al interactuar y retoman el módulo pendiente al volver a abrirlos. Las reacciones siguen pudiendo referirse al identificador de cada módulo. Quitar un módulo utilizado por una condición o reacción exige corregir primero esa referencia. Los eventos conservan sus requisitos, frecuencia y consecuencias al finalizar su secuencia. Un contexto sin texto o conversación sin configurar queda como borrador y no puede reproducirse; un evento incompleto permanece desactivado. Cambiar el contenido compartido de una conversación actualiza todas sus asociaciones; el formulario indica cuántas la usan.
+
+El catálogo común incluye también Información, Vídeo y Pregunta de RoutingTales, con edición en su propia capa, JSON y vista previa. Ver [Módulos de RoutingTales](routing-modules.md) para sus opciones, progreso y medios.

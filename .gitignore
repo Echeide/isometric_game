@@ -22,3 +22,8 @@ __pycache__/
 # Private multi-tenant database and immutable media
 .platform-data/
 .platform-storage/
+
+# Generated translations and inlang workspace state
+src/lib/paraglide/
+project.inlang/.lix/
+project.inlang/.meta.json

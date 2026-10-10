@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '@isometrico/editor-ui';const ui=interfaceLanguage();
   import { onDestroy, onMount } from 'svelte';
   import { orientationLabels, selectImageReference, shortActionRecipe, type ArtProject, type ImageProvider, type ImageRequest, type ImageResult } from './generation';
   import type { CharacterBrief } from './prompts';
@@ -37,29 +38,29 @@
 </script>
 
 <div class="action-assistant">
-<p><strong>ChatGPT · {recipe?.frames} {recipe?.frames === 1 ? 'fotograma' : 'fotogramas'}</strong></p>
-  {#if !available}<p>{statusMessage}</p><button onclick={check}>Comprobar conexión</button>{/if}
-  {#if reference}<p class="hint">Usaremos la referencia aprobada {reference.direction.toUpperCase()}. Vista final: {orientationLabels[direction]}.</p>
-  {:else}<p>Aprueba primero una referencia del personaje en el apartado anterior.</p>{/if}
-  <details><summary>Opciones de generación</summary><label>Calidad<select bind:value={quality}><option value="low">Borrador</option><option value="medium">Media</option><option value="high">Alta</option></select></label></details>
-  <p class="hint">Cada clic solicita una imagen y consume uso de tu API de OpenAI.</p>
+<p><strong>{ui.text("ChatGPT ·")} {recipe?.frames} {recipe?.frames === 1 ? 'fotograma' : ui.text("fotogramas")}</strong></p>
+  {#if !available}<p>{statusMessage}</p><button onclick={check}>{ui.text("Comprobar conexión")}</button>{/if}
+  {#if reference}<p class="hint">{ui.text("Usaremos la referencia aprobada")} {reference.direction.toUpperCase()}{ui.text(". Vista final:")} {ui.text(orientationLabels[direction])}.</p>
+  {:else}<p>{ui.text("Aprueba primero una referencia del personaje en el apartado anterior.")}</p>{/if}
+  <details><summary>{ui.text("Opciones de generación")}</summary><label>{ui.text("Calidad")}<select bind:value={quality}><option value="low">{ui.text("Borrador")}</option><option value="medium">{ui.text("Media")}</option><option value="high">{ui.text("Alta")}</option></select></label></details>
+  <p class="hint">{ui.text("Cada clic solicita una imagen y consume uso de tu API de OpenAI.")}</p>
   <button class="primary" aria-busy={generating} disabled={!available || !reference || !recipe || !brief.style.trim() || generating || accepting} onclick={generate}>
     {#if generating}<span class="spinner" aria-hidden="true"></span>{/if}
-    {generating ? 'Generando imagen…' : `Generar ${action} · ${direction.toUpperCase()} con ChatGPT`}
+    {generating ? ui.text("Generando imagen…") : ui.text("Generar {arg0} · {arg1} con ChatGPT",{arg0:action,arg1:direction.toUpperCase()})}
   </button>
-  <div role="status">{#if generating}<p>OpenAI está preparando la imagen. Puede tardar unos minutos.</p>{/if}</div>
-  {#if hasSource}<p class="hint">La fuente actual se conserva hasta que aceptes la nueva propuesta.</p>{/if}
+  <div role="status">{#if generating}<p>{ui.text("OpenAI está preparando la imagen. Puede tardar unos minutos.")}</p>{/if}</div>
+  {#if hasSource}<p class="hint">{ui.text("La fuente actual se conserva hasta que aceptes la nueva propuesta.")}</p>{/if}
   {#if candidate}
     <div class="candidate">
-      <h4>Revisar {candidate.request.action} · {candidate.request.direction.toUpperCase()}</h4>
-      <img src={candidate.result.image} alt={`Propuesta de ${candidate.request.action} pendiente de revisión`}/>
-      <p>Comprueba la pose, la orientación y que el personaje esté completo antes de incorporarlo.</p>
+      <h4>{ui.text("Revisar")} {candidate.request.action} · {candidate.request.direction.toUpperCase()}</h4>
+      <img src={candidate.result.image} alt={ui.text("Propuesta de {arg0} pendiente de revisión",{arg0:candidate.request.action})}/>
+      <p>{ui.text("Comprueba la pose, la orientación y que el personaje esté completo antes de incorporarlo.")}</p>
       <div class="buttons">
-        <button class="primary" disabled={generating || accepting} onclick={accept}>{accepting ? 'Importando…' : hasSource ? 'Reemplazar ciclo con esta imagen' : 'Usar imagen y revisar ciclo'}</button>
-        <a href={candidate.result.image} download={`${candidate.request.action}-${candidate.request.direction}.png`}>Descargar PNG</a>
-        <button disabled={generating || accepting} onclick={() => candidate = null}>Descartar</button>
+        <button class="primary" disabled={generating || accepting} onclick={accept}>{accepting ? ui.text("Importando…") : hasSource ? ui.text("Reemplazar ciclo con esta imagen") : ui.text("Usar imagen y revisar ciclo")}</button>
+        <a href={candidate.result.image} download={`${candidate.request.action}-${candidate.request.direction}.png`}>{ui.text("Descargar PNG")}</a>
+        <button disabled={generating || accepting} onclick={() => candidate = null}>{ui.text("Descartar")}</button>
       </div>
-      <details><summary>Prompt utilizado · {candidate.result.model}</summary><p>{candidate.result.prompt}</p></details>
+      <details><summary>{ui.text("Prompt utilizado ·")} {candidate.result.model}</summary><p>{candidate.result.prompt}</p></details>
     </div>
   {/if}
 </div>

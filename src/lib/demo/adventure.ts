@@ -1,3 +1,4 @@
+import {validateLocalization,type AdventureLocalization} from '../i18n/adventure';
 import type {StoryDefinition} from '../story/types';
 import {validateStory} from '../story/validation';
 import type {InventoryItem} from './inventory';
@@ -9,7 +10,7 @@ import {defaultAdventurePalette,validateAdventurePalette,type AdventurePalette} 
 import {validateChats,embeddedChat,type AdventureChat,CHAT_PREFIX} from '../chat/editor';
 
 export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; destinationEntityId?:string; requirement?:{itemId:string;quantity:number;consume:boolean} }
-export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides; palette?:AdventurePalette; chats?:AdventureChat[]; story?:StoryDefinition }
+export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides; palette?:AdventurePalette; chats?:AdventureChat[]; story?:StoryDefinition; localization?:AdventureLocalization }
 export const ADVENTURE_KEY='isometrico.adventure.v1';
 export function createAdventure(maps:WorldScene[]):Adventure {
  return parseAdventure({kind:'isometric-adventure',version:1,id:'my-adventure',name:'Mi aventura',startMap:maps[0]?.id,maps,exits:[],palette:defaultAdventurePalette()});
@@ -24,6 +25,7 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
  validateCatalogOverrides(a.catalogOverrides);
  if(a.palette!==undefined)validateAdventurePalette(a.palette);
  validateChats(a.chats);
+ validateLocalization(a.localization);
  for(const map of maps)for(const entity of map.entities)if(entity.interaction?.action==='chat.open'&&entity.interaction.resourceId.startsWith(CHAT_PREFIX))embeddedChat(a.chats,entity.interaction.resourceId);
  for(const map of maps)for(const e of map.entities)if(isCustomVisual(e.visualId)&&!catalog.some(r=>r.id===e.visualId&&compatibleVisualKind(e.kind,r.kind)))throw new Error(`Falta ${e.visualId} en el catálogo de la aventura.`);
  if(byId.size!==maps.length)throw new Error('Hay mapas con identificadores repetidos.');

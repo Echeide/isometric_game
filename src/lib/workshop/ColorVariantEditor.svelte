@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import {onMount,onDestroy,untrack} from 'svelte';
  import {Palette,LoaderCircle,Trash2,X,RotateCcw,Pipette} from 'lucide-svelte';
  import type {ActorPose,CharacterPack} from '@isometrico/world';
@@ -84,37 +85,37 @@
 </script>
 
 <dialog bind:this={dialog} aria-labelledby="color-variant-title" oncancel={e=>{e.preventDefault();close();}}>
- <header><div><h2 id="color-variant-title">Variante de color · {name}</h2><p>{sources.length} {sources.length===1?'hoja':'hojas'} · todos los fotogramas y direcciones</p></div><button class="icon" aria-label="Cerrar variante de color" disabled={applying} onclick={close}><X size={18}/></button></header>
- {#if preparing}<p class="loading" role="status"><LoaderCircle class="spin" size={20}/> Leyendo colores · {completed} / {sources.length} hojas</p>
+ <header><div><h2 id="color-variant-title">{ui.text("Variante de color ·")} {name}</h2><p>{sources.length} {sources.length===1?'hoja':'hojas'} {ui.text("· todos los fotogramas y direcciones")}</p></div><button class="icon" aria-label={ui.text("Cerrar variante de color")} disabled={applying} onclick={close}><X size={18}/></button></header>
+ {#if preparing}<p class="loading" role="status"><LoaderCircle class="spin" size={20}/> {ui.text("Leyendo colores ·")} {completed} / {sources.length} hojas</p>
  {:else if colors.length}
  <div class="layout">
-  <section class="mapping" aria-label="Sustituciones de color">
-   <label>Nombre de la variante<input aria-label="Nombre de la variante" maxlength="120" bind:value={draftName} disabled={applying}/></label>
+  <section class="mapping" aria-label={ui.text("Sustituciones de color")}>
+   <label>{ui.text("Nombre de la variante")}<input aria-label={ui.text("Nombre de la variante")} maxlength="120" bind:value={draftName} disabled={applying}/></label>
    <fieldset disabled={applying}>
     <legend>1. Elige un color del recurso</legend>
-    <button class="eyedropper" aria-pressed={picking} onclick={()=>{picking=!picking;pickMessage='';}}><Pipette size={14}/> {picking?'Haz clic en Original':'Cuentagotas'}</button>
+    <button class="eyedropper" aria-pressed={picking} onclick={()=>{picking=!picking;pickMessage='';}}><Pipette size={14}/> {picking?ui.text("Haz clic en Original"):ui.text("Cuentagotas")}</button>
     {#if pickMessage}<p class="hint" role="status">{pickMessage}</p>{/if}
-    <input class="search" aria-label="Buscar color de origen" placeholder="Buscar por HEX…" bind:value={search}/>
-    <div class="swatches" aria-label="Colores de origen">{#each visibleColors as entry}<button class:chosen={selectedColor===entry.color} style:background={entry.color} aria-label={`Seleccionar ${entry.color}`} aria-pressed={selectedColor===entry.color} title={`${entry.color} · ${entry.pixels} píxeles`} onclick={()=>selectedColor=entry.color}></button>{/each}</div>
-    <small>{matching.length>256?`256 de ${matching.length} colores · busca por HEX para ver el resto`:`${matching.length} colores`}</small>
+    <input class="search" aria-label={ui.text("Buscar color de origen")} placeholder={ui.text("Buscar por HEX…")} bind:value={search}/>
+    <div class="swatches" aria-label={ui.text("Colores de origen")}>{#each visibleColors as entry}<button class:chosen={selectedColor===entry.color} style:background={entry.color} aria-label={ui.text("Seleccionar {arg0}",{arg0:entry.color})} aria-pressed={selectedColor===entry.color} title={ui.text("{arg0} · {arg1} píxeles",{arg0:entry.color,arg1:entry.pixels})} onclick={()=>selectedColor=entry.color}></button>{/each}</div>
+    <small>{matching.length>256?ui.text("256 de {arg0} colores · busca por HEX para ver el resto",{arg0:matching.length}):`${matching.length} colores`}</small>
    </fieldset>
    <fieldset disabled={applying||!selectedColor}>
-    <legend>2. Sustituir {selectedColor||'por un color de la paleta'}</legend>
-    <div class="swatches" aria-label="Colores de destino">{#each palette.colors as color}<button style:background={color} aria-label={`Usar ${color}`} title={color} onclick={()=>chooseDestination(color)}></button>{/each}</div>
+    <legend>2. Sustituir {selectedColor||ui.text("por un color de la paleta")}</legend>
+    <div class="swatches" aria-label={ui.text("Colores de destino")}>{#each palette.colors as color}<button style:background={color} aria-label={ui.text("Usar {arg0}",{arg0:color})} title={color} onclick={()=>chooseDestination(color)}></button>{/each}</div>
     <small><Palette size={13}/> {palette.name}</small>
    </fieldset>
-   <div class="mapping-heading"><h3>Cambios <span>{changes.length}</span></h3><button class="icon" aria-label="Restablecer cambios de color" disabled={applying||!replacements.length} onclick={reset}><RotateCcw size={15}/></button></div>
-   <div class="replacements">{#each replacements as replacement}<div class="replacement"><span class="sample" style:background={replacement.from}></span><code>{replacement.from}</code><span>→</span><span class="sample" style:background={replacement.to}></span><code>{replacement.to}</code><button class="icon" disabled={applying} aria-label={`Eliminar sustitución ${replacement.from}`} onclick={()=>remove(replacement.from)}><Trash2 size={14}/></button></div>{:else}<p class="hint">Puedes cambiar varios tonos de sombra, base y luz.</p>{/each}</div>
-   <p class="hint">El mismo color cambia en todo el recurso, aunque aparezca en partes distintas.</p>{#if colors.length>256}<p class="hint">Para cambiar gamas con muchos tonos similares, adapta primero el recurso a la paleta desde Piskel.</p>{/if}
+   <div class="mapping-heading"><h3>{ui.text("Cambios")} <span>{changes.length}</span></h3><button class="icon" aria-label={ui.text("Restablecer cambios de color")} disabled={applying||!replacements.length} onclick={reset}><RotateCcw size={15}/></button></div>
+   <div class="replacements">{#each replacements as replacement}<div class="replacement"><span class="sample" style:background={replacement.from}></span><code>{replacement.from}</code><span>→</span><span class="sample" style:background={replacement.to}></span><code>{replacement.to}</code><button class="icon" disabled={applying} aria-label={ui.text("Eliminar sustitución {arg0}",{arg0:replacement.from})} onclick={()=>remove(replacement.from)}><Trash2 size={14}/></button></div>{:else}<p class="hint">{ui.text("Puedes cambiar varios tonos de sombra, base y luz.")}</p>{/each}</div>
+   <p class="hint">{ui.text("El mismo color cambia en todo el recurso, aunque aparezca en partes distintas.")}</p>{#if colors.length>256}<p class="hint">{ui.text("Para cambiar gamas con muchos tonos similares, adapta primero el recurso a la paleta desde Piskel.")}</p>{/if}
   </section>
-  <section class="comparison" aria-label="Comparación de colores">
-   <div class="controls">{#if actions.length}<label>Acción<select aria-label="Acción de variante" bind:value={pose} disabled={applying}>{#each actions as action}<option value={action}>{actionLabels[action]}</option>{/each}</select></label>{/if}{#if directions.length}<label>Dirección<select aria-label="Dirección de variante" bind:value={direction} disabled={applying}>{#each directions as facing,i}<option value={i}>{facing.toUpperCase()}</option>{/each}</select></label>{/if}{#if actions.length}<label class="play"><input type="checkbox" bind:checked={playing}/> Reproducir</label>{/if}<span class="progress" role="status">{#if updating}<LoaderCircle size={14} class="spin"/> Actualizando…{/if}</span></div>
-   <div class="compare"><div class:picking role="group" aria-label="Original · cuentagotas" onpointerdown={pickColor}><h3>Original</h3><EyedropperLoupe active={picking&&!applying} colors={sourceColorSet}><ResourceStage kind={resource.kind} item={resource.item} character={resource.character} tileImage={resource.tileImage} {tileFrame} {size} {reference} {floorImage} {resolve} {pose} {direction} playing={playing&&!picking}/></EyedropperLoupe></div><div><h3>Variante</h3>{#if preview}<ResourceStage kind={preview.kind} item={preview.item} character={preview.character} tileImage={preview.tileImage} {tileFrame} {size} {reference} {floorImage} {resolve} {pose} {direction} playing={playing&&!picking}/>{/if}</div></div>
+  <section class="comparison" aria-label={ui.text("Comparación de colores")}>
+   <div class="controls">{#if actions.length}<label>{ui.text("Acción")}<select aria-label={ui.text("Acción de variante")} bind:value={pose} disabled={applying}>{#each actions as action}<option value={action}>{ui.text(actionLabels[action]??'')}</option>{/each}</select></label>{/if}{#if directions.length}<label>{ui.text("Dirección")}<select aria-label={ui.text("Dirección de variante")} bind:value={direction} disabled={applying}>{#each directions as facing,i}<option value={i}>{facing.toUpperCase()}</option>{/each}</select></label>{/if}{#if actions.length}<label class="play"><input type="checkbox" bind:checked={playing}/> {ui.text("Reproducir")}</label>{/if}<span class="progress" role="status">{#if updating}<LoaderCircle size={14} class="spin"/> {ui.text("Actualizando…")}{/if}</span></div>
+   <div class="compare"><div class:picking role="group" aria-label={ui.text("Original · cuentagotas")} onpointerdown={pickColor}><h3>{ui.text("Original")}</h3><EyedropperLoupe active={picking&&!applying} colors={sourceColorSet}><ResourceStage kind={resource.kind} item={resource.item} character={resource.character} tileImage={resource.tileImage} {tileFrame} {size} {reference} {floorImage} {resolve} {pose} {direction} playing={playing&&!picking}/></EyedropperLoupe></div><div><h3>{ui.text("Variante")}</h3>{#if preview}<ResourceStage kind={preview.kind} item={preview.item} character={preview.character} tileImage={preview.tileImage} {tileFrame} {size} {reference} {floorImage} {resolve} {pose} {direction} playing={playing&&!picking}/>{/if}</div></div>
   </section>
  </div>
- {:else if !error}<p>No hay colores visibles en este recurso.</p>{/if}
- {#if error}<p class="error" role="alert">{error}</p>{/if}
- <footer><small>Se crea una copia. Después pulsa «Guardar en aventura».</small><button disabled={applying} onclick={close}>Cancelar</button><button class="primary" disabled={!canApply} onclick={accept}>{#if applying}<LoaderCircle class="spin" size={16}/>{/if}{applying?'Creando…':'Crear variante'}</button></footer>
+ {:else if !error}<p>{ui.text("No hay colores visibles en este recurso.")}</p>{/if}
+ {#if error}<p class="error" role="alert">{ui.text(error)}</p>{/if}
+ <footer><small>{ui.text("Se crea una copia. Después pulsa «Guardar en aventura».")}</small><button disabled={applying} onclick={close}>{ui.text("Cancelar")}</button><button class="primary" disabled={!canApply} onclick={accept}>{#if applying}<LoaderCircle class="spin" size={16}/>{/if}{applying?ui.text("Creando…"):ui.text("Crear variante")}</button></footer>
 </dialog>
 
 <style>

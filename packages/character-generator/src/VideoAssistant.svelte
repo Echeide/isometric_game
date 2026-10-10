@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '@isometrico/editor-ui';const ui=interfaceLanguage();
   import { onDestroy, untrack } from 'svelte';
   import type { Direction, Profile } from './types';
   import type { VideoJob, VideoProvider } from './video';
@@ -94,37 +95,37 @@
 </script>
 
 <div class="video-assistant">
-<details><summary>Kling 2.6 · {available ? 'Conectado' : 'Sin conexión'}</summary><p>{statusMessage}</p><button disabled={working} onclick={()=>refresh()}>Comprobar conexión</button></details>
-  {#if !reference}<p>Falta la referencia {direction.toUpperCase()}. Prepárala en Vistas.</p>{/if}
-  <details><summary>Prompt del vídeo · {action}/{direction.toUpperCase()}</summary><label>Movimiento<textarea rows="6" maxlength="2500" bind:value={prompt}></textarea></label><small>{prompt.length}/2500 caracteres</small><button onclick={() => prompt = suggestedPrompt}>Restaurar prompt sugerido</button></details>
-  <p class="hint">Vídeo de 5 s · consume créditos de Magnific. Se envían la referencia y el prompt.</p>
+<details><summary>{ui.text("Kling 2.6 ·")} {available ? ui.text("Conectado") : ui.text("Sin conexión")}</summary><p>{statusMessage}</p><button disabled={working} onclick={()=>refresh()}>{ui.text("Comprobar conexión")}</button></details>
+  {#if !reference}<p>{ui.text("Falta la referencia")} {direction.toUpperCase()}{ui.text(". Prepárala en Vistas.")}</p>{/if}
+  <details><summary>{ui.text("Prompt del vídeo ·")} {action}/{direction.toUpperCase()}</summary><label>{ui.text("Movimiento")}<textarea rows="6" maxlength="2500" bind:value={prompt}></textarea></label><small>{prompt.length}/2500 caracteres</small><button onclick={() => prompt = suggestedPrompt}>{ui.text("Restaurar prompt sugerido")}</button></details>
+  <p class="hint">{ui.text("Vídeo de 5 s · consume créditos de Magnific. Se envían la referencia y el prompt.")}</p>
   <button class="primary generate" class:loading={videoBusy} aria-busy={videoBusy} disabled={working || generating || !available || !reference || !prompt.trim() || prompt.length > 2500} onclick={generate}>
     {#if videoBusy}<span class="spinner" aria-hidden="true"></span>{/if}
-    {buttonLabel}
+    {ui.text(buttonLabel??'')}
   </button>
   <div role="status">
-    {#if submitting}<p class="hint">Enviando la referencia y el movimiento. No hace falta volver a pulsar.</p>
-    {:else if importing}<p class="hint">Preparando el vídeo y extrayendo los fotogramas del ciclo…</p>
-    {:else if generating}<p class="hint">Kling está preparando el vídeo. Puede tardar unos minutos; puedes seguir trabajando. El proveedor no indica un porcentaje de avance.</p>{/if}
+    {#if submitting}<p class="hint">{ui.text("Enviando la referencia y el movimiento. No hace falta volver a pulsar.")}</p>
+    {:else if importing}<p class="hint">{ui.text("Preparando el vídeo y extrayendo los fotogramas del ciclo…")}</p>
+    {:else if generating}<p class="hint">{ui.text("Kling está preparando el vídeo. Puede tardar unos minutos; puedes seguir trabajando. El proveedor no indica un porcentaje de avance.")}</p>{/if}
   </div>
-  {#if hasSource}<p class="hint">Conservarás el ciclo actual hasta pulsar «Reemplazar ciclo con este vídeo».</p>{/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if hasSource}<p class="hint">{ui.text("Conservarás el ciclo actual hasta pulsar «Reemplazar ciclo con este vídeo».")}</p>{/if}
+  {#if error}<p class="error" role="alert">{ui.text(error)}</p>{/if}
   {#if current}
     <div class="job" aria-live="polite">
-      <strong>{labels[current.status]} · {current.projectId} · {current.action}/{current.direction.toUpperCase()}</strong>
+      <strong>{ui.text(labels[current.status])} · {current.projectId} · {current.action}/{current.direction.toUpperCase()}</strong>
       {#if current.message}<p>{current.message}</p>{/if}
-      {#if current.status === 'pending' || current.status === 'submitting'}<p>Puedes seguir trabajando. Consultamos el estado sin repetir la generación.</p>{/if}
-      <button disabled={working} onclick={() => { checks = 0; void check(); }}>Consultar estado</button>
+      {#if current.status === 'pending' || current.status === 'submitting'}<p>{ui.text("Puedes seguir trabajando. Consultamos el estado sin repetir la generación.")}</p>{/if}
+      <button disabled={working} onclick={() => { checks = 0; void check(); }}>{ui.text("Consultar estado")}</button>
       {#if current.status === 'completed'}
-        {#if matching}<button class="primary" disabled={working} onclick={importVideo}>{importing ? 'Importando…' : hasSource ? 'Reemplazar ciclo con este vídeo' : 'Importar y revisar ciclo'}</button>
-        {:else}<p>Abre el personaje «{current.projectId}» y selecciona {current.action}/{current.direction.toUpperCase()} para importar este vídeo.</p>{/if}
-        {#if imported === current.id}<p>Ciclo incorporado. Revisa la vista previa y guarda el proyecto.</p>{/if}
+        {#if matching}<button class="primary" disabled={working} onclick={importVideo}>{importing ? ui.text("Importando…") : hasSource ? ui.text("Reemplazar ciclo con este vídeo") : ui.text("Importar y revisar ciclo")}</button>
+        {:else}<p>{ui.text("Abre el personaje «")}{current.projectId}{ui.text("» y selecciona")} {current.action}/{current.direction.toUpperCase()} {ui.text("para importar este vídeo.")}</p>{/if}
+        {#if imported === current.id}<p>{ui.text("Ciclo incorporado. Revisa la vista previa y guarda el proyecto.")}</p>{/if}
       {/if}
-      {#if download}<a href={download} download={`${current.projectId}-${current.action}-${current.direction}.mp4`}>Descargar vídeo original</a>{/if}
+      {#if download}<a href={download} download={`${current.projectId}-${current.action}-${current.direction}.mp4`}>{ui.text("Descargar vídeo original")}</a>{/if}
     </div>
   {/if}
-  <details><summary>Historial de vídeos · {projectJobs.length}</summary><p class="hint">Vídeos de «{projectId}». Recuperarlos no genera otro vídeo. Importa los resultados antes de que caduquen los enlaces.</p><button disabled={working} onclick={() => refresh()}>Actualizar solicitudes</button>
-    {#each projectJobs as job}<button class="saved" disabled={working} onclick={() => recover(job)}>{job.projectId} · {job.action}/{job.direction.toUpperCase()} · {new Date(job.createdAt).toLocaleString()}</button>{:else}<p class="hint">No hay solicitudes de vídeo guardadas para este identificador.</p>{/each}
+  <details><summary>{ui.text("Historial de vídeos ·")} {projectJobs.length}</summary><p class="hint">{ui.text("Vídeos de «")}{projectId}{ui.text("». Recuperarlos no genera otro vídeo. Importa los resultados antes de que caduquen los enlaces.")}</p><button disabled={working} onclick={() => refresh()}>{ui.text("Actualizar solicitudes")}</button>
+    {#each projectJobs as job}<button class="saved" disabled={working} onclick={() => recover(job)}>{job.projectId} · {job.action}/{job.direction.toUpperCase()} · {new Date(job.createdAt).toLocaleString(ui.locale)}</button>{:else}<p class="hint">{ui.text("No hay solicitudes de vídeo guardadas para este identificador.")}</p>{/each}
   </details>
 </div>
 

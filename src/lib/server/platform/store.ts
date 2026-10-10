@@ -90,7 +90,20 @@ export class PlatformStore {
   await db.query('INSERT INTO platform_releases(id,slug,tenant_id,definition,graphics,asset_ids) VALUES($1,$2,$3,$4,$5,$6)',[version,slug,t,definition,graphics,JSON.stringify(assetIds)]);
   await db.query('INSERT INTO platform_publications(slug,tenant_id,adventure_id,name,definition,graphics,asset_ids,release_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,adventure_id) DO UPDATE SET name=$4,definition=$5,graphics=$6,asset_ids=$7,release_id=$8,active=true,published_at=now()',[slug,t,id,definition.name,definition,graphics,JSON.stringify(assetIds),version]);await audit(db,p,'adventure.publish',id);return{slug};
  });}
- async publicList(){return this.database.transaction(null,false,async db=>(await db.query('SELECT p.slug,p.name,p.description,t.name AS "tenantName",p.published_at AS "publishedAt" FROM platform_publications p JOIN platform_tenants t ON t.id=p.tenant_id WHERE p.active AND t.enabled ORDER BY p.published_at DESC')).rows);}
+ async publicList(){return this.database.transaction(null,false,async db=>(await db.query(`
+  SELECT p.slug,p.name,p.description,t.name AS "tenantName",p.published_at AS "publishedAt",
+   CASE WHEN r.definition ? 'localization' THEN jsonb_build_object(
+    'defaultLocale',r.definition->'localization'->'defaultLocale',
+    'locales',r.definition->'localization'->'locales',
+    'translations',(SELECT jsonb_object_agg(lang,jsonb_strip_nulls(jsonb_build_object(
+      '["adventure","name"]',texts->'["adventure","name"]',
+      '["adventure","description"]',texts->'["adventure","description"]')))
+     FROM jsonb_each(COALESCE(r.definition->'localization'->'translations','{}'::jsonb)) AS translation(lang,texts))
+   ) END AS localization
+  FROM platform_publications p JOIN platform_releases r ON r.id=p.release_id
+   JOIN platform_tenants t ON t.id=p.tenant_id
+  WHERE p.active AND t.enabled ORDER BY p.published_at DESC
+ `)).rows);}
  async published(slug:string){return this.database.transaction(null,false,async db=>{const r=(await db.query('SELECT r.* FROM platform_publications p JOIN platform_tenants t ON t.id=p.tenant_id JOIN platform_releases r ON r.id=p.release_id WHERE p.slug=$1 AND p.active AND t.enabled',[slug])).rows[0];if(!r)throw new PlatformError(404,'Aventura no publicada.');return{key:r.slug,adventure:r.definition,graphics:mapImages(r.graphics,u=>u.startsWith('asset:')?`/api/public/assets/${r.id}/${u.slice(6)}.png`:u)};});}
  async publicAsset(release:string,id:string){return this.database.transaction(null,true,async db=>{const r=(await db.query('SELECT a.hash FROM platform_releases r JOIN platform_publications p ON p.slug=r.slug JOIN platform_tenants t ON t.id=r.tenant_id JOIN platform_assets a ON a.tenant_id=r.tenant_id AND a.id=$2 WHERE r.id=$1 AND p.active AND t.enabled AND r.asset_ids ? $2',[release,id])).rows[0];if(!r)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(r.hash);});}
  async resourceList(p:Principal,scope='tenant',owner?:string){if(owner)superuser(p);const t=owner??p.tenant?.id??null;if(scope==='tenant'&&!t)throw new PlatformError(403,'Selecciona un espacio.');return this.database.transaction(t,isSuper(p),async db=>(await db.query("SELECT summary FROM platform_resources WHERE visible AND (scope='global' AND $1='global' OR scope='tenant' AND tenant_id=$2 AND $1='tenant') ORDER BY created_at DESC",[scope,t])).rows.map(r=>r.summary));}

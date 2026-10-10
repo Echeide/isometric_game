@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '@isometrico/editor-ui';const ui=interfaceLanguage();
   import { onDestroy, onMount } from 'svelte';
   import { emptyArt, imageReferenceInput, orientationLabels, selectImageReference, type ArtProject, type ImageProvider, type ImageRequest, type ImageResult } from './generation';
   import { prepareReference } from './browser';
@@ -51,20 +52,20 @@
 </script>
 
 <div class="assistant">
-  <details class="connection"><summary>OpenAI · {status.available ? 'Conectado' : 'Sin conexión'}</summary><p>{status.message}</p><button disabled={checking} onclick={check}>{checking ? 'Comprobando…' : 'Comprobar conexión'}</button>{#if !status.available}<p>Configura la conexión en el servidor o importa una imagen.</p>{/if}</details>
-  <details><summary>Opciones de generación</summary>
-    {#if art.inspiration && selectedReference}<label class="photo-choice"><input type="checkbox" bind:checked={preferPhoto}/> Usar la foto original</label>{/if}
-    <label class="quality">Calidad<select bind:value={quality}><option value="low">Borrador</option><option value="medium">Media</option><option value="high">Alta</option></select></label>
+  <details class="connection"><summary>{ui.text("OpenAI ·")} {status.available ? ui.text("Conectado") : ui.text("Sin conexión")}</summary><p>{status.message}</p><button disabled={checking} onclick={check}>{checking ? ui.text("Comprobando…") : ui.text("Comprobar conexión")}</button>{#if !status.available}<p>{ui.text("Configura la conexión en el servidor o importa una imagen.")}</p>{/if}</details>
+  <details><summary>{ui.text("Opciones de generación")}</summary>
+    {#if art.inspiration && selectedReference}<label class="photo-choice"><input type="checkbox" bind:checked={preferPhoto}/> {ui.text("Usar la foto original")}</label>{/if}
+    <label class="quality">{ui.text("Calidad")}<select bind:value={quality}><option value="low">{ui.text("Borrador")}</option><option value="medium">{ui.text("Media")}</option><option value="high">{ui.text("Alta")}</option></select></label>
   </details>
-  <p class="hint">{usingPhoto ? 'Se enviará la foto importada a OpenAI.' : selectedReference ? `Se enviará la referencia ${selectedReference.direction.toUpperCase()} a OpenAI.` : 'La vista se creará a partir de tu descripción y estilo.'} Cada generación consume uso de la API.</p>
-  <button class="primary" disabled={!status.available || (!brief.description.trim() && !referenceInput.reference) || !brief.style.trim()} onclick={generate}>Generar vista {direction.toUpperCase()}</button>
-  {#if !brief.description.trim() && !referenceInput.reference}<p class="hint">Escribe una descripción o importa una foto en el paso Personaje.</p>{/if}
+  <p class="hint">{usingPhoto ? ui.text("Se enviará la foto importada a OpenAI.") : selectedReference ? ui.text("Se enviará la referencia {arg0} a OpenAI.",{arg0:selectedReference.direction.toUpperCase()}) : ui.text("La vista se creará a partir de tu descripción y estilo.")} {ui.text("Cada generación consume uso de la API.")}</p>
+  <button class="primary" disabled={!status.available || (!brief.description.trim() && !referenceInput.reference) || !brief.style.trim()} onclick={generate}>{ui.text("Generar vista")} {direction.toUpperCase()}</button>
+  {#if !brief.description.trim() && !referenceInput.reference}<p class="hint">{ui.text("Escribe una descripción o importa una foto en el paso Personaje.")}</p>{/if}
   {#if candidate}
-    <div class="candidate"><h4>Revisar referencia · {candidate.request.direction.toUpperCase()}</h4>
-      <div class="image"><img src={candidate.result.image} alt="Referencia generada pendiente de revisión"/></div>
-      <p class="hint"><strong>Antes de aceptar: {orientationLabels[candidate.request.direction]}.</strong> Si la orientación no coincide, descarta esta propuesta y vuelve a generar.</p>
-      <div class="buttons"><button class="primary" onclick={accept}>Aprobar como referencia</button><a href={candidate.result.image} download={`propuesta-reference-${candidate.request.direction}.png`}>Descargar PNG original</a><button onclick={() => candidate = null}>Descartar</button></div>
-      <details><summary>Prompt utilizado · {candidate.result.model}</summary><p>{candidate.result.prompt}</p></details>
+    <div class="candidate"><h4>{ui.text("Revisar referencia ·")} {candidate.request.direction.toUpperCase()}</h4>
+      <div class="image"><img src={candidate.result.image} alt={ui.text("Referencia generada pendiente de revisión")}/></div>
+      <p class="hint"><strong>{ui.text("Antes de aceptar:")} {ui.text(orientationLabels[candidate.request.direction])}.</strong> {ui.text("Si la orientación no coincide, descarta esta propuesta y vuelve a generar.")}</p>
+      <div class="buttons"><button class="primary" onclick={accept}>{ui.text("Aprobar como referencia")}</button><a href={candidate.result.image} download={`propuesta-reference-${candidate.request.direction}.png`}>{ui.text("Descargar PNG original")}</a><button onclick={() => candidate = null}>{ui.text("Descartar")}</button></div>
+      <details><summary>{ui.text("Prompt utilizado ·")} {candidate.result.model}</summary><p>{candidate.result.prompt}</p></details>
     </div>
   {/if}
 </div>

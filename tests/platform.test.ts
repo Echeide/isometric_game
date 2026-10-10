@@ -9,6 +9,7 @@ import {defaultLimits,defaultPermissions,type Principal} from '../src/lib/platfo
 import {graphics} from '../src/lib/demo/pixelart';
 import {office} from '../src/lib/demo/scenes';
 import {createAdventure} from '../src/lib/demo/adventure';
+import {textKey} from '../src/lib/i18n/adventure';
 import {attachChat} from '../src/lib/chat/adventure-chats';
 import {createChat,chatResource} from '../src/lib/chat/editor';
 import {packResource,instantiateResource} from '../src/lib/workshop/shared-resource';
@@ -43,6 +44,11 @@ describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
   }finally{reads.mockRestore();}
  });
  it('keeps drafts private and publications immutable until republished',async()=>{expect(await store.publicList()).toHaveLength(0);const published=await store.publish(a,'example',true);await store.save(a,adventure('Borrador secreto'),undefined,{},2);expect((await store.published(published.slug!)).adventure.name).toBe('A editada');expect((await store.publicList()).map(r=>r.name)).toEqual(['A editada']);await store.publish(a,'example',false);expect(await store.publicList()).toHaveLength(0);await expect(store.published(published.slug!)).rejects.toMatchObject({status:404});});
+ it('publishes only immutable localized catalogue titles without shipping story translations in list results',async()=>{
+  const definition={...adventure('Multidioma'),id:'localized-example',localization:{defaultLocale:'es',locales:['es','en'],translations:{en:{[textKey('adventure','name')]:{source:'Multidioma',value:'Multilingual'},[textKey('map',office.id,'name')]:{source:office.name,value:'Office'}}}}};
+  await store.save(a,definition,graphics,{},0);const publication=await store.publish(a,definition.id,true);const row=(await store.publicList()).find(r=>r.slug===publication.slug)!;expect(row.localization.translations.en[textKey('adventure','name')].value).toBe('Multilingual');expect(row.localization.translations.en[textKey('map',office.id,'name')]).toBeUndefined();
+  const draft=structuredClone(definition);draft.localization.translations.en[textKey('adventure','name')].value='Draft only';await store.save(a,draft,undefined,{},1);expect((await store.published(publication.slug!)).adventure.localization.translations.en[textKey('adventure','name')].value).toBe('Multilingual');await store.publish(a,definition.id,false);
+ });
  it('publishes narrative content while ignoring editorial board positions',async()=>{
   const draft={...adventure('Guion público'),id:'narrative-release'};
   await store.save(a,draft,graphics,{},0);const release=await store.publish(a,draft.id,true);

@@ -1,3 +1,5 @@
+import {restoreModuleResults} from '../modules/module-results';
+import {objectModuleCards} from '../modules/adventure-modules';
 import {restoreNarratives,narrativeStatus} from './narrative';
 import type {Adventure} from '../demo/adventure';
 import type {WorldEntity,WorldScene,Cell} from '@isometrico/world';
@@ -5,7 +7,7 @@ import {walkable} from '../../../packages/world/src/navigation';
 import type {InventoryProgress} from '../demo/inventory';
 import {moduleStatuses,eventLabels,emptyStory,entityKey,moduleKey,reactionKey,type EntityRef,type EntityBehavior,type Condition,type ConditionGroup,type StoryProgress,type StoryEvent,type ModuleStatus} from './types';
 /** Module identity is local to an object, independent of the editable content resource. */
-export function entityModules(a:Adventure,ref:EntityRef){const e=a.maps.find(m=>m.id===ref.mapId)?.entities.find(e=>e.id===ref.entityId);return e?.interaction?.action==='chat.open'?[{id:'chat',name:a.chats?.find(c=>'chat:'+c.id===e.interaction?.resourceId)?.name??'Conversación',resourceId:e.interaction.resourceId}]:[];}
+export const entityModules=objectModuleCards;
 export function behavior(a:Adventure,ref:EntityRef){return a.story?.entities.find(e=>e.mapId===ref.mapId&&e.entityId===ref.entityId);}
 export function objectState(a:Adventure,p:StoryProgress,ref:EntityRef){const b=behavior(a,ref),saved=p.states[entityKey(ref)];return b?.states.some(s=>s.id===saved)?saved:b?.initialState;}
 export function moduleStatus(p:StoryProgress,ref:EntityRef,moduleId:string):ModuleStatus{return p.modules[moduleKey(ref,moduleId)]??'not-started';}
@@ -38,5 +40,5 @@ export function react(a:Adventure,p:StoryProgress,i:InventoryProgress,ref:Entity
  return {progress,inventory,messages};
 }
 /** Restore only references still present in this adventure; malformed/obsolete progress cannot unlock rules. */
-export function restoreStory(a:Adventure,raw:unknown):StoryProgress{const p=emptyStory(),value=raw as Partial<StoryProgress>|null;if(!value||typeof value!=='object')return p;for(const m of a.maps)for(const e of m.entities){const ref={mapId:m.id,entityId:e.id},key=entityKey(ref),s=value.states?.[key];if(behavior(a,ref)?.states.some(v=>v.id===s))p.states[key]=s!;for(const mod of entityModules(a,ref)){const k=moduleKey(ref,mod.id),v=value.modules?.[k];if(v&&['not-started','started','completed','failed'].includes(v))p.modules[k]=v;}for(const r of behavior(a,ref)?.reactions??[]){const k=reactionKey(ref,r.id);if(Array.isArray(value.fired)&&value.fired.includes(k))p.fired.push(k);}}return restoreNarratives(a,value,p);}
+export function restoreStory(a:Adventure,raw:unknown):StoryProgress{const p=emptyStory(),value=raw as Partial<StoryProgress>|null;if(!value||typeof value!=='object')return p;for(const m of a.maps)for(const e of m.entities){const ref={mapId:m.id,entityId:e.id},key=entityKey(ref),s=value.states?.[key];if(behavior(a,ref)?.states.some(v=>v.id===s))p.states[key]=s!;for(const mod of entityModules(a,ref)){const k=moduleKey(ref,mod.id),v=value.modules?.[k];if(v&&['not-started','started','completed','failed'].includes(v))p.modules[k]=v;}for(const r of behavior(a,ref)?.reactions??[]){const k=reactionKey(ref,r.id);if(Array.isArray(value.fired)&&value.fired.includes(k))p.fired.push(k);}}return restoreModuleResults(a,value,restoreNarratives(a,value,p));}
 export function replaceBehavior(a:Adventure,b:EntityBehavior):Adventure{return {...a,story:{version:1,...a.story,entities:[...(a.story?.entities??[]).filter(e=>entityKey(e)!==entityKey(b)),b]}};}

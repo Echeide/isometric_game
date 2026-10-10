@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import { onDestroy } from 'svelte';
 
  let source=$state<{url:string;name:string;width:number;height:number}|null>(null);
@@ -59,43 +60,43 @@
 
 <section class="upload-section" aria-labelledby="sheet-title">
  <div class="intro">
-  <div><h2 id="sheet-title">Probar una hoja nueva</h2><p>Carga un PNG para revisar el movimiento y la cuadrícula. La prueba se queda en este navegador y no sustituye los gráficos del juego.</p></div>
-  <label class="upload-button">{source?'Cambiar PNG':'Cargar hoja PNG'}<input aria-label="Cargar hoja PNG" type="file" accept="image/png,.png" onchange={loadFile}/></label>
+  <div><h2 id="sheet-title">{ui.text("Probar una hoja nueva")}</h2><p>{ui.text("Carga un PNG para revisar el movimiento y la cuadrícula. La prueba se queda en este navegador y no sustituye los gráficos del juego.")}</p></div>
+  <label class="upload-button">{source?ui.text("Cambiar PNG"):ui.text("Cargar hoja PNG")}<input aria-label={ui.text("Cargar hoja PNG")} type="file" accept="image/png,.png" onchange={loadFile}/></label>
  </div>
- {#if loading}<p role="status">Abriendo imagen…</p>{/if}
- {#if error}<p class="error" role="alert">{error}</p>{/if}
+ {#if loading}<p role="status">{ui.text("Abriendo imagen…")}</p>{/if}
+ {#if error}<p class="error" role="alert">{ui.text(error)}</p>{/if}
  {#if source}
-  <div class="file-info"><p><strong>{source.name}</strong><br/>{source.width} × {source.height} px · {columns} columnas × {rows} filas con estas celdas</p><button onclick={clear}>Quitar hoja</button></div>
+  <div class="file-info"><p><strong>{source.name}</strong><br/>{source.width} × {source.height} {ui.text("px ·")} {columns} {ui.text("columnas ×")} {rows} {ui.text("filas con estas celdas")}</p><button onclick={clear}>{ui.text("Quitar hoja")}</button></div>
   <div class="workspace">
    <div class="settings">
     <div class="fields">
-     <label>Ancho de celda (px)<input type="number" min="1" max={source.width} step="1" bind:value={cellWidth}/></label>
-     <label>Alto de celda (px)<input type="number" min="1" max={source.height} step="1" bind:value={cellHeight}/></label>
-     <label>Fotogramas por fila<input type="number" min="1" max={Math.max(1,columns)} step="1" bind:value={frames}/></label>
-     <label>Velocidad (fps)<input type="number" min="1" max="60" step="1" bind:value={fps}/></label>
-     <label>Fila a previsualizar<input type="number" min="1" max={Math.max(1,rows)} step="1" value={row+1} oninput={event=>row=event.currentTarget.valueAsNumber-1}/></label>
-     <label>Ampliación<select bind:value={zoom}><option value={1}>1× · tamaño real</option><option value={2}>2×</option><option value={3}>3×</option><option value={4}>4×</option></select></label>
+     <label>{ui.text("Ancho de celda (px)")}<input type="number" min="1" max={source.width} step="1" bind:value={cellWidth}/></label>
+     <label>{ui.text("Alto de celda (px)")}<input type="number" min="1" max={source.height} step="1" bind:value={cellHeight}/></label>
+     <label>{ui.text("Fotogramas por fila")}<input type="number" min="1" max={Math.max(1,columns)} step="1" bind:value={frames}/></label>
+     <label>{ui.text("Velocidad (fps)")}<input type="number" min="1" max="60" step="1" bind:value={fps}/></label>
+     <label>{ui.text("Fila a previsualizar")}<input type="number" min="1" max={Math.max(1,rows)} step="1" value={row+1} oninput={event=>row=event.currentTarget.valueAsNumber-1}/></label>
+     <label>{ui.text("Ampliación")}<select bind:value={zoom}><option value={1}>{ui.text("1× · tamaño real")}</option><option value={2}>2×</option><option value={3}>3×</option><option value={4}>4×</option></select></label>
     </div>
-    <p class="hint">Las columnas se leen de izquierda a derecha. En el formato del juego, las filas son NE, SE, SW y NW.{rows===4&&Number.isInteger(row)&&row>=0&&row<4?` Fila seleccionada: ${directions[row]}.`:''}</p>
+    <p class="hint">{ui.text("Las columnas se leen de izquierda a derecha. En el formato del juego, las filas son NE, SE, SW y NW.")}{rows===4&&Number.isInteger(row)&&row>=0&&row<4?ui.text(" Fila seleccionada: {arg0}.",{arg0:directions[row]}):''}</p>
     {#if problem}<p class="error" role="alert">{problem}</p>{/if}
-    {#if remainder}<p class="notice">Las medidas no encajan exactamente: el borde sobrante queda fuera de la animación. Ajusta el tamaño de celda si ves cortes.</p>{/if}
-    <div class="playback"><button disabled={!valid} onclick={()=>playing=!playing}>{playing?'Pausar':'Reproducir'}</button><span>Fotograma {valid?frame+1:'—'} / {frames||'—'}</span></div>
-    <label class="scrubber">Elegir fotograma<input aria-label="Elegir fotograma" type="range" min="0" max={Math.max(0,frames-1)||0} step="1" value={frame} disabled={!valid} oninput={event=>{playing=false;frame=event.currentTarget.valueAsNumber;}}/></label>
-    <label class="checkbox"><input type="checkbox" bind:checked={showAnchor}/> Mostrar apoyo de referencia (32, 80)</label>
+    {#if remainder}<p class="notice">{ui.text("Las medidas no encajan exactamente: el borde sobrante queda fuera de la animación. Ajusta el tamaño de celda si ves cortes.")}</p>{/if}
+    <div class="playback"><button disabled={!valid} onclick={()=>playing=!playing}>{playing?ui.text("Pausar"):ui.text("Reproducir")}</button><span>{ui.text("Fotograma")} {valid?frame+1:'—'} / {frames||'—'}</span></div>
+    <label class="scrubber">{ui.text("Elegir fotograma")}<input aria-label={ui.text("Elegir fotograma")} type="range" min="0" max={Math.max(0,frames-1)||0} step="1" value={frame} disabled={!valid} oninput={event=>{playing=false;frame=event.currentTarget.valueAsNumber;}}/></label>
+    <label class="checkbox"><input type="checkbox" bind:checked={showAnchor}/> {ui.text("Mostrar apoyo de referencia (32, 80)")}</label>
    </div>
-   <div class="preview" aria-label="Vista previa de la hoja cargada">
+   <div class="preview" aria-label={ui.text("Vista previa de la hoja cargada")}>
     {#if valid}
      <div class="sprite-space" style:width={`${cellWidth*zoom}px`} style:height={`${cellHeight*zoom}px`}>
-      <div class="sprite" style:width={`${cellWidth}px`} style:height={`${cellHeight}px`} style:transform={`scale(${zoom})`} style:background-image={`url("${source.url}")`} style:background-position={`${-frame*cellWidth}px ${-row*cellHeight}px`}>
+      <div class="sprite" style:width={`${cellWidth}px`} style:height={`${cellHeight}px`} style:transform={`scale(${zoom})`} style:background-image={`url("${source.url}")`} style:background-position={ui.text("{arg0}px {arg1}px",{arg0:-frame*cellWidth,arg1:-row*cellHeight})}>
        {#if showAnchor&&cellWidth>32&&cellHeight>80}<span class="anchor" aria-hidden="true"></span>{/if}
       </div>
      </div>
-    {:else}<p>Ajusta la cuadrícula para ver la animación.</p>{/if}
+    {:else}<p>{ui.text("Ajusta la cuadrícula para ver la animación.")}</p>{/if}
    </div>
   </div>
-  <details><summary>Ver hoja completa</summary><div class="sheet"><img src={source.url} alt={`Hoja completa: ${source.name}`}/></div></details>
+  <details><summary>{ui.text("Ver hoja completa")}</summary><div class="sheet"><img src={source.url} alt={ui.text("Hoja completa: {arg0}",{arg0:source.name})}/></div></details>
  {:else}
-  <p class="empty">PNG transparente · Celdas iniciales de 64 × 96 px · Tamaño de celda, fila y velocidad ajustables</p>
+  <p class="empty">{ui.text("PNG transparente · Celdas iniciales de 64 × 96 px · Tamaño de celda, fila y velocidad ajustables")}</p>
  {/if}
 </section>
 

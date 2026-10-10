@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import {onDestroy,untrack} from 'svelte';
  import type {AdventurePalette} from '$lib/demo/adventure-palette';
  import {Sparkles,LoaderCircle} from 'lucide-svelte';
@@ -33,26 +34,26 @@
  export function discardProposal(){if(working)return;raw='';prepared=undefined;onpreview(null);}
 </script>
 <details class:embedded class="assistant" bind:open ontoggle={e=>{if(e.currentTarget.open&&!checked)void connectionStatus();}}>
- <summary><Sparkles size={15}/> Generar con IA</summary>
- {#if palette}<p class="size">Paleta de aventura: {palette.name} · 64 colores.</p>{/if}
- <p class="size">Salida {width} × {height} px · huella {footprint.x} × {footprint.y}. Ajusta estos valores en las propiedades antes de generar.</p>
+ <summary><Sparkles size={15}/> {ui.text("Generar con IA")}</summary>
+ {#if palette}<p class="size">{ui.text("Paleta de aventura:")} {palette.name} {ui.text("· 64 colores.")}</p>{/if}
+ <p class="size">{ui.text("Salida")} {width} × {height} {ui.text("px · huella")} {footprint.x} × {footprint.y}{ui.text(". Ajusta estos valores en las propiedades antes de generar.")}</p>
  <fieldset disabled={!!working}>
- <label>Descripción del objeto<textarea rows="3" maxlength="2000" bind:value={description} placeholder="Cofre de madera con herrajes oscuros…"></textarea></label>
- <label>Referencia de estilo<select bind:value={referenceId}><option value="">Sin referencia</option>{#each references as ref}<option value={ref.id}>{ref.name}</option>{/each}{#if uploaded}<option value="upload">{referenceName}</option>{/if}</select></label>
- <label class="upload">Importar referencia<input type="file" accept="image/png,image/jpeg,image/webp" onchange={upload}/></label>
- {#if referenceId==='upload'&&uploaded}<img class="reference" src={uploaded} alt="Referencia de estilo del objeto"/>{/if}
- <details><summary>Estilo y orientación</summary><label>Estilo<textarea rows="2" maxlength="1000" bind:value={style}></textarea></label><label>Orientación<select bind:value={direction}><option value="se">SE · frente y derecha</option><option value="sw">SW · frente e izquierda</option><option value="ne">NE · detrás y derecha</option><option value="nw">NW · detrás e izquierda</option></select></label><label>Calidad<select bind:value={quality}><option value="low">Borrador</option><option value="medium">Media</option><option value="high">Alta</option></select></label></details>
- {#if !available}<p>{connection||'Comprobando conexión…'}</p>{#if checked}<button type="button" onclick={connectionStatus}>Comprobar conexión</button><a href="/characters" target="_blank" rel="noreferrer">Acceder al taller privado</a>{/if}{/if}
- <p>Cada generación consume uso de OpenAI. Si eliges una referencia, también se enviará al proveedor.</p>
- <button class="primary" type="button" disabled={!available||!description.trim()} onclick={generate}>{#if working}<LoaderCircle class="spinner" size={16}/>{working}{:else}<Sparkles size={16}/>{raw?'Generar otra propuesta':'Generar objeto'}{/if}</button>
+ <label>{ui.text("Descripción del objeto")}<textarea rows="3" maxlength="2000" bind:value={description} placeholder={ui.text("Cofre de madera con herrajes oscuros…")}></textarea></label>
+ <label>{ui.text("Referencia de estilo")}<select bind:value={referenceId}><option value="">{ui.text("Sin referencia")}</option>{#each references as ref}<option value={ref.id}>{ref.name}</option>{/each}{#if uploaded}<option value="upload">{referenceName}</option>{/if}</select></label>
+ <label class="upload">{ui.text("Importar referencia")}<input type="file" accept="image/png,image/jpeg,image/webp" onchange={upload}/></label>
+ {#if referenceId==='upload'&&uploaded}<img class="reference" src={uploaded} alt={ui.text("Referencia de estilo del objeto")}/>{/if}
+ <details><summary>{ui.text("Estilo y orientación")}</summary><label>{ui.text("Estilo")}<textarea rows="2" maxlength="1000" bind:value={style}></textarea></label><label>{ui.text("Orientación")}<select bind:value={direction}><option value="se">{ui.text("SE · frente y derecha")}</option><option value="sw">{ui.text("SW · frente e izquierda")}</option><option value="ne">{ui.text("NE · detrás y derecha")}</option><option value="nw">{ui.text("NW · detrás e izquierda")}</option></select></label><label>{ui.text("Calidad")}<select bind:value={quality}><option value="low">{ui.text("Borrador")}</option><option value="medium">{ui.text("Media")}</option><option value="high">{ui.text("Alta")}</option></select></label></details>
+ {#if !available}<p>{connection||ui.text("Comprobando conexión…")}</p>{#if checked}<button type="button" onclick={connectionStatus}>{ui.text("Comprobar conexión")}</button><a href="/characters" target="_blank" rel="noreferrer">{ui.text("Acceder al taller privado")}</a>{/if}{/if}
+ <p>{ui.text("Cada generación consume uso de OpenAI. Si eliges una referencia, también se enviará al proveedor.")}</p>
+ <button class="primary" type="button" disabled={!available||!description.trim()} onclick={generate}>{#if working}<LoaderCircle class="spinner" size={16}/>{working}{:else}<Sparkles size={16}/>{raw?ui.text("Generar otra propuesta"):ui.text("Generar objeto")}{/if}</button>
  {#if raw}
- <div class="proposal"><strong>Propuesta · {sourceDescription}</strong><p>La vista central muestra la propuesta. El objeto se sustituye al pulsar «Usar esta imagen».</p>
- <details open><summary>Acabado · sin volver a generar</summary><label>Fondo<select bind:value={background}><option value="magenta">Magenta</option><option value="green">Verde</option><option value="alpha">Transparencia existente</option></select></label><label>Tolerancia · {tolerance}<input type="range" min="0" max="255" bind:value={tolerance}/></label>{#if palette}<label><span><input type="checkbox" bind:checked={useAdventurePalette}/> Usar {palette.name} · 64 colores</span></label>{/if}{#if !palette||!useAdventurePalette}<label>Colores<input type="number" min="4" max="64" bind:value={colors}/></label>{/if}<button type="button" onclick={()=>run('Actualizando acabado…',()=>finish())}>Actualizar acabado</button></details>
- <div class="actions"><button type="button" class="primary" disabled={!prepared} onclick={accept}>Usar esta imagen</button><button type="button" onclick={discardProposal}>Descartar propuesta</button></div></div>
+ <div class="proposal"><strong>{ui.text("Propuesta ·")} {sourceDescription}</strong><p>{ui.text("La vista central muestra la propuesta. El objeto se sustituye al pulsar «Usar esta imagen».")}</p>
+ <details open><summary>{ui.text("Acabado · sin volver a generar")}</summary><label>{ui.text("Fondo")}<select bind:value={background}><option value="magenta">{ui.text("Magenta")}</option><option value="green">{ui.text("Verde")}</option><option value="alpha">{ui.text("Transparencia existente")}</option></select></label><label>{ui.text("Tolerancia ·")} {tolerance}<input type="range" min="0" max="255" bind:value={tolerance}/></label>{#if palette}<label><span><input type="checkbox" bind:checked={useAdventurePalette}/> {ui.text("Usar")} {palette.name} {ui.text("· 64 colores")}</span></label>{/if}{#if !palette||!useAdventurePalette}<label>{ui.text("Colores")}<input type="number" min="4" max="64" bind:value={colors}/></label>{/if}<button type="button" onclick={()=>run('Actualizando acabado…',()=>finish())}>{ui.text("Actualizar acabado")}</button></details>
+ <div class="actions"><button type="button" class="primary" disabled={!prepared} onclick={accept}>{ui.text("Usar esta imagen")}</button><button type="button" onclick={discardProposal}>{ui.text("Descartar propuesta")}</button></div></div>
  {/if}
  </fieldset>
- {#if working}<p role="status">{working} Puede tardar unos minutos.</p>{/if}
- {#if error}<p role="alert" class="error">{error}</p>{/if}
+ {#if working}<p role="status">{working} {ui.text("Puede tardar unos minutos.")}</p>{/if}
+ {#if error}<p role="alert" class="error">{ui.text(error)}</p>{/if}
 </details>
 <style>
  .assistant.embedded{border:0;padding:0;margin:0;background:transparent}.assistant.embedded>summary{display:none}

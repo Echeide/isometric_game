@@ -2,7 +2,7 @@
   import type { PixelArtPack } from './pixelart';
   import { onMount, untrack } from 'svelte';
   import type { CameraState, WorldAdapter, WorldController, WorldEntity, WorldEditor } from './types';
-  let { followCamera=false, paused=false, exitIndicators={}, hiddenIds=[], revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus, oncamera }: {followCamera?:boolean;paused?:boolean;exitIndicators?:Record<string,import('./types').ExitIndicator>;hiddenIds?:string[];revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void; oncamera?: (camera:CameraState)=>void} = $props();
+  let { translate=(text:string)=>text, followCamera=false, paused=false, exitIndicators={}, hiddenIds=[], revision=0, adapter, working = false, celebration = 0, editor, graphics, panMode=false, onready, onstatus, oncamera }: {translate?:(text:string)=>string;followCamera?:boolean;paused?:boolean;exitIndicators?:Record<string,import('./types').ExitIndicator>;hiddenIds?:string[];revision?:number; adapter: WorldAdapter; working?: boolean; celebration?: number; editor?: WorldEditor; graphics: PixelArtPack; panMode?: boolean; onready?: (controller: WorldController) => void; onstatus?: (message: string) => void; oncamera?: (camera:CameraState)=>void} = $props();
   let host: HTMLDivElement;
   let engine: Awaited<ReturnType<typeof import('./renderer').createWorld>> | undefined = $state();
   let error = $state('');
@@ -40,7 +40,7 @@
   $effect(()=>{engine?.setFollowCamera(followCamera);});
   $effect(()=>{engine?.setPaused(paused);});
   $effect(()=>{engine?.setWorking(working);});
-  $effect(()=>{engine?.setExitIndicators(exitIndicators);});
+  $effect(()=>{if(engine){engine.setLabels(adapter.scene.entities.map(e=>({id:e.id,label:e.label})),translate("Tú"));engine.setExitIndicators(exitIndicators);}});
   $effect(()=>{engine?.setHidden(hiddenIds);});
   $effect(()=>{engine?.setCompleted(adapter.scene.entities.filter(e=>e.completed).map(e=>e.id));});
   $effect(()=>{engine?.setEditor(editor);});
@@ -50,8 +50,8 @@
 </script>
 <!-- Keyboard input is handled by the game engine; direct DOM actions are available in the host. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div class="world" bind:this={host} tabindex="0" role="application" aria-label={editor ? `${adapter.scene.name}. Editor: selecciona un objeto y arrástralo o usa las flechas para moverlo.` : `${adapter.scene.name}. Usa las flechas o WASD para moverte y Enter para interactuar. También hay accesos directos fuera del mapa.`}>
-  {#if error}<p class="feedback" role="alert">{error}</p>{:else if !ready}<p class="feedback">Preparando tu espacio…</p>{/if}
+<div class="world" bind:this={host} tabindex="0" role="application" aria-label={editor ? `${adapter.scene.name}. Editor: selecciona un objeto y arrástralo o usa las flechas para moverlo.` : `${adapter.scene.name}. ${translate("Usa las flechas o WASD para moverte y Enter para interactuar. También hay accesos directos fuera del mapa.")}`}>
+  {#if error}<p class="feedback" role="alert">{translate(error)}</p>{:else if !ready}<p class="feedback">{translate("Preparando tu espacio…")}</p>{/if}
 </div>
 <style>
 .world{position:absolute;inset:0;outline:none;overflow:hidden}.world:focus-visible{outline:2px solid #577c35;outline-offset:-5px;border-radius:12px}.world :global(canvas){display:block}.feedback{position:absolute;inset:45% 20% auto;text-align:center;color:#48605b;font:14px system-ui}

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import {onMount} from 'svelte';
  import type {WorldController} from '@isometrico/world';
  let {controller,description,action,onaction,onclose}:{controller?:WorldController;description:string;action?:string;onaction:()=>void;onclose:()=>void}=$props();
@@ -13,8 +14,8 @@
   return()=>{cancelAnimationFrame(frame);window.removeEventListener('pointerdown',outside);window.removeEventListener('keydown',key);};
  });
 </script>
-<div bind:this={bubble} class="info-bubble" class:with-action={!!action} role="region" aria-label="Información del personaje">
- <p class:hint={description==='Selecciona la acción para continuar.'}>{description}</p>
+<div bind:this={bubble} class="info-bubble" class:with-action={!!action} role="region" aria-label={ui.text("Información del personaje")}>
+ <p class:hint={description===ui.text("Selecciona la acción para continuar.")}>{description}</p>
  {#if action}<div class="action-area"><button class="action" onclick={onaction}>{action}</button></div>{/if}
 </div>
 <style>

@@ -487,6 +487,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
 
 
   };
+  const displayedLabels=new Map(scene.entities.map(e=>[e.id,e.label]));
   const displayedCompletion=new Map(scene.entities.map(e=>[e.id,!!e.completed]));
   const engine = {
     application:app,
@@ -501,7 +502,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         if(e.interaction?.action!=='adventure.exit')continue;
         const indicator=indicators[e.id],view=entityViews.get(e.id),label=labels.get(e.id);if(!view||!label)continue;
         const text=label.children[1] as Text,back=label.children[0] as Graphics;
-        text.text=indicator?`${e.label} · ${indicator.label}`:e.label;
+        text.text=indicator?`${displayedLabels.get(e.id)??e.label} · ${indicator.label}`:displayedLabels.get(e.id)??e.label;
         back.clear().roundRect(text.x-text.width/2-8,text.y-3,text.width+16,23,7).fill({color:0xffffff,alpha:.92});
         let badge=exitBadges.get(e.id);
         if(!badge){badge=new Graphics();badge.eventMode='none';labelLayer.addChild(badge);exitBadges.set(e.id,badge);}
@@ -514,6 +515,11 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         else badge.moveTo(-4,-2).lineTo(-4,-7).quadraticCurveTo(0,-13,5,-7).stroke({color,width:2});
         badge.circle(0,2,1.5).fill(0xfffef8);
       }
+    },
+    /** Update captions without rebuilding graphics, moving the player or replaying events. */
+    setLabels(values:Array<{id:string;label:string}>,playerLabel:string){
+      badge.text=playerLabel;
+      let changed=false;for(const e of values){if(displayedLabels.get(e.id)===e.label)continue;displayedLabels.set(e.id,e.label);const label=labels.get(e.id);if(!label)continue;const text=label.children[1] as Text,back=label.children[0] as Graphics;text.text=e.label;back.clear().roundRect(text.x-text.width/2-8,text.y-3,text.width+16,23,7).fill({color:0xffffff,alpha:.92});changed=true;}if(changed)lastIndicators='';
     },
     setHidden(ids:string[]){hiddenEntities=new Set(ids);for(const [id,view] of entityViews){view.visible=!ids.includes(id);if(ids.includes(id)){hovered.delete(id);const label=labels.get(id);if(label)label.visible=false;}}},
     setCompleted(ids:string[]){
