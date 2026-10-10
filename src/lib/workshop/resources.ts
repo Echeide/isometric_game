@@ -1,10 +1,11 @@
 import {characterImage,actorPoses,visualCatalog,resolveVisualCatalog,isCustomTile,type CharacterPack,type ObjectSprite,type PixelArtPack,type VisualAsset,type TileKind,type BuiltinTileKind,type VisualCatalogOverrides} from '@isometrico/world';
 export type ResourceKind='object'|'npc'|'player'|'tile';
-export type ResourceEntry={id:string;kind:ResourceKind;name:string;image:string;custom:boolean;frame?:[number,number,number,number]};
+export type ResourceEntry={id:string;kind:ResourceKind;name:string;image:string;custom:boolean;category?:VisualAsset['category'];frame?:[number,number,number,number]};
+export function resourceSearchText(value:string){return value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();}
 /** Family names are searchable too; every visible tile occurs in exactly one section. */
 export function groupWorkshopTiles(entries:ResourceEntry[],families:import('@isometrico/world').TileFamilies,query=''){
- const tiles=entries.filter(e=>e.kind==='tile'),byId=new Map(tiles.map(e=>[e.id,e])),grouped=new Set<string>(),search=query.trim().toLocaleLowerCase();
- const matches=(name:string)=>name.toLocaleLowerCase().includes(search);
+ const tiles=entries.filter(e=>e.kind==='tile'),byId=new Map(tiles.map(e=>[e.id,e])),grouped=new Set<string>(),search=resourceSearchText(query);
+ const matches=(name:string)=>resourceSearchText(name).includes(search);
  const groups=Object.entries(families).map(([id,family])=>{
   const members=Object.keys(family.tiles).flatMap(tile=>{const entry=byId.get(tile);if(!entry||grouped.has(tile))return [];grouped.add(tile);return [entry];});
   return {id,name:family.name,entries:matches(family.name)?members:members.filter(e=>matches(e.name))};
@@ -12,8 +13,8 @@ export function groupWorkshopTiles(entries:ResourceEntry[],families:import('@iso
  return {groups,ungrouped:tiles.filter(e=>!grouped.has(e.id)&&matches(e.name))};
 }
 export function groupWorkshopObjects(entries:ResourceEntry[],families:import('@isometrico/world').ObjectFamilies,query=''){
- const objects=entries.filter(e=>e.kind==='object'),byId=new Map(objects.map(e=>[e.id,e])),grouped=new Set<string>(),search=query.trim().toLocaleLowerCase();
- const matches=(text:string)=>text.toLocaleLowerCase().includes(search);
+ const objects=entries.filter(e=>e.kind==='object'),byId=new Map(objects.map(e=>[e.id,e])),grouped=new Set<string>(),search=resourceSearchText(query);
+ const matches=(text:string)=>resourceSearchText(text).includes(search);
  const groups=Object.entries(families).map(([id,f])=>({id,name:f.name,entries:Object.entries(f.aspects).flatMap(([visual,label])=>{
   const e=byId.get(visual);if(!e||grouped.has(visual))return [];grouped.add(visual);
   return matches(f.name)||matches(label)||matches(e.name)?[{...e,name:label+' · '+e.name}]:[];
@@ -51,10 +52,10 @@ export function catalogAssetName(asset:VisualAsset,overrides:VisualCatalogOverri
 export function workshopEntries(pack:PixelArtPack,catalog:VisualAsset[]=[],overrides:VisualCatalogOverrides={}):ResourceEntry[]{
  const assets=resolveVisualCatalog(catalog,overrides);
  return [
-  ...Object.entries(pack.objects).filter(([id])=>assets.some(a=>a.id===id)).map(([id,o]):ResourceEntry=>{const asset=assets.find(a=>a.id===id)!;return {id,kind:asset.kind==='person'?'npc':'object',name:catalogAssetName(asset,overrides),image:o.image,frame:o.frame,custom:id.startsWith('custom.')};}),
-  ...assets.filter(a=>a.kind==='person'&&!a.id.startsWith('custom.')&&!pack.objects[a.id]).map((a):ResourceEntry=>{const item=workshopNpc(pack,a.id);return {id:a.id,kind:'npc',name:catalogAssetName(a,overrides),image:item.image,frame:item.frame,custom:false};}),
-  {id:'default',kind:'player',name:'Explorador original',image:characterImage(pack.character,'idle','728da5'),custom:false,frame:characterThumbnail(pack.character)},
-  ...Object.entries(pack.players??{}).map(([id,p]):ResourceEntry=>({id,kind:'player',name:p.name,image:characterImage(p.character,'idle'),frame:characterThumbnail(p.character),custom:true})),
+  ...Object.entries(pack.objects).filter(([id])=>assets.some(a=>a.id===id)).map(([id,o]):ResourceEntry=>{const asset=assets.find(a=>a.id===id)!;return {id,kind:asset.kind==='person'?'npc':'object',name:catalogAssetName(asset,overrides),category:asset.category,image:o.image,frame:o.frame,custom:id.startsWith('custom.')};}),
+  ...assets.filter(a=>a.kind==='person'&&!a.id.startsWith('custom.')&&!pack.objects[a.id]).map((a):ResourceEntry=>{const item=workshopNpc(pack,a.id);return {id:a.id,kind:'npc',name:catalogAssetName(a,overrides),category:a.category,image:item.image,frame:item.frame,custom:false};}),
+  {id:'default',kind:'player',name:'Explorador original',category:'people',image:characterImage(pack.character,'idle','728da5'),custom:false,frame:characterThumbnail(pack.character)},
+  ...Object.entries(pack.players??{}).map(([id,p]):ResourceEntry=>({id,kind:'player',name:p.name,category:'people',image:characterImage(p.character,'idle'),frame:characterThumbnail(p.character),custom:true})),
   ...workshopTiles(pack).map(({id,label,image,frame}):ResourceEntry=>({id,kind:'tile',name:label,image,frame,custom:isCustomTile(id)||image.startsWith('asset:')}))
  ];
 }

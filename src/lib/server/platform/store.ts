@@ -11,11 +11,13 @@ import {imageUrls,mapImages} from '../../storage/local-adventures';
 import {validatePack,validateCatalogGraphics,pngSize} from '../../storage/adventure-package';
 import {unpackResource,resourcePreview} from '../../workshop/shared-resource';
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
-import {publicGraphics,graphicsChanged} from './publication-state';
+import {publicGraphics,graphicsChanged,publicAdventure} from './publication-state';
 export function tenant(p:Principal){if(!p.tenant)throw new PlatformError(403,'Entra como un administrador para gestionar un espacio.');return p.tenant.id;}
 export function superuser(p:Principal){if(!isSuper(p))throw new PlatformError(403,'Acción exclusiva del superadmin.');}
 function name(value:unknown){if(typeof value!=='string'||!value.trim()||value.length>120)throw new PlatformError(400,'Nombre no válido (1–120 caracteres).');return value.trim();}
 const idValid=(id:string)=>/^[a-zA-Z0-9_-]{1,160}$/.test(id);
+/** Keep the publication flag aligned with the playable JSON; board-only stories are editorial. */
+const playableDefinitionSQL=(column:'a.definition'|'p.definition')=>`CASE WHEN COALESCE(${column} #> '{story,entities}','[]'::jsonb)='[]'::jsonb AND COALESCE(${column} #> '{story,events}','[]'::jsonb)='[]'::jsonb THEN ${column} - 'story' WHEN COALESCE(${column} #> '{story,events}','[]'::jsonb)='[]'::jsonb THEN ${column} #- '{story,layout}' #- '{story,events}' ELSE ${column} #- '{story,layout}' END`;
 export class PlatformStore {
  constructor(readonly database:Database,readonly directory:string,readonly builtins:string){}
  private async put(bytes:Uint8Array){const hash=hashToken(Buffer.from(bytes).toString('base64'));await mkdir(join(this.directory,'blobs'),{recursive:true});await writeFile(join(this.directory,'blobs',hash),bytes,{flag:'wx'}).catch(e=>{if(e.code!=='EEXIST')throw e;});return hash;}
@@ -47,9 +49,9 @@ export class PlatformStore {
  });}
  async list(p:Principal){const t=tenant(p);return this.database.transaction(t,false,async db=>({version:1,activeId:'',adventures:(await db.query('SELECT definition,revision FROM platform_adventures WHERE tenant_id=$1 ORDER BY updated_at DESC',[t])).rows.map(r=>({...r.definition,_revision:r.revision})),publications:(await db.query(`
   SELECT p.slug,p.adventure_id,p.active,p.published_at,
-   a.definition IS DISTINCT FROM p.definition AS definition_changed,
-   CASE WHEN p.active AND a.definition=p.definition THEN a.graphics END AS current_graphics,
-   CASE WHEN p.active AND a.definition=p.definition THEN p.graphics END AS published_graphics
+   (${playableDefinitionSQL('a.definition')}) IS DISTINCT FROM (${playableDefinitionSQL('p.definition')}) AS definition_changed,
+   CASE WHEN p.active AND (${playableDefinitionSQL('a.definition')})=(${playableDefinitionSQL('p.definition')}) THEN a.graphics END AS current_graphics,
+   CASE WHEN p.active AND (${playableDefinitionSQL('a.definition')})=(${playableDefinitionSQL('p.definition')}) THEN p.graphics END AS published_graphics
   FROM platform_publications p LEFT JOIN platform_adventures a ON a.tenant_id=p.tenant_id AND a.id=p.adventure_id
   WHERE p.tenant_id=$1`,[t])).rows.map(r=>({slug:r.slug,adventure_id:r.adventure_id,active:r.active,published_at:r.published_at,hasUnpublishedChanges:!!r.active&&(r.definition_changed||graphicsChanged(r.current_graphics,r.published_graphics))})),usage:(await db.query("SELECT kind,used FROM platform_usage WHERE tenant_id=$1 AND month=to_char(now(),'YYYY-MM')",[t])).rows}));}
  async adventure(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT * FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Aventura no encontrada.');return a;});}
@@ -83,10 +85,10 @@ export class PlatformStore {
   if(!active){await db.query('UPDATE platform_publications SET active=false WHERE tenant_id=$1 AND adventure_id=$2',[t,id]);await audit(db,p,'adventure.withdraw',id);return{};}
   const a=(await db.query('SELECT * FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];if(!a)throw new PlatformError(404,'Aventura no encontrada.');const old=(await db.query('SELECT * FROM platform_publications WHERE tenant_id=$1 AND adventure_id=$2',[t,id])).rows[0];
   const count=Number((await db.query('SELECT count(*) AS n FROM platform_publications WHERE tenant_id=$1 AND active',[t])).rows[0].n);if(!old?.active&&count>=space.limits.published)throw new PlatformError(409,'Límite de aventuras publicadas alcanzado.');
-  const graphics=publicGraphics(a.graphics);
+  const graphics=publicGraphics(a.graphics),definition=publicAdventure(a.definition);
   const slug=old?.slug??randomUUID(),version=randomUUID(),assetIds=imageUrls(graphics).filter(u=>u.startsWith('asset:')).map(u=>u.slice(6));
-  await db.query('INSERT INTO platform_releases(id,slug,tenant_id,definition,graphics,asset_ids) VALUES($1,$2,$3,$4,$5,$6)',[version,slug,t,a.definition,graphics,JSON.stringify(assetIds)]);
-  await db.query('INSERT INTO platform_publications(slug,tenant_id,adventure_id,name,definition,graphics,asset_ids,release_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,adventure_id) DO UPDATE SET name=$4,definition=$5,graphics=$6,asset_ids=$7,release_id=$8,active=true,published_at=now()',[slug,t,id,a.definition.name,a.definition,graphics,JSON.stringify(assetIds),version]);await audit(db,p,'adventure.publish',id);return{slug};
+  await db.query('INSERT INTO platform_releases(id,slug,tenant_id,definition,graphics,asset_ids) VALUES($1,$2,$3,$4,$5,$6)',[version,slug,t,definition,graphics,JSON.stringify(assetIds)]);
+  await db.query('INSERT INTO platform_publications(slug,tenant_id,adventure_id,name,definition,graphics,asset_ids,release_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,adventure_id) DO UPDATE SET name=$4,definition=$5,graphics=$6,asset_ids=$7,release_id=$8,active=true,published_at=now()',[slug,t,id,definition.name,definition,graphics,JSON.stringify(assetIds),version]);await audit(db,p,'adventure.publish',id);return{slug};
  });}
  async publicList(){return this.database.transaction(null,false,async db=>(await db.query('SELECT p.slug,p.name,p.description,t.name AS "tenantName",p.published_at AS "publishedAt" FROM platform_publications p JOIN platform_tenants t ON t.id=p.tenant_id WHERE p.active AND t.enabled ORDER BY p.published_at DESC')).rows);}
  async published(slug:string){return this.database.transaction(null,false,async db=>{const r=(await db.query('SELECT r.* FROM platform_publications p JOIN platform_tenants t ON t.id=p.tenant_id JOIN platform_releases r ON r.id=p.release_id WHERE p.slug=$1 AND p.active AND t.enabled',[slug])).rows[0];if(!r)throw new PlatformError(404,'Aventura no publicada.');return{key:r.slug,adventure:r.definition,graphics:mapImages(r.graphics,u=>u.startsWith('asset:')?`/api/public/assets/${r.id}/${u.slice(6)}.png`:u)};});}

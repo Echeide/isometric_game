@@ -1,5 +1,6 @@
 <script lang="ts">
  let {published=null}:{published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string}|null}=$props();
+ import {narrativeEvent,narrativeStatus,scheduleNarratives,canBeginNarrative,beginNarrative,advanceNarrative,setNarrativeStatus,narrativeChatKey} from '$lib/story/narrative';
  import {statusLabels,emptyStory,type StoryProgress,type EntityRef,type ModuleStatus,type StoryEvent} from '$lib/story/types';
  import {readStory,saveStory} from '$lib/story/progress';
  import {availability,resolveStoryScene,react,setObjectState,setModuleStatus,moduleStatus} from '$lib/story/engine';
@@ -75,22 +76,22 @@
  let loadError=$state('');
  let completed=$state<string[]>([]);
  let resourceEntityId=$state('');
- async function initialize(){mapsReady=false;loadError='';loadProgress=null;try{
+ async function initialize(){narrativeQueue=[];narrativeId=null;panel=null;mapsReady=false;loadError='';loadProgress=null;try{
   const library=published?{activeId:published.adventure.id,adventures:[published.adventure]}:await loadAdventureLibrary();adventures=library.adventures;
   const requestedAdventure=new URLSearchParams(location.search).get('adventure');
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
   await loadGraphics(adventure.id);const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
   const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
-  restoreProgress(adventure);inventory=readInventory(progressStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;
+  restoreProgress(adventure);inventory=readInventory(progressStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;queueNarrativeEntry();
  }catch(e){if(!disposed)loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}}
  onMount(()=>{void initialize();});
- function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;}
+ function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;runNarrativeQueue();}
  function changeScene(next:WorldScene,facing:Facing){
   arrivalCamera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;
-  celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;
+  celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;narrativeId=null;queueNarrativeEntry();
  }
  let tasks=$state<Task[]>(structuredClone(initialTasks));
- let panel=$state<'tests'|'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|'condition'|null>(null);
+ let panel=$state<'tests'|'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|'condition'|'narrative'|null>(null);
  let blockedExit=$state<{name:string;item:string;quantity:number;image?:string}|null>(null);
  const exitIndicators=$derived.by(()=>{
   const result:Record<string,import('../../../packages/world/src/types').ExitIndicator>={};
@@ -119,6 +120,25 @@
   done:!!selectedEntity.completed
  }:null);
  const chatName=$derived(resource==='lucia'?'Lucía Martín':resource==='marcos'?'Marcos Ruiz':selectedEntity?.label??'Conversación');
+ let narrativeQueue=$state<string[]>([]),narrativeId=$state<string|null>(null),narrativeError=$state(''),narrativeRunning=false;
+ const currentNarrative=$derived(adventure&&narrativeId?narrativeEvent(adventure,narrativeId):undefined);
+ const currentNarrativeRun=$derived(narrativeId?story.narrative?.[narrativeId]:undefined);
+ const currentNarrativeModule=$derived(currentNarrative?.modules[currentNarrativeRun?.module??0]);
+ function queueNarrativeEntry(){if(!adventure)return;const queued=scheduleNarratives(adventure,$state.snapshot(story),currentScene.id);commitStory(queued.progress,$state.snapshot(inventory));narrativeQueue=queued.ids;narrativeError='';}
+ function runNarrativeQueue(){
+  if(!adventure||!controller||panel||transitionImage||narrativeRunning)return;narrativeRunning=true;
+  try{while(narrativeQueue.length&&!panel){const id=narrativeQueue[0];narrativeQueue=narrativeQueue.slice(1);const event=narrativeEvent(adventure,id);if(!event||!canBeginNarrative(adventure,story,inventory,event))continue;
+   const progress=beginNarrative(adventure,$state.snapshot(story),$state.snapshot(inventory),id);commitStory(progress,$state.snapshot(inventory));
+   if(!event.modules.length){const result=advanceNarrative(adventure,$state.snapshot(story),$state.snapshot(inventory),id);commitStory(result.progress,result.inventory,result.messages);continue;}
+   narrativeId=id;narrativeError='';information=null;opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel='narrative';record('Evento '+event.name+' · iniciado');
+  }}catch(e){conditionMessage=(e as Error).message;panel='condition';record('Evento no aplicado: '+conditionMessage);}finally{narrativeRunning=false;}
+ }
+ function progressNarrative(outcome:'completed'|'failed'='completed'){
+  if(!adventure||!narrativeId)return false;try{const result=advanceNarrative(adventure,$state.snapshot(story),$state.snapshot(inventory),narrativeId,outcome);commitStory(result.progress,result.inventory,result.messages);narrativeError='';return narrativeStatus(story,narrativeId)!=='started';}catch(e){narrativeError=(e as Error).message;record('Evento no aplicado: '+narrativeError);return false;}
+ }
+ function contextContinue(){if(progressNarrative())void closePanel();}
+ function narrativeChatState(id:string,moduleId:string,value:ModuleStatus){if(narrativeId!==id||currentNarrativeModule?.id!==moduleId||value==='started'||value==='not-started')return;progressNarrative(value);}
+ function testNarrative(id:string,status:ModuleStatus){if(!adventure)return;try{commitStory(setNarrativeStatus(adventure,$state.snapshot(story),id,status),$state.snapshot(inventory));record('Evento simulado: '+(narrativeEvent(adventure,id)?.name??id)+' · '+statusLabels[status]);}catch(e){testError=(e as Error).message;}}
  const adapter=$derived(makeAdapter(scene,openInteraction));
  let opener:HTMLElement|null=null;
  function openInteraction(event:WorldInteraction){
@@ -158,7 +178,7 @@
  function openDialog(dialog:HTMLDialogElement){dialog.showModal();return {destroy(){dialog.close();}};}
  function dismissBackdrop(event:MouseEvent){const dialog=event.currentTarget as HTMLDialogElement,rect=dialog.getBoundingClientRect();if(event.target===dialog&&(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom))void closePanel();}
 
- async function closePanel(){information=null;panel=null;controller?.setConversation(null);await tick();if(opener?.isConnected)opener.focus();else document.querySelector<HTMLElement>('[role=application]')?.focus();}
+ async function closePanel(){information=null;panel=null;narrativeId=null;narrativeError='';controller?.setConversation(null);await tick();if(opener?.isConnected)opener.focus();else document.querySelector<HTMLElement>('[role=application]')?.focus();runNarrativeQueue();}
  function shortcut(entityId:string){void closePanel().then(()=>controller?.goTo(entityId));}
 
  async function switchAdventure(value:string){
@@ -188,7 +208,7 @@
  </header>
  <main class="immersive-world" aria-label="Espacio virtual">
   <div class:outdoors={environments[scene.theme].outdoor} class="map-stage">
-   {#if loadError}<div class="load-error"><p role="alert">{loadError}</p><button onclick={initialize}>Reintentar carga</button></div>{:else if !mapsReady||assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/>
+   {#if loadError}<div class="load-error"><p role="alert">{loadError}</p><button onclick={initialize}>Reintentar carga</button></div>{:else if !mapsReady||assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
    <div class="scene-heading"><div class="eyebrow">{adventure?.name??'MI AVENTURA'}</div><h1>{scene.name}</h1><span>{environments[scene.theme].label}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label="Abrir inventario" title="Inventario"><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
@@ -204,10 +224,15 @@
  <!-- Native dialog keeps focus inside the floating interaction. -->
  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
  <!-- svelte-ignore a11y_click_events_have_key_events -->
- <dialog class="drawer unified-modal" class:chat-panel={panel==='chat'} class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='condition'?'Interacción bloqueada':panel==='tests'?'Pruebas de aventura':panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
-  <div class="drawer-top"><span>{panel==='condition'?'INTERACCIÓN BLOQUEADA':panel==='tests'?'PROGRESO Y PRUEBAS':panel==='obtained'?'INVENTARIO':panel==='locked'?'SALIDA CERRADA':panel==='inventory'?'INVENTARIO':panel==='chat'?'CONVERSACIÓN':panel==='goal'?'TU SIGUIENTE PASO':panel==='space'?'TU ESPACIO':panel==='help'?'CÓMO JUGAR':panel==='object'?'INTERACCIÓN':'CHECKPOINT / ATLAS'}</span><button onclick={closePanel} aria-label="Cerrar panel"><X size={20}/></button></div>
-  {#if panel==='tests'&&adventure}
-   {#if testError}<p role="alert">{testError}</p>{/if}<AdventureTests {adventure} {tasks} {completed} log={activityLog} {story} {inventory} onstate={testState} onmodule={testModule} onitem={testItem} ontask={toggleTestTask} ongoal={toggleTestGoal} onreset={restartAdventure}/>
+ <dialog class="drawer unified-modal" class:chat-panel={panel==='chat'||panel==='narrative'&&currentNarrativeModule?.type==='chat'} class:activity-panel={panel==='chat'||panel==='tasks'||panel==='project'} use:openDialog oncancel={()=>void closePanel()} onclick={dismissBackdrop} aria-label={panel==='narrative'?'Evento narrativo: '+currentNarrative?.name:panel==='condition'?'Interacción bloqueada':panel==='tests'?'Pruebas de aventura':panel==='obtained'?'Objeto obtenido':panel==='locked'?'Salida cerrada':panel==='inventory'?'Mochila':panel==='chat'?'Conversación':panel==='goal'?'Objetivo':panel==='space'?'Lugares y progreso':panel==='help'?'Ayuda':panel==='object'?'Interacción':'Tareas y proyecto'}>
+  <div class="drawer-top"><span>{panel==='narrative'?'EVENTO NARRATIVO':panel==='condition'?'INTERACCIÓN BLOQUEADA':panel==='tests'?'PROGRESO Y PRUEBAS':panel==='obtained'?'INVENTARIO':panel==='locked'?'SALIDA CERRADA':panel==='inventory'?'INVENTARIO':panel==='chat'?'CONVERSACIÓN':panel==='goal'?'TU SIGUIENTE PASO':panel==='space'?'TU ESPACIO':panel==='help'?'CÓMO JUGAR':panel==='object'?'INTERACCIÓN':'CHECKPOINT / ATLAS'}</span><button onclick={closePanel} aria-label="Cerrar panel"><X size={20}/></button></div>
+  {#if panel==='narrative'&&adventure&&currentNarrative&&currentNarrativeRun&&currentNarrativeModule}
+   {#if narrativeError}<p role="alert">{narrativeError}</p>{/if}
+   <small class="narrative-progress">{currentNarrative.name} · {(currentNarrativeRun.module??0)+1}/{currentNarrative.modules.length}</small>
+   {#if currentNarrativeModule.type==='context'}<h2>{currentNarrativeModule.title}</h2><div class="context-text">{#each currentNarrativeModule.text.split(/\n\s*\n/) as paragraph}<p>{paragraph}</p>{/each}</div><button class="primary-button" onclick={contextContinue}>Continuar</button>
+   {:else if currentNarrativeModule.resourceId}{@const module=currentNarrativeModule}{@const event=currentNarrative}<h2>{adventure.chats?.find(c=>'chat:'+c.id===module.resourceId)?.name??event.name}</h2>{#key [event.id,module.id,currentNarrativeRun.run].join(':')}<RoutingTalesChat config={embeddedChat(adventure.chats,module.resourceId!)} resource={module.resourceId!} storage={progressStorage} progressKey={narrativeChatKey(adventure.id,event,module,currentNarrativeRun.run)} onstate={value=>narrativeChatState(event.id,module.id,value)} onprogress={node=>record('Evento '+event.name+' · conversación: '+node)} onclose={()=>void closePanel()}/>{/key}{/if}
+  {:else if panel==='tests'&&adventure}
+   {#if testError}<p role="alert">{testError}</p>{/if}<AdventureTests {adventure} {tasks} {completed} log={activityLog} {story} {inventory} onstate={testState} onmodule={testModule} onitem={testItem} onnarrative={testNarrative} ontask={toggleTestTask} ongoal={toggleTestGoal} onreset={restartAdventure}/>
   {:else if panel==='condition'}<h2>Acción bloqueada</h2><p class="drawer-description" role="status">{conditionMessage}</p><button class="primary-button" onclick={closePanel}>Seguir explorando</button>
   {:else if panel==='obtained'&&obtained}<div class="drawer-icon"><Backpack size={28}/></div><h2>Objeto obtenido</h2><p class="drawer-description">{obtained.name} × {obtained.quantity}</p><button class="primary-button" onclick={closePanel}>Continuar</button>
   {:else if panel==='locked'&&blockedExit}<div class="drawer-icon"><LockKeyhole size={28}/></div><h2>{blockedExit.name}</h2><p class="drawer-description">Necesitas este artículo para abrir la salida:</p><section class="progress-card">{#if blockedExit.image}<img src={blockedExit.image} alt="" style="width:64px;height:64px;object-fit:contain;image-rendering:pixelated"/>{:else}<Package size={24}/>{/if}<h3>{blockedExit.item} × {blockedExit.quantity}</h3></section><button class="primary-button" onclick={closePanel}>Seguir explorando</button>
@@ -245,6 +270,8 @@
 {/if}
 
 <style>
+.context-text{white-space:pre-wrap;line-height:1.7;color:#607168;max-height:50vh;overflow:auto}.narrative-progress{color:#73836a;font-size:12px}
+
 .preload-stage{position:absolute;inset:0;display:grid;place-content:center;z-index:5;background:#f4f7f0}.preload-stage :global(.preload){width:min(420px,85vw)}
 
 .map-inventory.map-tests{right:108px}@media(max-width:700px){.map-inventory.map-tests{right:96px}}

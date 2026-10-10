@@ -4,8 +4,8 @@
  import {npcClipRow} from '../../../packages/world/src/pixelart';
  import type {ResourceKind} from '$lib/workshop/resources';
  import {sampleTileVariant} from '../../../packages/world/src/tile-families';
- let {kind,item,character,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,tileVariants,reference,floorImage,resolve,onshift}:{kind:ResourceKind;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];tileVariants?:{image:string;frame?:[number,number,number,number];weight:number}[];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
- let canvas:HTMLCanvasElement;
+ let {kind,item,character,fit=false,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,tileVariants,reference,floorImage,resolve,onshift}:{kind:ResourceKind;fit?:boolean;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];tileVariants?:{image:string;frame?:[number,number,number,number];weight:number}[];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
+ let canvas:HTMLCanvasElement,surface:HTMLDivElement;let fittedWidth=$state(680),fittedHeight=$state(430);
  const images=new Map<string,HTMLImageElement>();
  let elapsed=0,previousPose='',drag:{id:number;x:number;y:number}|null=null;
  function get(url:string){const source=resolve(url);if(!source)return null;let image=images.get(source);if(!image){image=new Image();image.src=source;images.set(source,image);}return image.complete&&image.naturalWidth?image:null;}
@@ -43,15 +43,17 @@
   }
   ctx.restore();
  }
- onMount(()=>{let raf=0,last=performance.now();const tick=(now:number)=>{draw(Math.min(.05,(now-last)/1000));last=now;raf=requestAnimationFrame(tick);};raf=requestAnimationFrame(tick);return()=>cancelAnimationFrame(raf);});
+ onMount(()=>{const resize=new ResizeObserver(()=>{if(fit){const w=Math.min(surface.clientWidth,surface.clientHeight*680/430);fittedWidth=w;fittedHeight=w*430/680;}});resize.observe(surface);let raf=0,last=performance.now();const tick=(now:number)=>{draw(Math.min(.05,(now-last)/1000));last=now;raf=requestAnimationFrame(tick);};raf=requestAnimationFrame(tick);return()=>{cancelAnimationFrame(raf);resize.disconnect();};});
  function down(event:PointerEvent){if(kind==='tile'||!onshift||event.button!==0)return;drag={id:event.pointerId,x:event.clientX,y:event.clientY};canvas.setPointerCapture(event.pointerId);}
  function move(event:PointerEvent){if(!drag||drag.id!==event.pointerId)return;const rect=canvas.getBoundingClientRect();onshift?.((event.clientX-drag.x)*680/rect.width/zoom,(event.clientY-drag.y)*430/rect.height/zoom);drag={id:event.pointerId,x:event.clientX,y:event.clientY};}
  function up(event:PointerEvent){if(drag?.id===event.pointerId){drag=null;if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);}}
 </script>
-<div class="stage">
- <canvas width="680" height="430" bind:this={canvas} style:cursor={onshift&&kind!=='tile'?'grab':'default'} aria-label={kind==='tile'?'Vista previa del suelo repetido':'Vista previa del recurso sobre la retícula con un personaje de referencia'} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>Vista previa del recurso.</canvas>
+<div class:fit class="stage">
+ <div class="surface" bind:this={surface}><canvas width="680" height="430" style:width={fit?fittedWidth+'px':'100%'} style:height={fit?fittedHeight+'px':'auto'} bind:this={canvas} style:cursor={onshift&&kind!=='tile'?'grab':'default'} aria-label={kind==='tile'?'Vista previa del suelo repetido':'Vista previa del recurso sobre la retícula con un personaje de referencia'} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>Vista previa del recurso.</canvas></div>
  <div class="legend"><span>{kind==='tile'?(tileVariants?'Familia · mosaico mixto 4 × 4':'Mosaico · 4 × 4 casillas'):'Referencia a la izquierda · Recurso a la derecha'}</span><span>{kind==='tile'?'Comprueba las uniones':onshift?'Arrastra el dibujo para ajustar su apoyo':'Mismo tamaño y apoyo'}</span></div>
 </div>
 <style>
+ .stage.fit{display:flex;flex-direction:column;min-height:0}.fit .surface{min-height:0;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}.fit .legend{flex:none;padding:8px 12px;font-size:10px}
+
  .stage{background:radial-gradient(ellipse at 50% 50%,#f3f5e8,#e7eddd);border:1px solid #d8e1d0;border-radius:16px;overflow:hidden}.stage canvas{display:block;width:100%;height:auto;touch-action:none;cursor:grab}.stage canvas:active{cursor:grabbing}.legend{display:flex;justify-content:space-between;gap:12px;padding:14px 18px;border-top:1px solid #d7dfcf;font-size:11px;color:#68795c;background:#f2f5e9}@media(max-width:700px){.legend{flex-direction:column;gap:4px}}
 </style>

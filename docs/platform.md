@@ -108,3 +108,5 @@ aventura. Reiniciar borra conjuntamente progreso, inventario, conversaciones y
 marcas de reacciones; conserva los mapas y gráficos. Los cambios físicos del
 escenario conservan la posición y cámara del jugador; si su casilla queda ocupada,
 se usa una casilla libre cercana. Un estado sin casillas libres se rechaza.
+
+Las publicaciones incluyen los eventos narrativos y sus módulos de contexto o conversación. La distribución de tarjetas `story.layout` se conserva en los borradores y ZIP, se omite en las versiones públicas y no se considera una novedad publicable. Un guion con solo posiciones, sin reglas ni eventos, equivale a no tener configuración narrativa.

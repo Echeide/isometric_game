@@ -4,6 +4,12 @@ Módulo independiente para convertir vídeos, secuencias de imágenes y filas de
 
 La aplicación de este repositorio lo monta en **`/characters`**, accesible desde **Sprites → Generador de personajes**. **Cargar ejemplo del juego** abre las seis acciones del personaje Grey existente para probar el flujo completo. Es material de demostración, no una generación nueva.
 
+## Interfaz del taller
+
+La ruta `/characters` utiliza `studio`: mantiene los cinco pasos en la cabecera, la referencia o animación en el centro, los ajustes a la derecha y la copia ZIP en el pie. **Propiedades** oculta o abre el panel; en pantallas estrechas se convierte en un diálogo con cierre y acciones propias. **Progreso** abre la matriz de acciones y direcciones. Seleccionar una celda lleva a importación o revisión y cierra la matriz. Las dimensiones, estilo y paleta siguen en el paso **Personaje**.
+
+El componente conserva el diseño anterior si se monta sin `studio`. El núcleo y los adaptadores IA no cambian; los paneles se comparten mediante `@isometrico/editor-ui`, sin dependencia del motor de mundo.
+
 ## Flujo de trabajo
 
 1. En **Tipo de juego**, elige **Isométrico · nuestro juego** o **Plataformas 2D · vista lateral** y sube una foto o imagen de referencia, o escribe una descripción; define el estilo y los accesorios. Da un identificador sin espacios al personaje.

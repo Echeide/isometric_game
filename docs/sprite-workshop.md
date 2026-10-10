@@ -199,3 +199,15 @@ Cada entrega debe cerrar el recorrido de importación, validación, guardado, us
 ### Transformación de objetos
 
 La barra sobre la imagen, arriba a la derecha, permite ajustar tamaño, inclinación y posición de objetos y PNJ. La inclinación se expresa en grados y puede restablecerse a cero. Se guarda como `ObjectSprite.rotation` alrededor del punto de apoyo; el PNG y la huella no cambian. El juego y la vista previa aplican el mismo giro y la detección de clic respeta la imagen girada, incluso al reflejar el objeto. El tamaño corresponde al mundo, independientemente del zoom de vista. Guarda en aventura para conservar los ajustes.
+
+### Distribución del taller
+
+El catálogo se abre desde «Catálogo», conserva búsqueda y despliegue al cerrarse, y puede fijarse en ventanas amplias. Contiene los tipos de recurso, las familias y los ámbitos Esta aventura, Mi espacio y Compartidos; las bibliotecas mantienen su importación, exportación y copia independiente a la aventura. Elegir un recurso cierra el catálogo si no está fijado. Anterior y Siguiente permiten recorrer el tipo seleccionado y respetan la confirmación de cambios sin guardar.
+
+El nombre puede editarse junto a la miniatura. Sobre la imagen se agrupan Piskel, sustituir PNG, ayuda IA, transformación y acciones secundarias de descarga, recuperación y variantes de color. Los aspectos y texturas se seleccionan en la tira inferior; la configuración de familia conserva nombres, desvinculación y pesos de texturas.
+
+Las propiedades se muestran a la derecha en ventanas amplias y en un panel deslizante en ventanas estrechas. Las secciones resumen organización, familia, huella, recorte y ajustes de animación, sin eliminar campos. La ayuda IA y la imagen fuente comparten ese panel y mantienen su estado al cerrarse. Las propuestas de IA muestran aceptar y descartar también en el área principal.
+
+Guardar en aventura permanece disponible en el pie y, al editar en un panel superpuesto, dentro de su propio pie. Borrador, recuperar borrador, restaurar, duplicar, añadir a biblioteca y eliminar se encuentran en «Más acciones del recurso». Activar jugador se conserva junto al guardado. Las operaciones en curso impiden salir para no interrumpirlas. No se modifica el formato de gráficos, los archivos de imagen, las API ni los permisos de acceso.
+
+El catálogo de **Esta aventura** comparte su componente con **Añadir** del editor de mundo: búsqueda por recurso, familia o aspecto, filtro de categoría y miniaturas con el mismo recorte. Las familias se despliegan automáticamente al buscar o seleccionar uno de sus miembros. Los ámbitos **Mi espacio** y **Compartidos** conservan la incorporación de copias independientes.

@@ -3,6 +3,7 @@ node_modules/
 build/
 packages/world/dist/
 packages/character-generator/dist/
+packages/editor-ui/dist/
 .env
 .env.*
 !.env.example

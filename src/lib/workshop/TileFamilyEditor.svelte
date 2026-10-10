@@ -4,7 +4,7 @@
  import {detachTile,tileFamilyId,type TileFamilies} from '../../../packages/world/src/tile-families';
  import type {TileKind} from '@isometrico/world';
  type Choice={id:string;name:string;image:string;frame?:[number,number,number,number]};
- let {families,selected,choices,resolve,canAdd=false,busy=false,onchange,onselect,onadd}:{families:TileFamilies;selected:string;choices:Choice[];resolve:(url:string)=>string;canAdd?:boolean;busy?:boolean;onchange:(next:TileFamilies)=>void;onselect:(id:string)=>void;onadd:()=>void}=$props();
+ let {families,selected,choices,resolve,canAdd=false,busy=false,onchange,onselect,onadd,showAdd=true}:{showAdd?:boolean;families:TileFamilies;selected:string;choices:Choice[];resolve:(url:string)=>string;canAdd?:boolean;busy?:boolean;onchange:(next:TileFamilies)=>void;onselect:(id:string)=>void;onadd:()=>void}=$props();
  const familyId=$derived(tileFamilyId(families,selected)),family=$derived(familyId?families[familyId]:undefined);
  const members=$derived(family?Object.entries(family.tiles).map(([id,weight])=>({...choices.find(c=>c.id===id)!,weight:weight??0})).filter(m=>m.id):[]);
  const total=$derived(members.reduce((sum,m)=>sum+m.weight,0));
@@ -36,7 +36,7 @@
  {:else}
   <button type="button" disabled={busy} onclick={create}>Crear familia con este suelo</button>
  {/if}
- <button type="button" class="add" disabled={!canAdd||busy} onclick={onadd}><Plus size={14}/> Añadir variante de textura</button>
+ {#if showAdd}<button type="button" class="add" disabled={!canAdd||busy} onclick={onadd}><Plus size={14}/> Añadir variante de textura</button>{/if}
  {#if !canAdd}<p>Guarda el suelo antes de añadir otra variante.</p>{/if}
  <p>Los pesos controlan el mosaico de prueba. Quitar una variante de la familia conserva su baldosa en el catálogo.</p>
 </section>

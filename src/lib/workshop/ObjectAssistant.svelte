@@ -4,8 +4,8 @@
  import {Sparkles,LoaderCircle} from 'lucide-svelte';
  import {validateObjectImageRequest,type ObjectImageRequest} from './object-generation';
  import {objectReference,finishObjectImage,type PreparedObjectImage} from './object-image-browser';
- let {palette,width,height,footprint,references,onreference,onpreview,onaccept,onbusy}:{palette?:AdventurePalette;width:number;height:number;footprint:{x:number;y:number};references:{id:string;name:string}[];onreference:(id:string)=>Promise<string>;onpreview:(image:string|null)=>void;onaccept:(image:PreparedObjectImage)=>Promise<void>;onbusy:(value:boolean)=>void}=$props();
- let open=$state(false),description=$state(''),style=$state('Pixel art, formas limpias, paleta terrosa limitada, iluminación suave desde arriba a la izquierda'),direction=$state<ObjectImageRequest['direction']>('se');
+ let {palette,width,height,footprint,references,onreference,onpreview,onaccept,onbusy,open=$bindable(false),embedded=false}:{open?:boolean;embedded?:boolean;palette?:AdventurePalette;width:number;height:number;footprint:{x:number;y:number};references:{id:string;name:string}[];onreference:(id:string)=>Promise<string>;onpreview:(image:string|null)=>void;onaccept:(image:PreparedObjectImage)=>Promise<void>;onbusy:(value:boolean)=>void}=$props();
+ let description=$state(''),style=$state('Pixel art, formas limpias, paleta terrosa limitada, iluminación suave desde arriba a la izquierda'),direction=$state<ObjectImageRequest['direction']>('se');
  let quality=$state<'low'|'medium'|'high'>('low'),referenceId=$state(''),uploaded=$state(''),referenceName=$state('');
  let available=$state(false),checked=$state(false),connection=$state(''),working=$state(''),error=$state('');
  let useAdventurePalette=$state(true);
@@ -29,8 +29,10 @@
    const result=await response.json();if(!alive)return;raw=result.image;prepared=undefined;onpreview(null);sourceDescription=description;await finish();
  });}
  async function accept(){if(prepared)await run('Aplicando propuesta…',async()=>{await onaccept(prepared!);if(alive){raw='';prepared=undefined;onpreview(null);}});}
+ export async function acceptProposal(){await accept();}
+ export function discardProposal(){if(working)return;raw='';prepared=undefined;onpreview(null);}
 </script>
-<details class="assistant" bind:open ontoggle={e=>{if(e.currentTarget.open&&!checked)void connectionStatus();}}>
+<details class:embedded class="assistant" bind:open ontoggle={e=>{if(e.currentTarget.open&&!checked)void connectionStatus();}}>
  <summary><Sparkles size={15}/> Generar con IA</summary>
  {#if palette}<p class="size">Paleta de aventura: {palette.name} · 64 colores.</p>{/if}
  <p class="size">Salida {width} × {height} px · huella {footprint.x} × {footprint.y}. Ajusta estos valores en las propiedades antes de generar.</p>
@@ -46,12 +48,13 @@
  {#if raw}
  <div class="proposal"><strong>Propuesta · {sourceDescription}</strong><p>La vista central muestra la propuesta. El objeto se sustituye al pulsar «Usar esta imagen».</p>
  <details open><summary>Acabado · sin volver a generar</summary><label>Fondo<select bind:value={background}><option value="magenta">Magenta</option><option value="green">Verde</option><option value="alpha">Transparencia existente</option></select></label><label>Tolerancia · {tolerance}<input type="range" min="0" max="255" bind:value={tolerance}/></label>{#if palette}<label><span><input type="checkbox" bind:checked={useAdventurePalette}/> Usar {palette.name} · 64 colores</span></label>{/if}{#if !palette||!useAdventurePalette}<label>Colores<input type="number" min="4" max="64" bind:value={colors}/></label>{/if}<button type="button" onclick={()=>run('Actualizando acabado…',()=>finish())}>Actualizar acabado</button></details>
- <div class="actions"><button type="button" class="primary" disabled={!prepared} onclick={accept}>Usar esta imagen</button><button type="button" onclick={()=>{raw='';prepared=undefined;onpreview(null);}}>Descartar propuesta</button></div></div>
+ <div class="actions"><button type="button" class="primary" disabled={!prepared} onclick={accept}>Usar esta imagen</button><button type="button" onclick={discardProposal}>Descartar propuesta</button></div></div>
  {/if}
  </fieldset>
  {#if working}<p role="status">{working} Puede tardar unos minutos.</p>{/if}
  {#if error}<p role="alert" class="error">{error}</p>{/if}
 </details>
 <style>
+ .assistant.embedded{border:0;padding:0;margin:0;background:transparent}.assistant.embedded>summary{display:none}
  .assistant{margin:10px 0 18px;border:1px solid #cbd8bf;border-radius:8px;padding:12px;background:#f5f8ee}summary{cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}details[open]>summary{margin-bottom:12px}fieldset{border:0;margin:0;padding:0;min-width:0}label{display:flex;flex-direction:column;gap:6px;margin:12px 0;font-size:11px}textarea,select,input[type=number]{box-sizing:border-box;width:100%;min-width:0;padding:8px;font:inherit;border:1px solid #cbd8bf;border-radius:5px;background:white;color:#304535}textarea{resize:vertical}p{font-size:11px;line-height:1.5;color:#627354;overflow-wrap:anywhere}button{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:11px;cursor:pointer;padding:9px;border:1px solid #cbd8bf;border-radius:6px;background:#fff;color:#304535;max-width:100%}.primary{background:#476238;color:white}.primary:disabled{opacity:.5;cursor:default}.upload{cursor:pointer;text-decoration:underline}.upload input{max-width:100%;font-size:10px}.reference{max-width:100%;max-height:90px;object-fit:contain}.proposal{border-top:1px solid #cbd8bf;margin-top:14px;padding-top:12px}.proposal strong{font-size:12px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.error{color:#963f31}.size{font-size:10px}a{font-size:11px;color:#476238;display:block;margin-top:8px}:global(.spinner){animation:object-spin 1s linear infinite}@keyframes object-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){:global(.spinner){animation:none}}
 </style>

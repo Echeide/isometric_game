@@ -5,7 +5,8 @@
   "type": "module",
   "workspaces": [
     "packages/world",
-    "packages/character-generator"
+    "packages/character-generator",
+    "packages/editor-ui"
   ],
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -27,7 +28,8 @@
     "lucide-svelte": "^0.468.0",
     "pg": "^8.23.1",
     "pixi.js": "^8.13.0",
-    "svelte": "^5.38.0"
+    "svelte": "^5.38.0",
+    "@isometrico/editor-ui": "*"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^6.0.0",

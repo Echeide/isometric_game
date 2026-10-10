@@ -3,7 +3,7 @@
  import SpriteThumbnail from '../components/SpriteThumbnail.svelte';
  import {detachObject,objectFamilyId,type ObjectFamilies} from '../../../packages/world/src/object-families';
  import type {ResourceEntry} from './resources';
- let {families,selected,choices,resolve,canAdd=false,busy=false,onchange,onselect,onadd}:{families:ObjectFamilies;selected:string;choices:ResourceEntry[];resolve:(url:string)=>string;canAdd?:boolean;busy?:boolean;onchange:(next:ObjectFamilies)=>void;onselect:(id:string)=>void;onadd:()=>void}=$props();
+ let {families,selected,choices,resolve,canAdd=false,busy=false,onchange,onselect,onadd,showAdd=true}:{showAdd?:boolean;families:ObjectFamilies;selected:string;choices:ResourceEntry[];resolve:(url:string)=>string;canAdd?:boolean;busy?:boolean;onchange:(next:ObjectFamilies)=>void;onselect:(id:string)=>void;onadd:()=>void}=$props();
  const id=$derived(objectFamilyId(families,selected)),family=$derived(id?families[id]:undefined);
  function join(nextId:string){if(nextId===(id??''))return;const next=detachObject(families,selected);if(nextId&&next[nextId])next[nextId].aspects[selected]=choices.find(c=>c.id===selected)?.name.slice(0,80)??'Aspecto';onchange(next);}
  function create(){const next=detachObject(families,selected);next[`family.${crypto.randomUUID()}`]={name:choices.find(c=>c.id===selected)?.name??'Nueva familia',aspects:{[selected]:'Original'}};onchange(next);}
@@ -17,7 +17,7 @@
   <label>Este aspecto<input aria-label="Nombre del aspecto" maxlength="80" placeholder="Cerrado, abierto, roto…" value={family.aspects[selected]} oninput={e=>patch({aspects:{...family.aspects,[selected]:e.currentTarget.value}})}/></label>
   <div class="members">{#each Object.entries(family.aspects) as [visual,label]}{@const entry=choices.find(c=>c.id===visual)}{#if entry}<div class="member"><button type="button" class="edit" disabled={busy||visual===selected} aria-label={`Editar aspecto ${label}`} onclick={()=>onselect(visual)}><span class="thumb"><SpriteThumbnail image={resolve(entry.image)} frame={entry.frame} width={40} height={40}/></span><span>{label}</span><Pencil size={13}/></button><button type="button" class="unlink" aria-label={`Quitar aspecto ${label} de la familia`} title="Conservar gráfico fuera de la familia" onclick={()=>onchange(detachObject(families,visual))}><Unlink size={14}/></button></div>{/if}{/each}</div>
  {:else}<button type="button" onclick={create}>Crear familia con este objeto</button>{/if}
- <button type="button" class="add" disabled={busy||!canAdd} onclick={onadd}><Plus size={14}/> Añadir aspecto</button>
+ {#if showAdd}<button type="button" class="add" disabled={busy||!canAdd} onclick={onadd}><Plus size={14}/> Añadir aspecto</button>{/if}
  <p>{!canAdd?'Guarda el objeto antes de añadir otro aspecto. ':'Cada aspecto se retoca por separado en Piskel. '}Selecciona sus gráficos en Condiciones → Estados del objeto.</p>
 </section>
 <style>

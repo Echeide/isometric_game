@@ -1,7 +1,7 @@
 <script lang="ts">
  import type {Adventure} from '../demo/adventure';
  import {entityKey,type StoryEffect} from './types';
- let {adventure,effects,onchange}:{adventure:Adventure;effects:StoryEffect[];onchange:(effects:StoryEffect[])=>void}=$props();
+ let {adventure,effects,allowEmpty=false,onchange}:{adventure:Adventure;effects:StoryEffect[];allowEmpty?:boolean;onchange:(effects:StoryEffect[])=>void}=$props();
  let kind=$state<StoryEffect['kind']>('state');
  const objects=$derived((adventure.story?.entities??[]).filter(b=>b.states.length).map(b=>({...b,label:adventure.maps.find(m=>m.id===b.mapId)?.name+' · '+adventure.maps.find(m=>m.id===b.mapId)?.entities.find(e=>e.id===b.entityId)?.label})));
  const items=$derived(adventure.items??[]);
@@ -9,7 +9,7 @@
  function change(i:number,v:StoryEffect){onchange(effects.map((e,n)=>n===i?v:e));}
 </script>
 <div aria-label="Consecuencias" role="group">
- {#each effects as e,i}<div class="effect"><div class="line"><strong>{e.kind==='state'?'Cambiar estado':e.kind==='give'?'Dar artículo':'Consumir artículo'}</strong><button disabled={effects.length===1} title={effects.length===1?'Usa Eliminar reacción para quitar la última consecuencia':'Eliminar consecuencia'} aria-label={'Eliminar consecuencia '+(i+1)} onclick={()=>onchange(effects.filter((_,n)=>n!==i))}>×</button></div>
+ {#each effects as e,i}<div class="effect"><div class="line"><strong>{e.kind==='state'?'Cambiar estado':e.kind==='give'?'Dar artículo':'Consumir artículo'}</strong><button disabled={effects.length===1&&!allowEmpty} title={effects.length===1&&!allowEmpty?'Usa Eliminar reacción para quitar la última consecuencia':'Eliminar consecuencia'} aria-label={'Eliminar consecuencia '+(i+1)} onclick={()=>onchange(effects.filter((_,n)=>n!==i))}>×</button></div>
  {#if e.kind==='state'}<label>Objeto<select value={entityKey(e)} onchange={event=>{const b=objects.find(b=>entityKey(b)===event.currentTarget.value);if(b)change(i,{...e,mapId:b.mapId,entityId:b.entityId,stateId:b.states[0].id});}}>{#each objects as o}<option value={entityKey(o)}>{o.label}</option>{/each}</select></label><label>Nuevo estado<select value={e.stateId} onchange={event=>change(i,{...e,stateId:event.currentTarget.value})}>{#each objects.find(o=>entityKey(o)===entityKey(e))?.states??[] as state}<option value={state.id}>{state.name}</option>{/each}</select></label>
  {:else}<label>Artículo<select value={e.itemId} onchange={event=>change(i,{...e,itemId:event.currentTarget.value})}>{#each items as item}<option value={item.id}>{item.name}</option>{/each}</select></label><label>Cantidad<input type="number" min="1" max="999999" value={e.quantity} onchange={event=>change(i,{...e,quantity:Math.max(1,Math.floor(+event.currentTarget.value))})}/></label>{/if}</div>{/each}
  <div class="add"><select aria-label="Tipo de consecuencia" bind:value={kind}><option value="state">Cambiar estado</option><option value="give">Dar artículo</option><option value="consume">Consumir artículo</option></select><button disabled={!first(kind)||effects.length>=16} onclick={()=>{const e=first(kind);if(e)onchange([...effects,e]);}}>+ Añadir</button></div>

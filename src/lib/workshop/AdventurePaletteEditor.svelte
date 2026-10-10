@@ -2,7 +2,7 @@
  import {Palette,Settings2,Download,Upload,Save} from 'lucide-svelte';
  import {defaultAdventurePalette,validateAdventurePalette,importPalette,type AdventurePalette} from '$lib/demo/adventure-palette';
  import {downloadBlob} from '$lib/storage/adventure-package';
- let {palette,disabled=false,onsave,onextract,onediting}:{palette?:AdventurePalette;disabled?:boolean;onsave:(palette:AdventurePalette)=>Promise<void>;onextract?:()=>Promise<AdventurePalette>;onediting:(open:boolean)=>void}=$props();
+ let {palette,disabled=false,compact=false,onsave,onextract,onediting}:{palette?:AdventurePalette;disabled?:boolean;compact?:boolean;onsave:(palette:AdventurePalette)=>Promise<void>;onextract?:()=>Promise<AdventurePalette>;onediting:(open:boolean)=>void}=$props();
  let draft=$state<AdventurePalette>(defaultAdventurePalette()),working=$state(false),error=$state('');
  let dialog:HTMLDialogElement,input:HTMLInputElement;
  function open(){draft=JSON.parse(JSON.stringify(palette??defaultAdventurePalette()));error='';dialog.showModal();onediting(true);}
@@ -13,7 +13,7 @@
 </script>
 <section class="palette-bar" aria-label="Paleta de la aventura">
  <div class="title" title={palette?.name??'Paleta de aventura'}><Palette size={17}/><strong>{palette?.name??'Paleta de aventura'}</strong></div>
- <button disabled={disabled} onclick={open} aria-label="Configurar paleta de la aventura" title="Configurar la paleta de 64 colores"><Settings2 size={15}/><span>Configurar</span></button>
+ <button disabled={disabled} onclick={open} aria-label="Configurar paleta de la aventura" title="Configurar la paleta de 64 colores"><Settings2 size={15}/>{#if !compact}<span>Configurar</span>{/if}</button>
 </section>
 <dialog bind:this={dialog} oncancel={e=>{e.preventDefault();if(!working)close();}} aria-labelledby="palette-title">
  <h2 id="palette-title">Paleta de aventura · 64 colores</h2><p>Se comparte entre objetos, suelos y personajes. Los recursos existentes se adaptan cuando tú lo elijas.</p>

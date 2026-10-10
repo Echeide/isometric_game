@@ -1,3 +1,4 @@
+import type {Adventure} from '../../demo/adventure';
 import type {PixelArtPack} from '@isometrico/world';
 
 /** Use exactly the same playable graphics for publication and pending-change detection. */
@@ -21,3 +22,7 @@ function canonical(value:unknown):string {
 export function graphicsChanged(current:PixelArtPack,published:PixelArtPack):boolean {
  return canonical(publicGraphics(current))!==canonical(publicGraphics(published));
 }
+
+/** Board positions are editorial; narrative events remain part of the playable release. */
+export function publicAdventure(a:Adventure):Adventure {const value=structuredClone(a);if(value.story){delete value.story.layout;if(!value.story.events?.length)delete value.story.events;if(!value.story.entities.length&&!value.story.events?.length)delete value.story;}delete (value as Adventure&{_revision?:number})._revision;return value;}
+export function adventureChanged(current:Adventure,published:Adventure){return canonical(publicAdventure(current))!==canonical(publicAdventure(published));}

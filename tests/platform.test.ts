@@ -43,6 +43,16 @@ describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
   }finally{reads.mockRestore();}
  });
  it('keeps drafts private and publications immutable until republished',async()=>{expect(await store.publicList()).toHaveLength(0);const published=await store.publish(a,'example',true);await store.save(a,adventure('Borrador secreto'),undefined,{},2);expect((await store.published(published.slug!)).adventure.name).toBe('A editada');expect((await store.publicList()).map(r=>r.name)).toEqual(['A editada']);await store.publish(a,'example',false);expect(await store.publicList()).toHaveLength(0);await expect(store.published(published.slug!)).rejects.toMatchObject({status:404});});
+ it('publishes narrative content while ignoring editorial board positions',async()=>{
+  const draft={...adventure('Guion público'),id:'narrative-release'};
+  await store.save(a,draft,graphics,{},0);const release=await store.publish(a,draft.id,true);
+  const layoutOnly={...draft,story:{version:1 as const,entities:[],layout:{node:{x:32,y:64}}}};
+  await store.save(a,layoutOnly,undefined,{},1);expect((await store.list(a)).publications.find(p=>p.adventure_id===draft.id)!.hasUnpublishedChanges).toBe(false);
+  const event={id:'intro',name:'Inicio',trigger:'adventure.start' as const,enabled:true,once:true,modules:[{id:'text',type:'context' as const,title:'Bienvenida',text:'Contexto público'}],effects:[]};
+  const withEvent={...layoutOnly,story:{...layoutOnly.story,events:[event]}};await store.save(a,withEvent,undefined,{},2);expect((await store.list(a)).publications.find(p=>p.adventure_id===draft.id)!.hasUnpublishedChanges).toBe(true);
+  await store.publish(a,draft.id,true);const published=await store.published(release.slug!);expect(published.adventure.story.events[0].modules[0].text).toBe('Contexto público');expect(published.adventure.story.layout).toBeUndefined();
+  await store.save(a,{...withEvent,story:{...withEvent.story,layout:{node:{x:400,y:96}}}},undefined,{},3);expect((await store.list(a)).publications.find(p=>p.adventure_id===draft.id)!.hasUnpublishedChanges).toBe(false);await store.publish(a,draft.id,false);
+ });
  it('reports saved map and player changes, clears the warning on republish and ignores a no-op save',async()=>{
   const draft={...adventure('Estado de publicación'),id:'publication-state'},pack=structuredClone(graphics);
   await store.save(a,draft,pack,{},0);const first=await store.publish(a,draft.id,true);
