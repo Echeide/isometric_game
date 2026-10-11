@@ -1774,5 +1774,13 @@
   "ui_7f147eb8539e": "Migrar siguiente lote",
   "ui_ccdb70dd33d8": "Registros migrados:",
   "ui_396db9fa55a3": "Cada copia se verifica antes de cambiar su ubicación. Los archivos de origen se conservan.",
-  "ui_8d3290b6f394": "Las publicaciones anteriores generarán su cartucho al volver a publicar."
+  "ui_8d3290b6f394": "Las publicaciones anteriores generarán su cartucho al volver a publicar.",
+  "ui_d1b9e8281053": "PJ",
+  "ui_63fcc5d3df63": "Buscar recursos…",
+  "ui_982ea634f284": "Filtrar por categoría",
+  "ui_4cc6ea4ba3bc": "Quitar filtro de categoría",
+  "ui_1a53abd6a6a7": "Opciones de biblioteca",
+  "ui_b3d5643562d9": "Todavía no hay recursos compartidos de este tipo. El superadmin puede publicar recursos para todos los espacios.",
+  "ui_e325e39cfca3": "Los nuevos recursos se crean en esta aventura.",
+  "ui_c12d009a85fd": "Listado de recursos"
 }

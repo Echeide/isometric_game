@@ -61,3 +61,13 @@ El inspector es contextual: al entrar en modo de selección sin elemento, o al p
 Las cabeceras del editor de mundo muestran solo el cierre; no hay flecha de minimización ni chincheta. El listado de objetos y el catálogo se sustituyen por las propiedades al seleccionar o colocar un objeto; sus botones de la barra permiten recuperarlos. «Más opciones» ofrece acceso explícito a Ajustes de la aventura y Gestionar mapas.
 
 Pulsar una casilla selecciona su suelo, con controles de textura, altura y escalera que modifican solo esa casilla. Pulsar una pared o puerta abre su contexto de construcción. «Terreno» conserva el modo de pintura para el mapa completo. El espacio vacío fuera del suelo sigue mostrando Aventuras, y el arrastre sigue desplazando la cámara. Los módulos se abren desde la pestaña Módulos del elemento o del evento, y mantienen sus avisos antes de descartar.
+
+## Catálogo compacto del taller
+
+La cabecera del catálogo contiene el selector Esta aventura/Mi espacio/Compartidos, el menú de creación (+) y el cierre. No repite el nombre de la aventura ni muestra chincheta. Todos los ámbitos usan un panel de 340 px; en ventanas amplias ocupa espacio a la izquierda del taller y, en ventanas estrechas, se abre sobre él. Cerrar siempre devuelve ese espacio.
+
+Tipos, búsqueda, contador y filtro de categoría comparten `CatalogBrowser`. La categoría se abre desde el icono de filtros y aparece como etiqueta eliminable cuando está activa. Jugadores y suelos no heredan categorías de objetos/PNJ. El buscador normaliza mayúsculas y acentos también en las bibliotecas. Se conservan búsqueda, categoría y posición de desplazamiento por tipo y ámbito durante la sesión. Solo se desplaza el listado; los controles quedan visibles.
+
+Mi espacio y Compartidos muestran filas con miniatura, nombre y acciones de incorporar o descargar. El menú junto al buscador mantiene actualizar, importar ZIP (solo Mi espacio) y exportar biblioteca. Incorporar continúa creando una copia independiente en la aventura y mantiene el aviso de cambios sin guardar. Las familias de la aventura conservan miembros, selección y recortes. El menú + mantiene crear el tipo actual e importar ZIP del personaje; los nuevos recursos se crean en la aventura, también cuando se consulta una biblioteca. El estado vacío de Compartidos explica que los recursos los publica el superadmin.
+
+La biblioteca independiente `/library` conserva su presentación completa y sus acciones. El catálogo del editor de mundo utiliza los mismos controles de búsqueda y categoría, con sus tipos habituales y sin cambiar la colocación de objetos.

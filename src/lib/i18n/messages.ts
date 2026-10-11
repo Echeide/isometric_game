@@ -2,6 +2,14 @@ import * as m from '../paraglide/messages.js';
 import type {UiLocale} from './locale';
 /** Stable source keys permit incremental migration without translating authored content. */
 const keys={
+  "Listado de recursos": "ui_c12d009a85fd",
+  "PJ": "ui_d1b9e8281053",
+  "Buscar recursos…": "ui_63fcc5d3df63",
+  "Filtrar por categoría": "ui_982ea634f284",
+  "Quitar filtro de categoría": "ui_4cc6ea4ba3bc",
+  "Opciones de biblioteca": "ui_1a53abd6a6a7",
+  "Todavía no hay recursos compartidos de este tipo. El superadmin puede publicar recursos para todos los espacios.": "ui_b3d5643562d9",
+  "Los nuevos recursos se crean en esta aventura.": "ui_e325e39cfca3",
   "Almacenamiento de recursos": "ui_84040614b09a",
   "Revisar almacenamiento": "ui_f76c95c8f13f",
   "Proveedor activo:": "ui_c248b7c96d16",

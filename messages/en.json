@@ -1774,5 +1774,13 @@
   "ui_7f147eb8539e": "Migrate next batch",
   "ui_ccdb70dd33d8": "Records migrated:",
   "ui_396db9fa55a3": "Every copy is verified before changing its location. Source files are kept.",
-  "ui_8d3290b6f394": "Earlier publications will get a cartridge when published again."
+  "ui_8d3290b6f394": "Earlier publications will get a cartridge when published again.",
+  "ui_d1b9e8281053": "PC",
+  "ui_63fcc5d3df63": "Search resources…",
+  "ui_982ea634f284": "Filter by category",
+  "ui_4cc6ea4ba3bc": "Clear category filter",
+  "ui_1a53abd6a6a7": "Library options",
+  "ui_b3d5643562d9": "There are no shared resources of this type yet. The superadmin can publish resources for all spaces.",
+  "ui_e325e39cfca3": "New resources are created in this adventure.",
+  "ui_c12d009a85fd": "Resource list"
 }

@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {resourceCatalog} from '../src/lib/workshop/catalog';
+import {resourceCatalog,libraryCatalog} from '../src/lib/workshop/catalog';
 import {workshopEntries,type ResourceEntry} from '../src/lib/workshop/resources';
 import {graphics} from '../src/lib/demo/pixelart';
 import {mapImages} from '../src/lib/storage/local-adventures';
@@ -35,6 +35,17 @@ describe('shared adventure resource catalog',()=>{
  });
  it('keeps texture families searchable when switching resource type with a category active',()=>{
   const result=resourceCatalog(entries,{kind:'tile',category:'office',query:'pradera',tileFamilies:{'family.grass':{name:'Pradera',tiles:{grass:80,'custom.flowers':20}}}});expect(ids(result)).toEqual(['grass','custom.flowers']);
+ });
+ it('never hides players when a previous category remains selected',()=>{
+  const player:ResourceEntry={id:'player',kind:'player',name:'Explorador',image:'player.png',custom:true};
+  expect(ids(resourceCatalog([...entries,player],{kind:'player',category:'office'}))).toEqual(['player']);
+  expect(libraryCatalog([player], 'player', '', 'office')).toEqual([player]);
+ });
+ it('uses the same accent-insensitive search and category rules for reusable library summaries',()=>{
+  expect(libraryCatalog(entries,'npc',' GUIA ','people').map(e=>e.id)).toEqual(['custom.npc']);
+  expect(libraryCatalog(entries,'object','verde','urban')).toEqual([]);
+  expect(libraryCatalog(entries,'object','VERDE','office').map(e=>e.id)).toEqual(['custom.closed']);
+  expect(libraryCatalog(entries,'tile','CESPED','office').map(e=>e.id)).toEqual(['grass']);
  });
  it('reads the same family metadata from stored packs and resolved world graphics, then places a concrete aspect',()=>{
   const pack=structuredClone(graphics),catalog:VisualAsset[]=[{id:'custom.closed',kind:'object',label:'Taquilla verde',category:'office',size:{x:2,y:1}},{id:'custom.open',kind:'object',label:'Taquilla abierta',category:'urban',size:{x:2,y:1}}];
