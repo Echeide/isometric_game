@@ -1,6 +1,6 @@
 # Plataforma de aventuras
 
-La aplicación separa el catálogo público, la gestión por espacio y la superadministración. PostgreSQL conserva cuentas, sesiones, permisos, límites, aventuras, publicaciones y auditoría. Los PNG y ZIP inmutables se almacenan en PLATFORM_STORAGE_DIR. Las contraseñas usan scrypt y las cookies de sesión HttpOnly caducan a las ocho horas. El servidor comprueba el origen de las operaciones de escritura.
+La aplicación separa el catálogo público, la gestión por espacio y la superadministración. PostgreSQL conserva cuentas, sesiones, permisos, límites, aventuras, publicaciones y auditoría. Los PNG y ZIP inmutables se almacenan en disco o en el proveedor S3/R2 configurado; PostgreSQL conserva sus ubicaciones. Las contraseñas usan scrypt y las cookies de sesión HttpOnly caducan a las ocho horas. El servidor comprueba el origen de las operaciones de escritura.
 
 ## Desarrollo local
 
@@ -110,3 +110,7 @@ escenario conservan la posición y cámara del jugador; si su casilla queda ocup
 se usa una casilla libre cercana. Un estado sin casillas libres se rechaza.
 
 Las publicaciones incluyen los eventos narrativos y sus módulos de contexto o conversación. La distribución de tarjetas `story.layout` se conserva en los borradores y ZIP, se omite en las versiones públicas y no se considera una novedad publicable. Un guion con solo posiciones, sin reglas ni eventos, equivale a no tener configuración narrativa.
+
+## Proveedores de archivos y cartuchos
+
+El almacenamiento local sigue disponible; se puede activar S3/R2 para imágenes, bibliotecas y versiones publicadas. La configuración, los cartuchos, cuotas y la migración verificada se describen en [object-storage.md](object-storage.md). El volumen sigue siendo necesario para archivos antiguos y trabajos de vídeo.

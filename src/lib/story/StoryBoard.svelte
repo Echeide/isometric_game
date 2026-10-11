@@ -6,12 +6,12 @@
  import type {PixelArtPack} from '@isometrico/world';
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
  import {workshopNpc} from '../workshop/resources';
- import {storyBoard,filterBoard,boardPositions,type BoardSelection,type BoardNode} from './board';
+ import {storyBoard,filterBoard,boardPositions,boardDragPosition,boardEdgePan,type BoardSelection,type BoardNode} from './board';
  let {adventure,graphics,selected='',onselect,onlayout}:{adventure:Adventure;graphics:PixelArtPack;selected?:string;onselect:(selection:BoardSelection,relationship?:boolean)=>void;onlayout:(positions:Record<string,{x:number;y:number}>)=>void}=$props();
  let map=$state(''),query=$state(''),allObjects=$state(false),scale=$state(.9),pan=$state({x:20,y:20}),viewport=$state<HTMLElement>();
  let dragged=$state<{id:string;x:number;y:number}|null>(null);
- let gesture:{id?:string;start:{x:number;y:number};base:{x:number;y:number};moved:boolean;pointer:number;capture:HTMLElement}|undefined;
- let suppressClick=false;
+ let gesture:{id?:string;start:{x:number;y:number};base:{x:number;y:number};startPan:{x:number;y:number};pointerPosition:{x:number;y:number};moved:boolean;pointer:number;capture:HTMLElement}|undefined;
+ let suppressClick=false,edgeFrame=0,edgeTime=0;
  const board=$derived(storyBoard(adventure,ui.text)),selectedGroup=$derived(board.nodes.find(node=>node.id===selected)?.mapId??''),visible=$derived(filterBoard(board,map,query,allObjects));
  const basePositions=$derived(boardPositions([...board.nodes].sort((a,b)=>Number(b.configured)-Number(a.configured)),adventure.story?.layout));
  const positions=$derived(dragged?{...basePositions,[dragged.id]:{x:dragged.x,y:dragged.y}}:basePositions);
@@ -20,11 +20,19 @@
  function zoom(delta:number){const next=Math.min(1.8,Math.max(.25,scale+delta)),width=viewport?.clientWidth??700,height=viewport?.clientHeight??400;pan={x:width/2-(width/2-pan.x)*next/scale,y:height/2-(height/2-pan.y)*next/scale};scale=next;}
  function fit(){if(!viewport)return;scale=Math.min(1.2,Math.max(.25,Math.min((viewport.clientWidth-32)/bounds.width,(viewport.clientHeight-32)/bounds.height)));pan={x:(viewport.clientWidth-bounds.width*scale)/2-bounds.x*scale,y:(viewport.clientHeight-bounds.height*scale)/2-bounds.y*scale};}
  function autoArrange(){onlayout(boardPositions(visible.nodes));pan={x:20,y:20};}
- function begin(e:PointerEvent,id?:string){if(e.button!==0)return;e.stopPropagation();const base=id?positions[id]:pan;gesture={id,start:{x:e.clientX,y:e.clientY},base:{...base},moved:false,pointer:e.pointerId,capture:e.currentTarget as HTMLElement};if(id)dragged={id,...base};gesture.capture.setPointerCapture(e.pointerId);}
- function move(e:PointerEvent){if(!gesture||gesture.pointer!==e.pointerId)return;const dx=e.clientX-gesture.start.x,dy=e.clientY-gesture.start.y;gesture.moved ||= Math.abs(dx)+Math.abs(dy)>5;if(gesture.id)dragged={id:gesture.id,x:Math.max(0,gesture.base.x+dx/scale),y:Math.max(0,gesture.base.y+dy/scale)};else pan={x:gesture.base.x+dx,y:gesture.base.y+dy};}
- function end(e:PointerEvent){if(!gesture||gesture.pointer!==e.pointerId)return;const current=gesture;gesture=undefined;if(current.id&&current.moved&&dragged){onlayout({[current.id]:{x:Math.round(dragged.x/16)*16,y:Math.round(dragged.y/16)*16}});suppressClick=true;setTimeout(()=>suppressClick=false,0);}dragged=null;if(current.capture.hasPointerCapture(e.pointerId))current.capture.releasePointerCapture(e.pointerId);}
+ function stopEdgePan(){cancelAnimationFrame(edgeFrame);edgeFrame=0;edgeTime=0;}
+ function updateDrag(){if(gesture?.id)dragged={id:gesture.id,...boardDragPosition(gesture.base,gesture.start,gesture.pointerPosition,gesture.startPan,pan,scale)};}
+ function edgePan(time:number){
+  edgeFrame=0;if(!gesture?.id||!gesture.moved||!viewport)return;
+  const speed=boardEdgePan(gesture.pointerPosition,viewport.getBoundingClientRect()),seconds=edgeTime?Math.min((time-edgeTime)/1000,.05):0;edgeTime=time;
+  if(speed.x||speed.y){pan={x:pan.x+speed.x*seconds,y:pan.y+speed.y*seconds};updateDrag();}
+  edgeFrame=requestAnimationFrame(edgePan);
+ }
+ function begin(e:PointerEvent,id?:string){if(e.button!==0)return;e.stopPropagation();stopEdgePan();const base=id?positions[id]:pan;gesture={id,start:{x:e.clientX,y:e.clientY},base:{...base},startPan:{...pan},pointerPosition:{x:e.clientX,y:e.clientY},moved:false,pointer:e.pointerId,capture:e.currentTarget as HTMLElement};if(id)dragged={id,...base};gesture.capture.setPointerCapture(e.pointerId);}
+ function move(e:PointerEvent){if(!gesture||gesture.pointer!==e.pointerId)return;const dx=e.clientX-gesture.start.x,dy=e.clientY-gesture.start.y;gesture.pointerPosition={x:e.clientX,y:e.clientY};gesture.moved ||= Math.abs(dx)+Math.abs(dy)>5;if(gesture.id){updateDrag();if(gesture.moved&&!edgeFrame)edgeFrame=requestAnimationFrame(edgePan);}else pan={x:gesture.base.x+dx,y:gesture.base.y+dy};}
+ function end(e:PointerEvent,canceled=false){if(!gesture||gesture.pointer!==e.pointerId)return;const current=gesture;gesture=undefined;stopEdgePan();if(!canceled&&current.id&&current.moved&&dragged){onlayout({[current.id]:{x:Math.round(dragged.x/16)*16,y:Math.round(dragged.y/16)*16}});}if(current.moved){suppressClick=true;setTimeout(()=>suppressClick=false,0);}dragged=null;if(current.capture.hasPointerCapture(e.pointerId))current.capture.releasePointerCapture(e.pointerId);}
  function choose(node:BoardNode){if(!suppressClick)onselect(node.selection);}
- function nodeKeys(e:KeyboardEvent,node:BoardNode){const axis=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].indexOf(e.key);if(axis<0)return;e.preventDefault();e.stopPropagation();const p=positions[node.id];onlayout({[node.id]:{x:Math.max(0,p.x+(axis===0?-16:axis===1?16:0)),y:Math.max(0,p.y+(axis===2?-16:axis===3?16:0))}});}
+ function nodeKeys(e:KeyboardEvent,node:BoardNode){const axis=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].indexOf(e.key);if(axis<0)return;e.preventDefault();e.stopPropagation();const p=positions[node.id];onlayout({[node.id]:{...boardDragPosition(p,{x:0,y:0},{x:axis===0?-16:axis===1?16:0,y:axis===2?-16:axis===3?16:0},{x:0,y:0},{x:0,y:0},1)}});}
  function canvasKeys(e:KeyboardEvent){if(e.target!==viewport)return;const changes:Record<string,{x:number;y:number}>={ArrowLeft:{x:32,y:0},ArrowRight:{x:-32,y:0},ArrowUp:{x:0,y:32},ArrowDown:{x:0,y:-32}};if(changes[e.key]){e.preventDefault();pan={x:pan.x+changes[e.key].x,y:pan.y+changes[e.key].y};}}
  function wheel(node:HTMLElement){const handler=(event:WheelEvent)=>{event.preventDefault();zoom(event.deltaY>0?-.1:.1);};node.addEventListener('wheel',handler,{passive:false});return{destroy(){node.removeEventListener('wheel',handler);}};}
  function thumbnail(node:BoardNode){if(!node.visualId)return;const image=graphics.objects[node.visualId];if(image)return image;if(node.selection.kind==='object'){const ref=node.selection.ref,entity=adventure.maps.find(m=>m.id===ref.mapId)?.entities.find(e=>e.id===ref.entityId);if(entity?.kind==='person'){try{return workshopNpc(graphics,node.visualId);}catch{/* Legacy vector actors have no PNG thumbnail. */}}} }
@@ -33,9 +41,9 @@
  function focusView(){void tick().then(fit);}
  function focusNode(id:string){const p=positions[id];if(!p||!viewport)return;scale=Math.max(scale,.75);pan={x:viewport.clientWidth/2-(p.x+112)*scale,y:viewport.clientHeight/2-(p.y+71)*scale};}
  $effect(()=>{const id=selected;selectedGroup;if(id)untrack(()=>{void tick().then(()=>focusNode(id));});});
- onMount(focusView);
+ onMount(()=>{focusView();return stopEdgePan;});
 </script>
-<svelte:window onpointermove={move} onpointerup={end} onpointercancel={end}/>
+<svelte:window onpointermove={move} onpointerup={end} onpointercancel={event=>end(event,true)}/>
 <section class="story-board" aria-label={ui.text("Guion de toda la aventura")}>
  <header><label class="search"><Search size={16}/><input aria-label={ui.text("Buscar en el guion")} placeholder={ui.text("Buscar objeto, módulo o evento…")} bind:value={query} oninput={focusView}/></label><select aria-label={ui.text("Mapas del guion")} bind:value={map} onchange={focusView}><option value="">{ui.text("Toda la aventura")}</option>{#each adventure.maps as m}<option value={m.id}>{m.name}</option>{/each}</select><label class="all"><input type="checkbox" bind:checked={allObjects} onchange={focusView}/> {ui.text("Todos los objetos")}</label><button onclick={autoArrange} title={ui.text("Organizar las tarjetas automáticamente")}><Layers size={15}/> {ui.text("Organizar")}</button></header>
  <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard-operable canvas; every node is a native button.) -->

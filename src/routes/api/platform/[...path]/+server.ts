@@ -9,6 +9,8 @@ const handle:RequestHandler=async event=>{
 async function body(e:RequestEvent){return JSON.parse(new TextDecoder().decode(await readLibraryBody(e.request,32768)));}
 async function route(e:RequestEvent){const p=e.locals.principal;if(!p)throw new PlatformError(401,'Inicia sesión.');const {store}=platform(),path=e.params.path??'',post=e.request.method==='POST';
  if(path==='management')return json(post?await store.configure(p,await body(e)):await store.administration(p));
+ if(path==='storage'&&!post)return json(await store.storageStatus(p));
+ if(path==='storage/migrate'&&post){const b=await body(e);if(b.dryRun===true)return json(await store.storageStatus(p));if(b.dryRun!==false)throw new PlatformError(400,'Indica dryRun: true para revisar o false para migrar.');return json(await store.migrateStorage(p,b.limit??5));}
  if(path==='adventures')return revalidatedJson(e.request,await store.list(p));
  const parts=path.split('/');
  if(parts[0]==='adventures'&&parts.length===2){

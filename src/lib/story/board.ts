@@ -36,3 +36,19 @@ export function filterBoard(board:ReturnType<typeof storyBoard>,mapId:string,que
  const ids=new Set(base.map(n=>n.id)),seeds=new Set(ids);if(mapId||search)for(const edge of board.edges)if(seeds.has(edge.source)||seeds.has(edge.target)){ids.add(edge.source);ids.add(edge.target);}
  return {nodes:board.nodes.filter(n=>ids.has(n.id)),edges:board.edges.filter(e=>ids.has(e.source)&&ids.has(e.target))};
 }
+
+export interface BoardPoint {x:number;y:number}
+/** Screen deltas and canvas panning must use the same origin at every zoom. */
+export function boardDragPosition(base:BoardPoint,start:BoardPoint,pointer:BoardPoint,startPan:BoardPoint,pan:BoardPoint,scale:number):BoardPoint{
+ const clamp=(value:number)=>Math.max(-1000000,Math.min(1000000,value));
+ return {x:clamp(base.x+(pointer.x-start.x-(pan.x-startPan.x))/scale),y:clamp(base.y+(pointer.y-start.y-(pan.y-startPan.y))/scale)};
+}
+/** Pixels per second: stationary pointers near an edge keep extending the workspace. */
+export function boardEdgePan(pointer:BoardPoint,rect:{left:number;top:number;right:number;bottom:number}):BoardPoint{
+ if(pointer.x<rect.left||pointer.x>rect.right||pointer.y<rect.top||pointer.y>rect.bottom)return {x:0,y:0};
+ const velocity=(position:number,low:number,high:number)=>{
+  const margin=Math.min(56,(high-low)/4);
+  return position<low+margin?480*(1-(position-low)/margin):position>high-margin?-480*(1-(high-position)/margin):0;
+ };
+ return {x:velocity(pointer.x,rect.left,rect.right),y:velocity(pointer.y,rect.top,rect.bottom)};
+}

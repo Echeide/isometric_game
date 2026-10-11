@@ -86,6 +86,8 @@ export interface WorldEditor {
   brush?: MapBrush;
   wallTool?: 'wall'|'door'|'remove';
   onwall?: (wall:Wall)=>void;
+  /** Select a floor cell separately from the empty canvas background. */
+  onselectTerrain?: (cell:Cell)=>void;
   wallOpacity?:number;
   onpaint?: (cells:Cell[],tile:MapBrush)=>void;
   onselect: (id: string) => void;

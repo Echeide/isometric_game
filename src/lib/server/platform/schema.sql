@@ -28,3 +28,13 @@ DO $$ BEGIN
 END $$;
 CREATE TABLE IF NOT EXISTS platform_releases(id text PRIMARY KEY,slug text NOT NULL,tenant_id text NOT NULL REFERENCES platform_tenants(id),definition jsonb NOT NULL,graphics jsonb NOT NULL,asset_ids jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE platform_publications ADD COLUMN IF NOT EXISTS release_id text REFERENCES platform_releases(id);
+
+-- Legacy rows without a key continue reading local blobs/{hash}.
+ALTER TABLE platform_assets ADD COLUMN IF NOT EXISTS storage_backend text;
+ALTER TABLE platform_assets ADD COLUMN IF NOT EXISTS storage_key text;
+ALTER TABLE platform_resources ADD COLUMN IF NOT EXISTS storage_backend text;
+ALTER TABLE platform_resources ADD COLUMN IF NOT EXISTS storage_key text;
+ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_backend text;
+ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_prefix text;
+ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_manifest jsonb;
+ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_bytes bigint NOT NULL DEFAULT 0;

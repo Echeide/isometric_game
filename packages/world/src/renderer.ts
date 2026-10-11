@@ -113,9 +113,9 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       tile.hitArea={contains:(px:number,py:number)=>topContains(scene,{x,y},{x:px,y:py})};
     };
     drawTile(tileAt(scene,{x,y}));tileDrawers.set(`${x},${y}`,drawTile);
-    if(walkable(scene,{x,y})) {
+    if(walkable(scene,{x,y})||!!editor?.onselectTerrain&&!editor.onpick) {
       tile.eventMode='static';tile.cursor='pointer';
-      tile.on('pointertap',()=>{host.focus({preventScroll:true});if(!gestures.blocked()){if(editor?.onpick)editor.onpick({x,y});else if(!editor)moveTo({x,y});else if(!editor.brush&&!editor.wallTool)editor.onselect('');}});
+      tile.on('pointertap',()=>{host.focus({preventScroll:true});if(!gestures.blocked()){if(editor?.onpick)editor.onpick({x,y});else if(!editor)moveTo({x,y});else if(!editor.brush&&!editor.wallTool){if(editor.onselectTerrain)editor.onselectTerrain({x,y});else editor.onselect('');}}});
       tile.on('pointerover',()=>{tile.tint=0xd0e8b6;});tile.on('pointerout',()=>{tile.tint=0xffffff;});
     }
     if(hasLevels){objects.addChild(tile);depthItems.push({view:tile,bounds:()=>({x,y,width:1,height:1,tie:-1000,floor:true})});}else floor.addChild(tile);
@@ -252,7 +252,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   }
   let panX=0,panY=0,panMode=false,spaceHeld=false;
   let followEnabled=false,followSuspended=false,followInitialized=false,fitScale=1;
-  let panGesture:{id:number;x:number;y:number}|null=null;
+  let panGesture:{id:number;x:number;y:number;startX:number;startY:number;backgroundTap:boolean;moved:boolean}|null=null;
   function panCursor(){app.canvas.style.setProperty('cursor',panGesture?'grabbing':panMode||spaceHeld?'grab':'auto',panGesture||panMode||spaceHeld?'important':'');app.canvas.style.touchAction='none';}
   function isMapBackground(event:PointerEvent){
     const rect=app.canvas.getBoundingClientRect();
@@ -271,18 +271,22 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   function panDown(event:PointerEvent){
     if(panGesture||drag||stroke||!(event.button===1||(event.button===0&&(panMode||spaceHeld||isMapBackground(event)))))return;
     event.preventDefault();event.stopImmediatePropagation();host.focus({preventScroll:true});
-    followSuspended=true;panGesture={id:event.pointerId,x:event.clientX,y:event.clientY};app.canvas.setPointerCapture(event.pointerId);panCursor();
+    followSuspended=true;panGesture={id:event.pointerId,x:event.clientX,y:event.clientY,startX:event.clientX,startY:event.clientY,backgroundTap:!!editor&&!editor.onpick&&!editor.brush&&!editor.wallTool&&event.button===0&&!panMode&&!spaceHeld,moved:false};app.canvas.setPointerCapture(event.pointerId);panCursor();
   }
   function panMove(event:PointerEvent){
     if(!panGesture||panGesture.id!==event.pointerId)return;
     event.preventDefault();event.stopImmediatePropagation();
+    if(Math.hypot(event.clientX-panGesture.startX,event.clientY-panGesture.startY)>4)panGesture.moved=true;
     const rect=app.canvas.getBoundingClientRect();panX+=(event.clientX-panGesture.x)*app.screen.width/rect.width;panY+=(event.clientY-panGesture.y)*app.screen.height/rect.height;
     panGesture.x=event.clientX;panGesture.y=event.clientY;fit();
   }
   function panEnd(event:PointerEvent){
     if(!panGesture||panGesture.id!==event.pointerId)return;
-    event.preventDefault();event.stopImmediatePropagation();panGesture=null;
+    event.preventDefault();event.stopImmediatePropagation();const finished=panGesture;panGesture=null;
     if(app.canvas.hasPointerCapture(event.pointerId))app.canvas.releasePointerCapture(event.pointerId);panCursor();
+    // A background tap selects the adventure; dragging, painting and camera
+    // gestures keep their existing behavior without changing editor selection.
+    if(event.type==='pointerup'&&finished.backgroundTap&&!finished.moved&&Math.hypot(event.clientX-finished.startX,event.clientY-finished.startY)<=4&&!gestures.blocked()&&!panMode&&!spaceHeld&&editor&&!editor.onpick&&!editor.brush&&!editor.wallTool)editor.onselect('');
   }
   function spaceDown(event:KeyboardEvent){if(event.code==='Space'){event.preventDefault();spaceHeld=true;panCursor();}}
   function spaceUp(event:KeyboardEvent){if(event.code==='Space'){spaceHeld=false;panCursor();}}

@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {PoolClient} from 'pg';
 import type {PixelArtPack} from '@isometrico/world';
@@ -12,6 +12,8 @@ import {validatePack,validateCatalogGraphics,pngSize} from '../../storage/advent
 import {unpackResource,resourcePreview} from '../../workshop/shared-resource';
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
 import {publicGraphics,graphicsChanged,publicAdventure} from './publication-state';
+import {ObjectStorage,LocalObjects,type ObjectLocation} from './object-storage';
+import {buildCartridge,digest,transferAll,type CartridgeManifest} from './cartridge';
 export function tenant(p:Principal){if(!p.tenant)throw new PlatformError(403,'Entra como un administrador para gestionar un espacio.');return p.tenant.id;}
 export function superuser(p:Principal){if(!isSuper(p))throw new PlatformError(403,'Acción exclusiva del superadmin.');}
 function name(value:unknown){if(typeof value!=='string'||!value.trim()||value.length>120)throw new PlatformError(400,'Nombre no válido (1–120 caracteres).');return value.trim();}
@@ -19,11 +21,17 @@ const idValid=(id:string)=>/^[a-zA-Z0-9_-]{1,160}$/.test(id);
 /** Keep the publication flag aligned with the playable JSON; board-only stories are editorial. */
 const playableDefinitionSQL=(column:'a.definition'|'p.definition')=>`CASE WHEN COALESCE(${column} #> '{story,entities}','[]'::jsonb)='[]'::jsonb AND COALESCE(${column} #> '{story,events}','[]'::jsonb)='[]'::jsonb THEN ${column} - 'story' WHEN COALESCE(${column} #> '{story,events}','[]'::jsonb)='[]'::jsonb THEN ${column} #- '{story,layout}' #- '{story,events}' ELSE ${column} #- '{story,layout}' END`;
 export class PlatformStore {
- constructor(readonly database:Database,readonly directory:string,readonly builtins:string){}
- private async put(bytes:Uint8Array){const hash=hashToken(Buffer.from(bytes).toString('base64'));await mkdir(join(this.directory,'blobs'),{recursive:true});await writeFile(join(this.directory,'blobs',hash),bytes,{flag:'wx'}).catch(e=>{if(e.code!=='EEXIST')throw e;});return hash;}
- private async bytes(hash:string){if(!/^[a-f0-9]{64}$/.test(hash))throw new PlatformError(404,'Archivo no disponible.');return new Uint8Array(await readFile(join(this.directory,'blobs',hash)));}
+ readonly objects:ObjectStorage;
+ constructor(readonly database:Database,readonly directory:string,readonly builtins:string,objects?:ObjectStorage){this.objects=objects??new ObjectStorage(new LocalObjects(directory));}
+ private async put(bytes:Uint8Array,key:string,type:string){return this.objects.put(key,bytes,type);}
+ private async bytes(hash:string,location?:ObjectLocation){return this.objects.get(location??{hash});}
+ private async image(db:PoolClient,t:string,url:string){
+  if(url.startsWith('asset:')){const a=(await db.query('SELECT * FROM platform_assets WHERE tenant_id=$1 AND id=$2',[t,url.slice(6)])).rows[0];if(!a)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(a.hash,a);}
+  if(!/^\/pixelart\/[a-zA-Z0-9_./-]+\.png$/.test(url)||url.includes('..'))throw new PlatformError(400,'Origen de imagen no admitido.');
+  return new Uint8Array(await readFile(join(this.builtins,url.slice(10))));
+ }
  private async lock(db:PoolClient,id:string){const t=(await db.query('SELECT * FROM platform_tenants WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!t?.enabled)throw new PlatformError(403,'Espacio desactivado.');return t;}
- private async storage(db:PoolClient,id:string,extra:number,max:number){const r=(await db.query("SELECT (SELECT coalesce(sum(bytes),0) FROM platform_assets WHERE tenant_id=$1)+(SELECT coalesce(sum(bytes),0) FROM platform_resources WHERE tenant_id=$1) AS bytes",[id])).rows[0];if(Number(r.bytes)+extra>max*1_000_000)throw new PlatformError(409,'Se ha alcanzado el límite de recursos guardados del espacio.');}
+ private async storage(db:PoolClient,id:string,extra:number,max:number){const r=(await db.query("SELECT (SELECT coalesce(sum(bytes),0) FROM platform_assets WHERE tenant_id=$1)+(SELECT coalesce(sum(bytes),0) FROM platform_resources WHERE tenant_id=$1)+(SELECT coalesce(sum(cartridge_bytes),0) FROM platform_releases WHERE tenant_id=$1) AS bytes",[id])).rows[0];if(Number(r.bytes)+extra>max*1_000_000)throw new PlatformError(409,'Se ha alcanzado el límite de recursos guardados del espacio.');}
  async administration(p:Principal){superuser(p);return this.database.transaction(null,true,async db=>({tenants:(await db.query('SELECT * FROM platform_tenants ORDER BY created_at')).rows,users:(await db.query('SELECT id,username,role,tenant_id,enabled FROM platform_users ORDER BY username')).rows,audit:(await db.query('SELECT a.*,u.username AS actor_name,e.username AS effective_name FROM platform_audit a LEFT JOIN platform_users u ON u.id=a.actor_id LEFT JOIN platform_users e ON e.id=a.effective_id ORDER BY a.id DESC LIMIT 100')).rows}));}
  async configure(p:Principal,input:Record<string,any>){superuser(p);return this.database.transaction(null,true,async db=>{
   if(input.action==='tenant.create'){const id=randomUUID();await db.query('INSERT INTO platform_tenants(id,name,limits,permissions) VALUES($1,$2,$3,$4)',[id,name(input.name),defaultLimits,defaultPermissions]);await audit(db,p,input.action,id,id);return{id};}
@@ -55,7 +63,7 @@ export class PlatformStore {
   FROM platform_publications p LEFT JOIN platform_adventures a ON a.tenant_id=p.tenant_id AND a.id=p.adventure_id
   WHERE p.tenant_id=$1`,[t])).rows.map(r=>({slug:r.slug,adventure_id:r.adventure_id,active:r.active,published_at:r.published_at,hasUnpublishedChanges:!!r.active&&(r.definition_changed||graphicsChanged(r.current_graphics,r.published_graphics))})),usage:(await db.query("SELECT kind,used FROM platform_usage WHERE tenant_id=$1 AND month=to_char(now(),'YYYY-MM')",[t])).rows}));}
  async adventure(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT * FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Aventura no encontrada.');return a;});}
- async asset(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT hash FROM platform_assets WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(a.hash);});}
+ async asset(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT * FROM platform_assets WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(a.hash,a);});}
  async save(p:Principal,value:unknown,pack:PixelArtPack|undefined,blobs:Record<string,Uint8Array>,revision:number){
   const t=tenant(p),adventure=parseAdventure(value);if(!idValid(adventure.id)||JSON.stringify(adventure).length>10_000_000)throw new PlatformError(400,'Aventura no válida.');delete (adventure as any)._revision;
   return this.database.transaction(t,false,async db=>{
@@ -69,14 +77,14 @@ export class PlatformStore {
    if(pack!==undefined||Object.keys(blobs).length){
     for(const [i,url] of imageUrls(graphics).entries()){
      let bytes:Uint8Array;
-     if(url.startsWith('asset:')){const id=url.slice(6);if(!idValid(id))throw new PlatformError(400,'Identificador de imagen no válido.');const prior=(await db.query('SELECT hash FROM platform_assets WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];bytes=blobs[id]??(prior?await this.bytes(prior.hash):new Uint8Array());pngSize(bytes);const hash=hashToken(Buffer.from(bytes).toString('base64'));if(prior&&hash!==prior.hash)throw new PlatformError(409,'Las imágenes guardadas son inmutables. Usa un nuevo identificador.');if(!prior){assets.push({id,hash,bytes:bytes.length});extra+=bytes.length;}}
+     if(url.startsWith('asset:')){const id=url.slice(6);if(!idValid(id))throw new PlatformError(400,'Identificador de imagen no válido.');const prior=(await db.query('SELECT * FROM platform_assets WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];bytes=blobs[id]??(prior?await this.bytes(prior.hash,prior):new Uint8Array());pngSize(bytes);const hash=hashToken(Buffer.from(bytes).toString('base64'));if(prior&&hash!==prior.hash)throw new PlatformError(409,'Las imágenes guardadas son inmutables. Usa un nuevo identificador.');if(!prior){assets.push({id,hash,bytes:bytes.length});extra+=bytes.length;}}
      else{if(!/^\/pixelart\/[a-zA-Z0-9_./-]+\.png$/.test(url)||url.includes('..'))throw new PlatformError(400,'Origen de imagen no admitido.');bytes=new Uint8Array(await readFile(join(this.builtins,url.slice(10))));}
      if(bytes.length>20_000_000||(total+=bytes.length)>100_000_000)throw new PlatformError(413,'Los recursos superan 100 MB.');const path=`assets/${i}.png`;paths.set(url,path);files[path]=bytes;
     }
     validatePack(mapImages(graphics,u=>paths.get(u)!),files);
    }
    validateCatalogGraphics(adventure,graphics);await this.storage(db,t,extra,space.limits.storageMB);
-   for(const a of assets){await this.put(blobs[a.id]);await db.query('INSERT INTO platform_assets(tenant_id,id,hash,bytes) VALUES($1,$2,$3,$4)',[t,a.id,a.hash,a.bytes]);}
+   for(const a of assets){const location=await this.put(blobs[a.id],`espacios/${t}/aventuras/${adventure.id}/imagenes/${a.id}/${a.hash}.png`,'image/png');await db.query('INSERT INTO platform_assets(tenant_id,id,hash,bytes,storage_backend,storage_key) VALUES($1,$2,$3,$4,$5,$6)',[t,a.id,a.hash,a.bytes,location.storage_backend,location.storage_key]);}
    const r=await db.query('INSERT INTO platform_adventures(tenant_id,id,definition,graphics) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,id) DO UPDATE SET definition=$3,graphics=$4,revision=platform_adventures.revision+1,updated_at=now() RETURNING revision',[t,adventure.id,adventure,graphics]);await audit(db,p,'adventure.save',adventure.id);return{revision:r.rows[0].revision};
   });
  }
@@ -87,7 +95,12 @@ export class PlatformStore {
   const count=Number((await db.query('SELECT count(*) AS n FROM platform_publications WHERE tenant_id=$1 AND active',[t])).rows[0].n);if(!old?.active&&count>=space.limits.published)throw new PlatformError(409,'Límite de aventuras publicadas alcanzado.');
   const graphics=publicGraphics(a.graphics),definition=publicAdventure(a.definition);
   const slug=old?.slug??randomUUID(),version=randomUUID(),assetIds=imageUrls(graphics).filter(u=>u.startsWith('asset:')).map(u=>u.slice(6));
-  await db.query('INSERT INTO platform_releases(id,slug,tenant_id,definition,graphics,asset_ids) VALUES($1,$2,$3,$4,$5,$6)',[version,slug,t,definition,graphics,JSON.stringify(assetIds)]);
+  const cartridge=await buildCartridge(version,definition,graphics,u=>this.image(db,t,u)),prefix=`espacios/${t}/aventuras/${id}/versiones/${version}`;
+  await this.storage(db,t,cartridge.bytes,space.limits.storageMB);
+  // Manifest is uploaded last; database visibility only changes after every file succeeds.
+  await transferAll(Object.entries(cartridge.files).filter(([path])=>path!=='manifiesto.json'),async([path,bytes])=>{await this.put(bytes,`${prefix}/${path}`,path.endsWith('.png')?'image/png':path.endsWith('.zip')?'application/zip':'application/json');});
+  await this.put(cartridge.files['manifiesto.json'],`${prefix}/manifiesto.json`,'application/json');
+  await db.query('INSERT INTO platform_releases(id,slug,tenant_id,definition,graphics,asset_ids,cartridge_backend,cartridge_prefix,cartridge_manifest,cartridge_bytes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',[version,slug,t,definition,graphics,JSON.stringify(assetIds),this.objects.active.id,prefix,cartridge.manifest,cartridge.bytes]);
   await db.query('INSERT INTO platform_publications(slug,tenant_id,adventure_id,name,definition,graphics,asset_ids,release_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,adventure_id) DO UPDATE SET name=$4,definition=$5,graphics=$6,asset_ids=$7,release_id=$8,active=true,published_at=now()',[slug,t,id,definition.name,definition,graphics,JSON.stringify(assetIds),version]);await audit(db,p,'adventure.publish',id);return{slug};
  });}
  async publicList(){return this.database.transaction(null,false,async db=>(await db.query(`
@@ -104,16 +117,66 @@ export class PlatformStore {
    JOIN platform_tenants t ON t.id=p.tenant_id
   WHERE p.active AND t.enabled ORDER BY p.published_at DESC
  `)).rows);}
- async published(slug:string){return this.database.transaction(null,false,async db=>{const r=(await db.query('SELECT r.* FROM platform_publications p JOIN platform_tenants t ON t.id=p.tenant_id JOIN platform_releases r ON r.id=p.release_id WHERE p.slug=$1 AND p.active AND t.enabled',[slug])).rows[0];if(!r)throw new PlatformError(404,'Aventura no publicada.');return{key:r.slug,adventure:r.definition,graphics:mapImages(r.graphics,u=>u.startsWith('asset:')?`/api/public/assets/${r.id}/${u.slice(6)}.png`:u)};});}
- async publicAsset(release:string,id:string){return this.database.transaction(null,true,async db=>{const r=(await db.query('SELECT a.hash FROM platform_releases r JOIN platform_publications p ON p.slug=r.slug JOIN platform_tenants t ON t.id=r.tenant_id JOIN platform_assets a ON a.tenant_id=r.tenant_id AND a.id=$2 WHERE r.id=$1 AND p.active AND t.enabled AND r.asset_ids ? $2',[release,id])).rows[0];if(!r)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(r.hash);});}
+ async published(slug:string){return this.database.transaction(null,false,async db=>{const r=(await db.query('SELECT r.* FROM platform_publications p JOIN platform_tenants t ON t.id=p.tenant_id JOIN platform_releases r ON r.id=p.release_id WHERE p.slug=$1 AND p.active AND t.enabled',[slug])).rows[0];if(!r)throw new PlatformError(404,'Aventura no publicada.');return{key:r.slug,adventure:r.definition,graphics:mapImages(r.graphics,u=>u.startsWith('asset:')?`/api/public/assets/${r.id}/${u.slice(6)}.png`:r.cartridge_prefix?`/api/public/cartridges/${r.id}/${r.cartridge_manifest.images[u]}`:u)};});}
+ private async release(db:PoolClient,id:string){const r=(await db.query('SELECT r.* FROM platform_releases r JOIN platform_publications p ON p.slug=r.slug JOIN platform_tenants t ON t.id=r.tenant_id WHERE r.id=$1 AND p.active AND t.enabled',[id])).rows[0];if(!r)throw new PlatformError(404,'Archivo no disponible.');return r;}
+ private async cartridgeBytes(r:any,path:string){
+  const manifest=r.cartridge_manifest as CartridgeManifest|null;
+  if(!r.cartridge_prefix||!manifest||!Object.hasOwn(manifest.files,path))throw new PlatformError(404,'Archivo no disponible.');
+  const bytes=await this.objects.backend(r.cartridge_backend).get(`${r.cartridge_prefix}/${path}`),info=manifest.files[path];
+  if(bytes.length!==info.bytes||digest(bytes)!==info.sha256)throw new PlatformError(503,'El archivo publicado no supera la comprobación de integridad.');return bytes;
+ }
+ async publicCartridge(release:string,path:string){return this.database.transaction(null,true,async db=>{const r=await this.release(db,release);if(path==='manifiesto.json'&&r.cartridge_manifest)return strToU8(JSON.stringify(r.cartridge_manifest));return this.cartridgeBytes(r,path);});}
+ async publicAsset(release:string,id:string){return this.database.transaction(null,true,async db=>{
+  const r=await this.release(db,release);if(!r.asset_ids.includes(id))throw new PlatformError(404,'Archivo no disponible.');
+  if(r.cartridge_prefix)return this.cartridgeBytes(r,r.cartridge_manifest.images['asset:'+id]);
+  const a=(await db.query('SELECT * FROM platform_assets WHERE tenant_id=$1 AND id=$2',[r.tenant_id,id])).rows[0];if(!a)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(a.hash,a);
+ });}
  async resourceList(p:Principal,scope='tenant',owner?:string){if(owner)superuser(p);const t=owner??p.tenant?.id??null;if(scope==='tenant'&&!t)throw new PlatformError(403,'Selecciona un espacio.');return this.database.transaction(t,isSuper(p),async db=>(await db.query("SELECT summary FROM platform_resources WHERE visible AND (scope='global' AND $1='global' OR scope='tenant' AND tenant_id=$2 AND $1='tenant') ORDER BY created_at DESC",[scope,t])).rows.map(r=>r.summary));}
- async resource(p:Principal,id:string){return this.database.transaction(p.tenant?.id??null,isSuper(p),async db=>{const r=(await db.query('SELECT * FROM platform_resources WHERE id=$1 AND visible',[id])).rows[0];if(!r)throw new PlatformError(404,'Recurso no disponible.');return this.bytes(r.hash);});}
+ async resource(p:Principal,id:string){return this.database.transaction(p.tenant?.id??null,isSuper(p),async db=>{const r=(await db.query('SELECT * FROM platform_resources WHERE id=$1 AND visible',[id])).rows[0];if(!r)throw new PlatformError(404,'Recurso no disponible.');return this.bytes(r.hash,r);});}
  async saveResource(p:Principal,bytes:Uint8Array,global=false,source?:string){if(global)superuser(p);const t=global?null:tenant(p),{resource}=unpackResource(bytes),hash=hashToken(Buffer.from(bytes).toString('base64')),id=hashToken((t??'global')+hash),preview=resourcePreview(resource),summary={id,version:1,name:resource.name,kind:resource.kind,category:resource.category,image:preview.image,frame:preview.frame,createdAt:new Date().toISOString()};return this.database.transaction(t,global,async db=>{
   const space=t?await this.lock(db,t):null;const old=(await db.query('SELECT summary FROM platform_resources WHERE id=$1',[id])).rows[0];if(old){if(global)await db.query('UPDATE platform_resources SET visible=true WHERE id=$1',[id]);return old.summary;}
-  if(space)await this.storage(db,t!,bytes.length,space.limits.storageMB);await this.put(bytes);await db.query('INSERT INTO platform_resources(id,tenant_id,scope,summary,hash,bytes,source_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[id,t,global?'global':'tenant',summary,hash,bytes.length,source??null]);await audit(db,p,global?'resource.promote':'resource.save',id,t??undefined);return summary;
+  if(space)await this.storage(db,t!,bytes.length,space.limits.storageMB);const location=await this.put(bytes,`${t?'espacios/'+t:'compartidos'}/biblioteca/${resource.kind}/${id}/${hash}.zip`,'application/zip');await db.query('INSERT INTO platform_resources(id,tenant_id,scope,summary,hash,bytes,source_id,storage_backend,storage_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[id,t,global?'global':'tenant',summary,hash,bytes.length,source??null,location.storage_backend,location.storage_key]);await audit(db,p,global?'resource.promote':'resource.save',id,t??undefined);return summary;
  });}
  async promote(p:Principal,id:string){superuser(p);return this.saveResource(p,await this.resource(p,id),true,id);}
  async withdrawResource(p:Principal,id:string){superuser(p);await this.database.transaction(null,true,async db=>{await db.query("UPDATE platform_resources SET visible=false WHERE id=$1 AND scope='global'",[id]);await audit(db,p,'resource.withdraw',id);});}
  async exportResources(p:Principal,scope:string){const files:Record<string,Uint8Array>={'library.json':strToU8(JSON.stringify({format:'isometric-library',version:1}))};let total=0;for(const r of await this.resourceList(p,scope)){const b=await this.resource(p,r.id);if((total+=b.length)>190_000_000)throw new PlatformError(413,'Descarga los recursos por separado: más de 190 MB.');const {createHash}=await import('node:crypto');files[`resources/${createHash('sha256').update(b).digest('hex')}.zip`]=b;}return zipSync(files,{level:0});}
  async importResources(p:Principal,bytes:Uint8Array){let total=0,count=0;const files=unzipSync(bytes,{filter:f=>{if(++count>257||(total+=f.originalSize)>200_000_000||!(/^(library\.json|resources\/[a-f0-9]{64}\.zip)$/.test(f.name)))throw new PlatformError(400,'Archivo de biblioteca no válido.');return true;}});const manifest=JSON.parse(strFromU8(files['library.json']));if(manifest.format!=='isometric-library'||manifest.version!==1)throw new PlatformError(400,'Biblioteca no válida.');const resources=Object.entries(files).filter(([k])=>k!=='library.json');for(const [,b]of resources)unpackResource(b);for(const [,b]of resources)await this.saveResource(p,b);return resources.length;}
+ async storageStatus(p:Principal){superuser(p);return this.database.transaction(null,true,async db=>{
+  const active=this.objects.active.id,counts:Record<string,number>={};
+  for(const table of ['platform_assets','platform_resources'])counts[table]=Number((await db.query(`SELECT count(*) AS n FROM ${table} WHERE storage_key IS NULL OR storage_backend IS DISTINCT FROM $1`,[active])).rows[0].n);
+  counts.platform_releases=Number((await db.query('SELECT count(*) AS n FROM platform_releases WHERE cartridge_prefix IS NOT NULL AND cartridge_backend IS DISTINCT FROM $1',[active])).rows[0].n);
+  return{active,pending:counts,legacyPublications:Number((await db.query('SELECT count(*) AS n FROM platform_releases WHERE cartridge_prefix IS NULL')).rows[0].n)};
+ });}
+ /** Explicit, bounded superadmin operation. No deletes; each registry change follows a verified copy. */
+ async migrateStorage(p:Principal,limit=5){
+  superuser(p);if(!Number.isInteger(limit)||limit<1||limit>20)throw new PlatformError(400,'Migra entre 1 y 20 registros por petición.');
+  let migrated=0;
+  for(const table of ['platform_assets','platform_resources','platform_releases']){
+   while(migrated<limit){const done=await this.database.transaction(null,true,async db=>{
+    const release=table==='platform_releases',active=this.objects.active.id;
+    const row=(await db.query(`SELECT * FROM ${table} WHERE ${release?'cartridge_prefix IS NOT NULL AND cartridge_backend IS DISTINCT FROM $1':'storage_key IS NULL OR storage_backend IS DISTINCT FROM $1'} ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`,[active])).rows[0];if(!row)return false;
+    if(release){
+     const manifest=row.cartridge_manifest as CartridgeManifest;
+     for(const path of [...Object.keys(manifest.files),'manifiesto.json']){
+      const bytes=path==='manifiesto.json'?strToU8(JSON.stringify(manifest)):await this.cartridgeBytes(row,path);
+      await this.put(bytes,`${row.cartridge_prefix}/${path}`,path.endsWith('.png')?'image/png':path.endsWith('.zip')?'application/zip':'application/json');
+      const copy=await this.objects.active.get(`${row.cartridge_prefix}/${path}`);if(digest(bytes)!==digest(copy))throw new PlatformError(503,'La copia del cartucho no supera la verificación.');
+     }
+     await db.query('UPDATE platform_releases SET cartridge_backend=$1 WHERE id=$2',[active,row.id]);
+    }else{
+     const bytes=await this.bytes(row.hash,row);if(hashToken(Buffer.from(bytes).toString('base64'))!==row.hash)throw new PlatformError(503,'El archivo de origen no supera la verificación.');
+     let key=row.storage_key;
+     if(!key&&table==='platform_assets'){
+      const adventure=(await db.query("SELECT id FROM platform_adventures WHERE tenant_id=$1 AND strpos(graphics::text,$2)>0 ORDER BY id LIMIT 1",[row.tenant_id,'asset:'+row.id])).rows[0]?.id;
+      key=`espacios/${row.tenant_id}/${adventure?'aventuras/'+adventure+'/imagenes':'biblioteca/imagenes'}/${row.id}/${row.hash}.png`;
+     }else if(!key)key=`${row.tenant_id?'espacios/'+row.tenant_id:'compartidos'}/biblioteca/${row.summary.kind}/${row.id}/${row.hash}.zip`;
+     const location=await this.put(bytes,key,table==='platform_assets'?'image/png':'application/zip'),copy=await this.objects.active.get(key);
+     if(hashToken(Buffer.from(copy).toString('base64'))!==row.hash)throw new PlatformError(503,'La copia no supera la verificación.');
+     await db.query(`UPDATE ${table} SET storage_backend=$1,storage_key=$2 WHERE id=$3${table==='platform_assets'?' AND tenant_id=$4':''}`,[location.storage_backend,location.storage_key,row.id,...(table==='platform_assets'?[row.tenant_id]:[])]);
+    }
+    await audit(db,p,'storage.migrate',row.id,row.tenant_id??undefined);return true;
+   });if(!done)break;migrated++;}
+  }
+  return{migrated,...await this.storageStatus(p)};
+ }
 }

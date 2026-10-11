@@ -21,9 +21,11 @@
     "platform:bootstrap": "node --env-file=.env scripts/platform-bootstrap.mjs",
     "test:platform": "vitest run tests/platform.test.ts",
     "modules:styles": "node scripts/build-routing-module-css.mjs",
-    "i18n:compile": "node scripts/compile-i18n.mjs"
+    "i18n:compile": "node scripts/compile-i18n.mjs",
+    "storage:probe": "node --env-file=.env scripts/storage-probe.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
     "@isometrico/character-generator": "*",
     "@isometrico/editor-ui": "*",
     "@isometrico/world": "*",

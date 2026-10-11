@@ -1,10 +1,13 @@
 import {describe,it,expect,beforeAll,afterAll,vi} from 'vitest';
-import {readFile,mkdtemp,rm} from 'node:fs/promises';
+import {readFile,mkdtemp,rm,mkdir,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Database} from '../src/lib/server/platform/database';
 import {Auth} from '../src/lib/server/platform/auth';
 import {PlatformStore} from '../src/lib/server/platform/store';
+import {ObjectStorage,LocalObjects,type ObjectBackend} from '../src/lib/server/platform/object-storage';
+import {hashToken} from '../src/lib/server/platform/auth';
+import {unpackAdventure} from '../src/lib/storage/adventure-package';
 import {defaultLimits,defaultPermissions,type Principal} from '../src/lib/platform/types';
 import {graphics} from '../src/lib/demo/pixelart';
 import {office} from '../src/lib/demo/scenes';
@@ -18,6 +21,7 @@ if(url&&!new URL(url).pathname.endsWith('_test'))throw Error('Use an isolated da
 describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
  let database:Database,auth:Auth,store:PlatformStore,folder:string,root:Principal,a:Principal,b:Principal,ta:string,tb:string,aid:string,bid:string,token:string;
  const password='fixture-password-123';
+ let remoteBackend:ObjectBackend;
  // Fixture setup hashes several passwords; allow slower development/CI machines.
  beforeAll(async()=>{database=new Database(url!);await database.init();await database.pool.query('TRUNCATE platform_releases,platform_publications,platform_resources,platform_adventures,platform_assets,platform_usage,platform_audit,platform_sessions,platform_users,platform_tenants,platform_login_attempts CASCADE');folder=await mkdtemp(join(tmpdir(),'platform-test-'));auth=new Auth(database);store=new PlatformStore(database,folder,resolve('static/pixelart'));await auth.bootstrap('root-test',password);token=await auth.login('root-test',password,'test');root=(await auth.principal(token))!;ta=(await store.configure(root,{action:'tenant.create',name:'Espacio A'})).id!;tb=(await store.configure(root,{action:'tenant.create',name:'Espacio B'})).id!;aid=(await store.configure(root,{action:'user.create',username:'admin-a',password,tenantId:ta})).id!;bid=(await store.configure(root,{action:'user.create',username:'admin-b',password,tenantId:tb})).id!;a=(await auth.principal(await auth.login('admin-a',password,'a')))!;b=(await auth.principal(await auth.login('admin-b',password,'b')))!;},60000);
  afterAll(async()=>{await database?.pool.end();if(folder)await rm(folder,{recursive:true,force:true});});
@@ -97,4 +101,50 @@ describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
  it('impersonates with effective restrictions, rotates tokens and records real actor',async()=>{const impersonation=await auth.impersonate(root,aid),acting=(await auth.principal(impersonation))!;expect(await auth.principal(token)).toBeNull();expect(acting.actor.id).toBe(root.actor.id);expect(acting.user.id).toBe(aid);expect(acting.tenant?.id).toBe(ta);await expect(store.administration(acting)).rejects.toMatchObject({status:403});await expect(store.reserve(acting,'images')).rejects.toMatchObject({status:429});await store.save(acting,adventure('Superadmin actuando'),undefined,{},4);const audit=(await database.pool.query("SELECT * FROM platform_audit WHERE action='adventure.save' ORDER BY id DESC LIMIT 1")).rows[0];expect(audit.actor_id).toBe(root.actor.id);expect(audit.effective_id).toBe(aid);token=await auth.impersonate(acting,null);root=(await auth.principal(token))!;expect(root.impersonating).toBe(false);});
  it('returns a superadmin to their own account if impersonated tenant is disabled',async()=>{const actingToken=await auth.impersonate(root,bid);await store.configure(root,{action:'tenant.update',id:tb,name:'Espacio B',enabled:false,limits:defaultLimits,permissions:defaultPermissions});const p=(await auth.principal(actingToken))!;expect(p.user.role).toBe('superadmin');expect(p.impersonating).toBe(false);expect(await auth.principal(await auth.login('admin-a',password,'a'))).not.toBeNull();await expect(auth.login('admin-b',password,'b')).rejects.toMatchObject({status:401});root=p;});
  it('revokes sessions after administrator password reset',async()=>{const before=await auth.login('admin-a',password,'a');await store.configure(root,{action:'user.password',id:aid,password:'changed-password-123'});expect(await auth.principal(before)).toBeNull();await expect(auth.login('admin-a',password,'a')).rejects.toMatchObject({status:401});expect(await auth.principal(await auth.login('admin-a','changed-password-123','a'))).not.toBeNull();});
+ it('stores tenant files remotely, freezes playable files and keeps the old publication on failed upload',async()=>{
+  const data=new Map<string,Uint8Array>();let fail=false;
+  const backend:ObjectBackend={id:'remote-test',async get(key){const b=data.get(key);if(!b)throw Error('missing');return b;},async put(key,b){if(fail&&key.endsWith('graficos.json'))throw Error('upload failed');data.set(key,b.slice());}};
+  remoteBackend=backend;
+  const remote=new PlatformStore(database,folder,resolve('static/pixelart'),new ObjectStorage(backend,[new LocalObjects(folder)]));
+  const tc=(await store.configure(root,{action:'tenant.create',name:'Storage fixture'})).id!;
+  const user=(await store.configure(root,{action:'user.create',username:'storage-fixture',password,tenantId:tc})).id!;
+  const principal=(await auth.principal(await auth.login('storage-fixture',password,'storage')))!;
+  const draft={...adventure(),id:'storage-game'},pack=structuredClone(graphics),bytes=new Uint8Array(await readFile('static'+pack.objects['pixel.key'].image));pack.objects['pixel.key'].image='asset:remote-key';
+  await remote.save(principal,draft,pack,{'remote-key':bytes},0);
+  expect([...data.keys()]).toContain(`espacios/${tc}/aventuras/storage-game/imagenes/remote-key/${hashToken(Buffer.from(bytes).toString('base64'))}.png`);
+  const publication=await remote.publish(principal,draft.id,true),game=await remote.published(publication.slug!),release=game.graphics.objects['pixel.key'].image.split('/')[4];
+  expect(unpackAdventure(await remote.publicCartridge(release,'cartucho.zip')).adventure.id).toBe(draft.id);
+  expect(game.graphics.character.image).toContain('/api/public/cartridges/');
+  const originals=vi.spyOn(backend,'get');originals.mockImplementation(async key=>{if(key.includes('/imagenes/'))throw Error('source unavailable');const b=data.get(key);if(!b)throw Error('missing');return b;});
+  expect(await remote.publicAsset(release,'remote-key')).toEqual(bytes);originals.mockRestore();
+  await remote.save(principal,{...draft,name:'New draft'},undefined,{},1);fail=true;
+  await expect(remote.publish(principal,draft.id,true)).rejects.toThrow('upload failed');expect((await remote.published(publication.slug!)).adventure.name).toBe(draft.name);
+  fail=false;await remote.publish(principal,draft.id,true);expect((await remote.published(publication.slug!)).adventure.name).toBe('New draft');
+  await expect(remote.publicCartridge(release,'../private')).rejects.toMatchObject({status:404});
+  await remote.publish(principal,draft.id,false);await expect(remote.publicCartridge(release,'cartucho.zip')).rejects.toMatchObject({status:404});
+  await expect(remote.migrateStorage(principal)).rejects.toMatchObject({status:403});
+ });
+ it('migrates legacy files and cartridges in verified batches, preserving original copies',async()=>{
+  const memory=new Map<string,Uint8Array>();let corrupt=true;
+  const backend:ObjectBackend={id:'migrated-test',async get(key){return memory.get(key)!;},async put(key,b){memory.set(key,corrupt?new Uint8Array([0]):b.slice());}};
+  const migrated=new PlatformStore(database,folder,resolve('static/pixelart'),new ObjectStorage(backend,[new LocalObjects(folder),remoteBackend]));
+  const content=new Uint8Array(await readFile('static'+graphics.objects['pixel.key'].image)),hash=hashToken(Buffer.from(content).toString('base64'));
+  await mkdir(join(folder,'blobs'),{recursive:true});await writeFile(join(folder,'blobs',hash),content);
+  await database.transaction(ta,true,db=>db.query('INSERT INTO platform_assets(tenant_id,id,hash,bytes) VALUES($1,$2,$3,$4)',[ta,'legacy-storage-fixture',hash,content.length]));
+  await expect(migrated.migrateStorage(root,20)).rejects.toMatchObject({status:503});
+  expect((await database.transaction(ta,false,db=>db.query("SELECT storage_backend FROM platform_assets WHERE id='legacy-storage-fixture'"))).rows[0].storage_backend).toBeNull();
+  corrupt=false;
+  let result=await migrated.storageStatus(root);expect(result.pending.platform_assets).toBeGreaterThan(0);
+  for(let run=0;run<20&&Object.values(result.pending).some(n=>n>0);run++)result=await migrated.migrateStorage(root,10);
+  expect(Object.values(result.pending)).toEqual([0,0,0]);
+  const row=(await database.transaction(ta,false,db=>db.query("SELECT * FROM platform_assets WHERE id='legacy-storage-fixture'"))).rows[0];
+  expect(row.storage_backend).toBe('migrated-test');expect(await migrated.asset(a,'legacy-storage-fixture')).toEqual(content);
+  const publication=(await migrated.list(a)).publications.find(p=>p.active)!;
+  const game=await migrated.published(publication.slug),image=game.graphics.character.image,parts=image.split('/'),release=parts[4],path=parts.slice(5).join('/');
+  const archived=await migrated.publicCartridge(release,'cartucho.zip');expect(unpackAdventure(archived).adventure.name).toBe(game.adventure.name);
+  const releaseRow=(await database.transaction(null,true,db=>db.query('SELECT * FROM platform_releases WHERE id=$1',[release]))).rows[0];memory.set(releaseRow.cartridge_prefix+'/'+path,new Uint8Array([0]));
+  await expect(migrated.publicCartridge(release,path)).rejects.toMatchObject({status:503});
+  expect(new Uint8Array(await readFile(join(folder,'blobs',hash)))).toEqual(content);
+ });
+
 });
