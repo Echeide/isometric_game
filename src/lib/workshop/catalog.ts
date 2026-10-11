@@ -3,7 +3,7 @@ import {groupWorkshopObjects,groupWorkshopTiles,resourceSearchText,type Resource
 
 export type CatalogCategory='all'|VisualAsset['category'];
 export const catalogCategories=[{id:'all',label:'Todas las categorías'},{id:'office',label:'Oficina'},{id:'nature',label:'Naturaleza'},{id:'urban',label:'Urbano'},{id:'people',label:'Personajes'}] as const;
-export const catalogKinds=[{id:'object',label:'Objetos'},{id:'npc',label:'PNJ'},{id:'player',label:'Jugador'},{id:'tile',label:'Suelos'}] as const;
+export const catalogKinds=[{id:'object',label:'Objetos'},{id:'npc',label:'PNJ'},{id:'player',label:'Jugador'},{id:'tile',label:'Suelos'},{id:'railing',label:'Barandas'}] as const;
 export const catalogText=resourceSearchText;
 /** Both editors filter the same entries before grouping, keeping concrete visual IDs. */
 export function resourceCatalog(entries:ResourceEntry[],options:{kind:ResourceKind;query?:string;category?:CatalogCategory;objectFamilies?:ObjectFamilies;tileFamilies?:TileFamilies}){
@@ -14,7 +14,7 @@ export function resourceCatalog(entries:ResourceEntry[],options:{kind:ResourceKi
 }
 
 export interface CatalogPreference {query:string;category:CatalogCategory;scroll:number}
-export const catalogPreferences=():Record<ResourceKind,CatalogPreference>=>({object:{query:'',category:'all',scroll:0},npc:{query:'',category:'all',scroll:0},player:{query:'',category:'all',scroll:0},tile:{query:'',category:'all',scroll:0}});
+export const catalogPreferences=():Record<ResourceKind,CatalogPreference>=>({object:{query:'',category:'all',scroll:0},npc:{query:'',category:'all',scroll:0},player:{query:'',category:'all',scroll:0},tile:{query:'',category:'all',scroll:0},railing:{query:'',category:'all',scroll:0}});
 /** Library summaries carry no family metadata; preserve the same name/category semantics. */
 export function libraryCatalog<T extends {kind:ResourceKind;name:string;category?:string}>(entries:T[],kind:ResourceKind,query='',category:CatalogCategory='all'){
  const search=catalogText(query);return entries.filter(e=>e.kind===kind&&((kind!=='object'&&kind!=='npc')||category==='all'||e.category===category)&&catalogText(e.name).includes(search));

@@ -3,10 +3,11 @@ import type {Frame} from '../../../packages/character-generator/src/types';
 import {validateAdventurePalette,type AdventurePalette} from '$lib/demo/adventure-palette';
 import {validateEditorPalette,type EditorPalette} from './image-edit';
 import type {ResourceKind} from './resources';
-export type PaletteResource={kind:ResourceKind;item:ObjectSprite;character:CharacterPack;tileImage:string};
+export type PaletteResource={kind:ResourceKind;item:ObjectSprite;character:CharacterPack;tileImage:string;railingImage?:string};
 export function mapResourceImages(resource:PaletteResource,replace:(url:string)=>string):PaletteResource {
  const r:PaletteResource=JSON.parse(JSON.stringify(resource));
- if(r.kind==='tile')r.tileImage=replace(r.tileImage);
+ if(r.kind==='railing'){if(r.railingImage)r.railingImage=replace(r.railingImage);}
+ else if(r.kind==='tile')r.tileImage=replace(r.tileImage);
  else if(r.kind==='player'){
   r.character.image=replace(r.character.image);
   for(const variants of [r.character.variants,...Object.values(r.character.animations).map(a=>a.variants)])if(variants)for(const key of Object.keys(variants))variants[key]=replace(variants[key]);
@@ -16,7 +17,7 @@ export function mapResourceImages(resource:PaletteResource,replace:(url:string)=
 }
 export function resourceImages(resource:PaletteResource){const urls=new Set<string>();mapResourceImages(resource,u=>{if(u)urls.add(u);return u;});return [...urls];}
 export function activePackImages(pack:PixelArtPack){
- const images=new Set<string>(Object.values(pack.tiles));
+ const images=new Set<string>([...Object.values(pack.tiles),...Object.values(pack.railingFamilies??{}).flatMap(f=>[f.image,...(f.originalImage?[f.originalImage]:[])])]);
  const add=(r:PaletteResource)=>resourceImages(r).forEach(u=>images.add(u));
  for(const character of [pack.character,...Object.values(pack.players??{}).map(p=>p.character)])add({kind:'player',character,item:{} as ObjectSprite,tileImage:''});
  for(const item of Object.values(pack.objects))add({kind:'object',item,character:pack.character,tileImage:''});

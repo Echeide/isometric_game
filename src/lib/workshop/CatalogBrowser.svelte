@@ -4,8 +4,8 @@
  import {Search,ListFilter,Box,Users,UserRound,Layers,X} from 'lucide-svelte';
  import type {ResourceKind} from './resources';
  import {catalogKinds,catalogCategories,type CatalogCategory} from './catalog';
- let {kind,kinds=['object','npc','player','tile'],query=$bindable(''),category=$bindable('all'),scroll=$bindable(0),count=0,busy=false,loading=false,contained=false,scrollKey=kind,onkindchange,actions,children}:{kind:ResourceKind;kinds?:ResourceKind[];query?:string;category?:CatalogCategory;scroll?:number;count?:number;busy?:boolean;loading?:boolean;contained?:boolean;scrollKey?:string;onkindchange?:(kind:ResourceKind)=>void;actions?:Snippet;children:Snippet}=$props();
- const icons={object:Box,npc:Users,player:UserRound,tile:Layers};
+ let {kind,kinds=['object','npc','player','tile','railing'],query=$bindable(''),category=$bindable('all'),scroll=$bindable(0),count=0,busy=false,loading=false,contained=false,scrollKey=kind,onkindchange,actions,children}:{kind:ResourceKind;kinds?:ResourceKind[];query?:string;category?:CatalogCategory;scroll?:number;count?:number;busy?:boolean;loading?:boolean;contained?:boolean;scrollKey?:string;onkindchange?:(kind:ResourceKind)=>void;actions?:Snippet;children:Snippet}=$props();
+ const icons={object:Box,npc:Users,player:UserRound,tile:Layers,railing:Layers};
  const hasCategories=$derived(kind==='object'||kind==='npc');
  const activeCategory=$derived(hasCategories&&category!=='all');
  let filtersOpen=$state(false),filterMenu:HTMLDetailsElement|undefined=$state(),viewport:HTMLDivElement|undefined=$state();

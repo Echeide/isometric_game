@@ -46,7 +46,7 @@
  import {collectedIds,collectItem,useExit,emptyInventory,readInventory} from '$lib/demo/inventory';
  let inventory=$state(emptyInventory());
 
- import {environments} from '@isometrico/world';
+ import {resolveEnvironment} from '@isometrico/world';
  let panMode=$state(false);
  import { graphics as defaultGraphics } from '$lib/demo/pixelart';
  import LoadProgress from '$lib/components/LoadProgress.svelte';
@@ -226,9 +226,9 @@
   <div class="topbar-right">{#if contentLanguages.length>1}<label class="story-language" title={ui.text('Idioma de la aventura')}><span class="sr-only">{ui.text('Idioma de la aventura')}</span><select aria-label={ui.text('Idioma de la aventura')} disabled={panel==='chat'&&currentObjectModule?.type==='chat'||panel==='narrative'&&currentNarrativeModule?.type==='chat'} value={contentLanguage} onchange={event=>changeLanguage(event.currentTarget.value)}>{#each contentLanguages as language}<option value={language}>{languageName(language)}</option>{/each}</select></label>{/if}{#if !published}<a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>{ui.text("Editar mapa")}</a><span class="demo-badge">{ui.text("VISTA PREVIA")}</span>{/if}<button class="header-action" onclick={()=>showPanel('space')} aria-label={ui.text("Abrir lugares y progreso")} title={ui.text("Lugares y progreso")}><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label={ui.text("Ayuda")} title={ui.text("Ayuda")}><CircleHelp size={19}/></button>{#if Object.keys(story.moduleResults??{}).length}<span class="module-score" role="status" aria-label={ui.text("Puntos de la aventura")}>{moduleScore(story)} pts</span>{/if}<span class="avatar-mini">E</span></div>
  </header>
  <main class="immersive-world" aria-label={ui.text("Espacio virtual")}>
-  <div class:outdoors={environments[scene.theme].outdoor} class="map-stage">
+  <div class:outdoors={resolveEnvironment(scene).outdoor} class="map-stage">
    {#if loadError}<div class="load-error"><p role="alert">{ui.text(loadError)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button></div>{:else if !mapsReady||assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World translate={ui.text} followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
-   <div class="scene-heading"><div class="eyebrow">{adventure?storyText(['adventure','name'],adventure.name):ui.text('MI AVENTURA')}</div><h1>{scene.name}</h1><span>{ui.text(environments[scene.theme].label)}</span></div>
+   <div class="scene-heading"><div class="eyebrow">{adventure?storyText(['adventure','name'],adventure.name):ui.text('MI AVENTURA')}</div><h1>{scene.name}</h1><span>{ui.text(resolveEnvironment(scene).label)}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label={ui.text("Abrir inventario")} title={ui.text("Inventario")}><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
    {#if !published}<button class="map-inventory map-tests" disabled={!adventure||!!transitionImage} onclick={()=>showPanel('tests')} aria-label={ui.text("Abrir pruebas de aventura")} title={ui.text("Pruebas de aventura")}><ClipboardList size={22}/></button>{/if}

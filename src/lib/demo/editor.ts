@@ -1,4 +1,4 @@
-import { parseScene, visualCatalog, type VisualAsset, type WorldEntity, type WorldScene } from '@isometrico/world';
+import { parseScene, interiorMembers, visualCatalog, type VisualAsset, type WorldEntity, type WorldScene } from '@isometrico/world';
 /** Find a valid free placement rather than stacking every new item at (1,1). */
 export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string, position?: {x:number;y:number},catalog:readonly VisualAsset[]=visualCatalog): WorldScene {
  const base=parseScene(draft);
@@ -42,7 +42,7 @@ export function flipEntity(draft:WorldScene,id:string):WorldScene {
 }
 
 /** Apply one stroke as a single undoable edit; painting never changes collisions. */
-export function paintTiles(draft:WorldScene,cells:import('@isometrico/world').Cell[],tile:import('@isometrico/world').MapBrush,options:{allowUnreachable?:boolean}={}):WorldScene{
+export function paintTiles(draft:WorldScene,cells:import('@isometrico/world').Cell[],tile:import('@isometrico/world').MapBrush,options:{allowUnreachable?:boolean;families?:import('@isometrico/world').TileFamilies}={}):WorldScene{
  const elevations={...draft.elevations},stairs={...draft.stairs};
  if(tile.startsWith('height:')||tile.startsWith('stairs:')){
   for(const {x,y} of cells){const key=`${x},${y}`;
@@ -51,7 +51,14 @@ export function paintTiles(draft:WorldScene,cells:import('@isometrico/world').Ce
   }
   return parseScene({...draft,elevations,stairs},options);
  }
- const tiles={...draft.tiles};
+ const tiles={...draft.tiles},terrains={...draft.terrains};
+ if(tile.startsWith('terrain:')){
+  const id=tile.slice(8),family=options.families?.[id],fallback=family?interiorMembers(family)[0]?.id:undefined;
+  if(!fallback)throw new Error('El terreno necesita una variante interior.');
+  for(const {x,y}of cells){tiles[`${x},${y}`]=fallback as import('@isometrico/world').TileKind;terrains[`${x},${y}`]=id;}
+  return parseScene({...draft,tiles,terrains},options);
+ }
+ for(const {x,y}of cells)delete terrains[`${x},${y}`];
  for(const {x,y} of cells){if(tile==='erase')delete tiles[`${x},${y}`];else tiles[`${x},${y}`]=tile as import('@isometrico/world').TileKind|'void';if(tile==='void'){delete elevations[`${x},${y}`];delete stairs[`${x},${y}`];}}
- return parseScene({...draft,tiles,elevations,stairs},options);
+ return parseScene({...draft,tiles,terrains,elevations,stairs},options);
 }

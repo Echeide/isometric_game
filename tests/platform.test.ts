@@ -11,6 +11,9 @@ import {unpackAdventure} from '../src/lib/storage/adventure-package';
 import {defaultLimits,defaultPermissions,type Principal} from '../src/lib/platform/types';
 import {graphics} from '../src/lib/demo/pixelart';
 import {office} from '../src/lib/demo/scenes';
+import {createRailingTemplate} from '../src/lib/workshop/railing-template';
+import {encodePalettePNG} from '../src/lib/workshop/palette-browser';
+import {terrainTileAt} from '../packages/world/src/terrain';
 import {createAdventure} from '../src/lib/demo/adventure';
 import {textKey} from '../src/lib/i18n/adventure';
 import {attachChat} from '../src/lib/chat/adventure-chats';
@@ -94,6 +97,36 @@ describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
   const publication=await store.publish(a,draft.id,true),changed=structuredClone(definition);changed.story.entities[0].initialState='open';await store.save(a,changed,undefined,{},1);
   expect((await store.published(publication.slug!)).adventure.story.entities[0].initialState).toBe('closed');expect((await store.list(a)).publications.find(p=>p.adventure_id===draft.id)!.hasUnpublishedChanges).toBe(true);
   await store.publish(a,draft.id,true);expect((await store.published(publication.slug!)).adventure.story.entities[0].initialState).toBe('open');
+ });
+ it('saves automatic terrain families and freezes their border rules in the published cartridge',async()=>{
+  const definition={...adventure('Terrenos'),id:'terrain-publication'},pack=structuredClone(graphics);
+  definition.maps[0].tiles={'1,1':'grass'};definition.maps[0].terrains={'1,1':'family.lawn'};
+  pack.tiles['custom.border']=pack.tiles.grass;pack.tiles['custom.border-alt']=pack.tiles.sand;
+  pack.tileNames={'custom.border':'Borde','custom.border-alt':'Borde alternativo'};
+  pack.tileFamilies={'family.lawn':{name:'Césped',tiles:{grass:100,'custom.border':0,'custom.border-alt':0},borders:{15:'custom.border'}}};
+  await store.save(a,definition,pack,{},0);const publication=await store.publish(a,definition.id,true),publicGame=await store.published(publication.slug!);
+  expect(terrainTileAt(publicGame.adventure.maps[0],publicGame.graphics,{x:1,y:1})).toBe('custom.border');
+  pack.tileFamilies['family.lawn'].borders![15]='custom.border-alt';await store.save(a,definition,pack,{},1);
+  expect((await store.list(a)).publications.find(p=>p.adventure_id===definition.id)!.hasUnpublishedChanges).toBe(true);
+  const frozen=await store.published(publication.slug!);expect(terrainTileAt(frozen.adventure.maps[0],frozen.graphics,{x:1,y:1})).toBe('custom.border');
+  await store.publish(a,definition.id,true);const updated=await store.published(publication.slug!);expect(terrainTileAt(updated.adventure.maps[0],updated.graphics,{x:1,y:1})).toBe('custom.border-alt');await store.publish(a,definition.id,false);
+ });
+ it('stores and publishes railing styles without modifying the previous playable version',async()=>{
+  const definition={...adventure('Barandas'),id:'railings-publication'};
+  definition.maps[0].walls=[{x:1,y:0,axis:'x',kind:'railing',railingStyle:'stone'},{x:0,y:1,axis:'y',kind:'railing',railingStyle:'metal'}];
+  await store.save(a,definition,graphics,{},0);const publication=await store.publish(a,definition.id,true);
+  expect((await store.published(publication.slug!)).adventure.maps[0].walls).toEqual(definition.maps[0].walls);
+  const edited=structuredClone(definition);edited.maps[0].walls![0].railingStyle='metal';await store.save(a,edited,undefined,{},1);
+  expect((await store.list(a)).publications.find(p=>p.adventure_id===definition.id)!.hasUnpublishedChanges).toBe(true);
+  expect((await store.published(publication.slug!)).adventure.maps[0].walls![0].railingStyle).toBe('stone');
+  await store.publish(a,definition.id,true);expect((await store.published(publication.slug!)).adventure.maps[0].walls![0].railingStyle).toBe('metal');await store.publish(a,definition.id,false);
+ });
+ it('stores custom railing atlases privately and publishes their gameplay pieces',async()=>{
+  const {family,pixels}=createRailingTemplate('metal'),bytes=encodePalettePNG(pixels),definition={...adventure('Barandas editables'),id:'custom-railings'},pack=structuredClone(graphics);
+  family.image='asset:railing-sheet';family.originalImage='asset:railing-backup';pack.railingFamilies={'custom.rail':family};definition.maps[0].walls=[{x:1,y:0,axis:'x',kind:'railing',railingFamily:'custom.rail',railingVariant:'start'}];
+  await store.save(a,definition,pack,{'railing-sheet':bytes,'railing-backup':bytes},0);await expect(store.asset(b,'railing-sheet')).rejects.toMatchObject({status:404});
+  const publication=await store.publish(a,definition.id,true),game=await store.published(publication.slug!),f=game.graphics.railingFamilies!['custom.rail'];expect(f.originalImage).toBeUndefined();expect(f.pieces.map(p=>p.role)).toEqual(family.pieces.map(p=>p.role));expect(game.adventure.maps[0].walls![0].railingVariant).toBe('start');const release=f.image.split('/')[4];expect(await store.publicAsset(release,'railing-sheet')).toEqual(bytes);await expect(store.publicAsset(release,'railing-backup')).rejects.toMatchObject({status:404});
+  const resource=await packResource({format:'isometric-resource',version:1,kind:'railing',name:'Verja',category:'urban',size:{x:1,y:1},railing:{...family,originalImage:undefined}},async()=>new Blob([new Uint8Array(bytes)])),saved=await store.saveResource(a,resource);expect(instantiateResource(await store.resource(a,saved.id)).resource.railing?.pieces).toEqual(family.pieces);await store.publish(a,definition.id,false);
  });
  it('denies assets from another tenant and never serves unpublished originals',async()=>{const bytes=new Uint8Array(await readFile('static'+graphics.objects['pixel.key'].image));const pack=structuredClone(graphics);pack.objects['pixel.key'].image='asset:private-key';pack.objects['pixel.key'].originalImage='asset:private-original';pack.paletteOriginalImages={'asset:private-key':'asset:private-original'};await store.save(a,adventure(),pack,{'private-key':bytes,'private-original':bytes},3);expect(await store.asset(a,'private-key')).toEqual(bytes);await expect(store.asset(b,'private-key')).rejects.toMatchObject({status:404});const pub=await store.publish(a,'example',true);const game=await store.published(pub.slug!);expect(game.graphics.objects['pixel.key'].originalImage).toBeUndefined();expect(game.graphics.paletteOriginalImages).toBeUndefined();expect(game.graphics.objects['pixel.key'].image).toMatch(/\/private-key\.png$/);const path=game.graphics.objects['pixel.key'].image.split('/'),release=path[4];expect(await store.publicAsset(release,'private-key')).toEqual(bytes);await expect(store.publicAsset(release,'private-original')).rejects.toMatchObject({status:404});});
  it('keeps tenant resources private and promotes independent shared copies',async()=>{const bytes=await packResource({format:'isometric-resource',version:1,kind:'object',name:'Llave',category:'office',size:{x:1,y:1},object:graphics.objects['pixel.key']},async u=>new Blob([new Uint8Array(await readFile('static'+u))]));const r=await store.saveResource(a,bytes);expect(await store.resourceList(b)).toHaveLength(0);await expect(store.resource(b,r.id)).rejects.toMatchObject({status:404});await expect(store.promote(a,r.id)).rejects.toMatchObject({status:403});const shared=await store.promote(root,r.id);expect(shared.id).not.toBe(r.id);const copied=instantiateResource(await store.resource(b,shared.id));expect(copied.resource.name).toBe('Llave');await store.withdrawResource(root,shared.id);expect(await store.resourceList(b,'global')).toHaveLength(0);expect(await store.resource(a,r.id)).toEqual(bytes);expect(copied.resource.name).toBe('Llave');});

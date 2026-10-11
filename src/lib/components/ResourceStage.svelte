@@ -5,7 +5,7 @@
  import {npcClipRow} from '../../../packages/world/src/pixelart';
  import type {ResourceKind} from '$lib/workshop/resources';
  import {sampleTileVariant} from '../../../packages/world/src/tile-families';
- let {kind,item,character,fit=false,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,tileVariants,reference,floorImage,resolve,onshift}:{kind:ResourceKind;fit?:boolean;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];tileVariants?:{image:string;frame?:[number,number,number,number];weight:number}[];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
+ let {kind,item,character,fit=false,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,tileVariants,tileBorders,reference,floorImage,resolve,onshift}:{kind:ResourceKind;fit?:boolean;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];tileBorders?:Record<string,{image:string;frame?:[number,number,number,number]}>;tileVariants?:{image:string;frame?:[number,number,number,number];weight:number}[];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
  let canvas:HTMLCanvasElement,surface:HTMLDivElement;let fittedWidth=$state(680),fittedHeight=$state(430);
  const images=new Map<string,HTMLImageElement>();
  let elapsed=0,previousPose='',drag:{id:number;x:number;y:number}|null=null;
@@ -21,7 +21,7 @@
   const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,680,430);ctx.imageSmoothingEnabled=false;
   ctx.save();ctx.translate(340,kind==='tile'?82:170);ctx.scale(zoom,zoom);
   const floor=kind==='tile'?tileImage:floorImage;
-  for(let sum=0;sum<=6;sum++)for(let x=0;x<=3;x++){const y=sum-x;if(y<0||y>3)continue;const px=(x-y)*32,py=(x+y)*16,variant=kind==='tile'&&tileVariants?sampleTileVariant(tileVariants,x,y):undefined;paint(ctx,variant?.image??floor,variant?variant.frame:kind==='tile'?tileFrame:undefined,px-32,py,64,32);}
+  for(let sum=0;sum<=6;sum++)for(let x=0;x<=3;x++){const y=sum-x;if(y<0||y>3)continue;const px=(x-y)*32,py=(x+y)*16,variant=kind==='tile'&&tileVariants?sampleTileVariant(tileVariants,x,y):undefined;const mask=(y===0?1:0)|(x===3?2:0)|(y===3?4:0)|(x===0?8:0),border=tileBorders?.[mask];paint(ctx,border?.image||variant?.image||floor,border?.image?border.frame:variant?variant.frame:kind==='tile'?tileFrame:undefined,px-32,py,64,32);}
   if(kind!=='tile'){
    // Match the same grid origin and 2:1 projection as the world renderer.
    ctx.translate(0,32);

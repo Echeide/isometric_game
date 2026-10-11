@@ -1,6 +1,7 @@
 import {actorPoses,characterImage,characterVariants,type CharacterPack} from './character';
 import type {PixelArtPack,NpcClip,ObjectSprite} from './pixelart';
 import {tileKinds,isTileKind,isCustomTile,type TileKind} from './types';
+import {validateRailingFamilies} from './railing-families';
 import {validateTileFamilies} from './tile-families';
 import {validateObjectFamilies} from './object-families';
 export type ImageSize={width:number;height:number};
@@ -11,12 +12,18 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
 
  if(!pack||pack.version!==1||!pack.objects||!pack.tiles)fail('Catálogo gráfico no válido.');
  validateCharacterGraphics(pack.character,sizes);
+ if(pack.facades!==undefined&&(!pack.facades||typeof pack.facades!=='object'||Array.isArray(pack.facades)||Object.keys(pack.facades).length>128))fail('La biblioteca admite hasta 128 fachadas.');
+ for(const [id,f]of Object.entries(pack.facades??{})){
+  if(!/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id)||!f||typeof f.name!=='string'||!f.name.trim()||f.name.length>120)fail('Recurso de fachada no válido.');
+  image(f.image);
+ }
  if(Object.keys(pack.players??{}).length>24)fail('La biblioteca admite hasta 24 jugadores propios.');
  for(const [id,p]of Object.entries(pack.players??{})){if(!/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id)||!p||typeof p.name!=='string'||!p.name.trim()||p.name.length>120)fail('Jugador no válido.');validateCharacterGraphics(p.character,sizes);}
  if(pack.activePlayer&&!Object.hasOwn(pack.players??{},pack.activePlayer))fail('El jugador activo no existe.');
  if(Object.keys(pack.objects).length>256)fail('El catálogo gráfico tiene demasiados objetos.');
  for(const o of Object.values(pack.objects))validateObjectGraphics(o,sizes);
  validateObjectFamilies(pack.objectFamilies,pack.objects);
+ validateRailingFamilies(pack.railingFamilies,sizes);
 
  for(const kind of tileKinds)if(!Object.hasOwn(pack.tiles,kind))fail(`Falta el suelo base ${kind}.`);
  if(Object.keys(pack.tiles).filter(isCustomTile).length>128)fail('La biblioteca admite hasta 128 suelos propios.');

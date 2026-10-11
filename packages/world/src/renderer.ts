@@ -1,8 +1,9 @@
+import {railingPiece,railingAnchor,railingFrame,validateSceneRailings} from './railing-families';
 import {cameraAction,shouldFollow,mobileCamera} from './follow-camera';
 import {prepareWallOcclusion,wallOccludesActor} from './wall-occlusion';
 import 'pixi.js/prepare';
 import {advanceRoute} from './movement';
-import {environments} from './environments';
+import {resolveEnvironment} from './environments';
 import {terrainCellAt,topContains,levelAt,stairAt,stairDirections,STAIR_STEPS,LEVEL_HEIGHT,projectSurface,surfaceHeight,wallHeight} from './elevation';
 import {exitFacing} from './exits';
 import {alphaHitArea,footprintHitArea} from './alpha-hit';
@@ -10,10 +11,12 @@ import {depthOrder,movingDepthIndex,type DepthItem} from './depth';
 import {sceneWalls,wallCells,hasTile,wallEndExposed} from './walls';
 import type {Wall} from './types';
 import { cameraGestures } from './camera-gestures';
-import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture, Matrix } from 'pixi.js';
+import {facadeForWall,facadeProjection,facadeWidth,facadeBaseLevel,facadeDoorOpening} from './facades';
+import {railingArt,railingGroup} from './railing-art';
 import { loadPixelArt, pixelObject, pixelNpc, type LoadedPixelArt, type PixelArtPack } from './pixelart';
 import { createActor, facingFor } from './actor';
-import {tileAt,defaultTile,validateSceneTiles} from './terrain';
+import {tileAt,defaultTile,terrainAt,terrainTileAt,validateSceneTiles} from './terrain';
 import { seatPlacement } from './seating';
 import type { WorldEditor, ActorPose, Facing, Cell, WorldEntity, WorldScene, CameraState } from './types';
 import { createNavigator, interactionCells, project, walkable } from './navigation';
@@ -57,7 +60,7 @@ function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt, scene:W
   return c;
 }
 export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack,existingApp?:Application,onCameraChange?:(camera:CameraState)=>void) {
-  validateSceneTiles(scene,graphics.tiles);
+  validateSceneTiles(scene,graphics.tiles,graphics.tileFamilies??{});
   const art=await loadPixelArt(graphics);
   const navigation=createNavigator(scene);
   const app = existingApp??new Application();
@@ -69,10 +72,11 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   }
   const world=new Container(); const floor=new Container(); const objects=new Container(); objects.sortableChildren=true;
   const labelLayer=new Container();labelLayer.eventMode='none';
-  world.addChild(floor,objects,labelLayer);
+  const facadeLayer=new Container(),facadeDoors:Graphics[]=[];
+  world.addChild(floor,facadeLayer,objects,labelLayer);
   let editor=initialEditor;
   let paused=false;
-  const environment=environments[scene.theme];
+  const environment=resolveEnvironment(scene,scene.baseTile?art.tileColors?.get(scene.baseTile):undefined);
   const outdoor=environment.outdoor;
   const groundPalette=environment.ground;
   const minimumHeight=Math.min(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT;
@@ -98,7 +102,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         else textureTile.texture=texture;
         // Lighten the grass top without lifting the darker vertical faces.
         if(!grassLight){grassLight=new Graphics().poly([32,0,64,16,32,32,0,16]).fill({color:0xfff9df,alpha:.30});grassLight.eventMode='none';textureTile.addChild(grassLight);}
-        grassLight.visible=kind==='grass';
+        grassLight.visible=kind==='grass'&&!terrainAt(scene,{x,y});
       }
       const stair=stairAt(scene,{x,y});
       if(stair){
@@ -107,12 +111,12 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         for(let step=0;step<STAIR_STEPS;step++){
           const along=(d.x+d.y)>0?step:STAIR_STEPS-1-step;
           const sx=x+(d.x?step/STAIR_STEPS:0),sy=y+(d.y?step/STAIR_STEPS:0),h=z+(along+1)*LEVEL_HEIGHT/STAIR_STEPS;
-          box(tile,sx,sy,d.x?1/STAIR_STEPS:1,d.y?1/STAIR_STEPS:1,h-minimumHeight,{top:0xe0d9c1,left:0xa69d85,right:0x8f8876},h);
+          box(tile,sx,sy,d.x?1/STAIR_STEPS:1,d.y?1/STAIR_STEPS:1,h-minimumHeight,scene.baseTile!==undefined||scene.cutColor!==undefined?groundPalette:{top:0xe0d9c1,left:0xa69d85,right:0x8f8876},h);
         }
       }
       tile.hitArea={contains:(px:number,py:number)=>topContains(scene,{x,y},{x:px,y:py})};
     };
-    drawTile(tileAt(scene,{x,y}));tileDrawers.set(`${x},${y}`,drawTile);
+    drawTile(terrainTileAt(scene,graphics,{x,y}));tileDrawers.set(`${x},${y}`,drawTile);
     if(walkable(scene,{x,y})||!!editor?.onselectTerrain&&!editor.onpick) {
       tile.eventMode='static';tile.cursor='pointer';
       tile.on('pointertap',()=>{host.focus({preventScroll:true});if(!gestures.blocked()){if(editor?.onpick)editor.onpick({x,y});else if(!editor)moveTo({x,y});else if(!editor.brush&&!editor.wallTool){if(editor.onselectTerrain)editor.onselectTerrain({x,y});else editor.onselect('');}}});
@@ -121,12 +125,36 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(hasLevels){objects.addChild(tile);depthItems.push({view:tile,bounds:()=>({x,y,width:1,height:1,tie:-1000,floor:true})});}else floor.addChild(tile);
   }
   const allWalls=sceneWalls(scene);
-  const wallViews:{wall:Wall;view:Graphics;group:string}[]=[];
+  for(const facade of scene.facades??[]){
+    const resource=art.pack.facades?.[facade.imageId],texture=resource&&art.textures.get(resource.image);
+    if(!texture)throw Error('Falta una imagen de fachada.');
+    const p=facadeProjection(scene,facade),view=new Container(),sprite=new Sprite(texture);
+    sprite.width=p.width;sprite.height=p.height;sprite.eventMode='none';view.addChild(sprite);
+    view.setFromMatrix(new Matrix(p.a,p.b,p.c,p.d,p.tx,p.ty));facadeLayer.addChild(view);
+    for(const wall of allWalls.filter(w=>w.exitId&&facadeForWall(scene,w)===facade)){
+      const column=facade.edge==='ne'?wall.x:facadeWidth(scene,facade.edge)-1-wall.y,opening=facadeDoorOpening(scene,facade,column);
+      if(!opening)continue;
+      const door=new Graphics().rect(opening.x,opening.y,opening.width,opening.height).fill({color:0xbddd86,alpha:.001});
+      door.eventMode='static';door.cursor='pointer';view.addChild(door);facadeDoors.push(door);
+      door.on('pointertap',()=>{if(gestures.blocked())return;if(editor){if(!editor.brush&&!editor.wallTool&&!editor.onpick)editor.onselect(wall.exitId!);}else goTo(wall.exitId!);});
+    }
+  }
+  validateSceneRailings(scene,art.pack.railingFamilies);
+  const wallViews:{wall:Wall;view:Container;group:string}[]=[];
   function wallArt(w:Wall){
+    if(w.kind==='railing'){
+      const family=w.railingFamily?art.pack.railingFamilies![w.railingFamily]:undefined;
+      if(!family)return railingArt(scene,w,allWalls);
+      const piece=railingPiece(scene,w,allWalls,family),frame=railingFrame(family,piece,w.axis),origin=railingAnchor(w.axis),view=new Container();
+      const texture=new Texture({source:art.textures.get(family.image)!.source,frame:new Rectangle(...frame)}),sprite=new Sprite(texture);
+      sprite.position.set(-origin[0],-origin[1]);sprite.roundPixels=true;view.addChild(sprite);const p=project(w);view.position.set(p.x,p.y-wallHeight(scene,w));
+      const mask=art.masks.get(family.image);if(mask)view.hitArea=alphaHitArea(mask,{width:64,height:64,origin,frame});
+      return view;
+    }
     const g=new Graphics(),dx=w.axis==='x'?1:0,dy=1-dx;
     const thickness=w.kind==='door'?.20:.16;
     const neighbor=(end:0|1)=>!wallEndExposed(w,end,allWalls.filter(n=>wallHeight(scene,n)===wallHeight(scene,w)));
-    const material=w.material??'white';
+    const material=w.material??scene.wallMaterial??'white';
     const colors=w.kind==='door'?{front:0x997450,top:0xc6a37a,side:0x74583e,under:0x604a36}:{front:w.axis==='x'?0xd4ded5:0xb8cdc5,top:0xe9eee5,side:0x8ca69b,under:0x7e978c};
     if(w.kind==='wall'){if(material==='glass')Object.assign(colors,{front:0xaed4dc,top:0xe3f8fa,side:0x779ea9});else if(material==='stone')Object.assign(colors,{front:0x9ba297,top:0xc9cec0,side:0x747f73});else if(material==='cobble')Object.assign(colors,{front:0x747b70,top:0xbdb9a7,side:0x656f61});}
     function point(t:number,offset:number,z:number){const p=project({x:w.x+dx*t+dy*offset,y:w.y+dy*t+dx*offset});return [p.x,p.y-z-wallHeight(scene,w)];}
@@ -168,11 +196,18 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     return g;
   }
   for(const w of allWalls){
+    if(facadeForWall(scene,w))continue;
     const view=wallArt(w);view.zIndex=(w.x+w.y+.5)*100+3;objects.addChild(view);let gx=w.x,gy=w.y;
     if(w.kind==='wall')while(allWalls.some(n=>n.kind==='wall'&&n.axis===w.axis&&n.x===gx-(w.axis==='x'?1:0)&&n.y===gy-(w.axis==='y'?1:0))){gx-=w.axis==='x'?1:0;gy-=w.axis==='y'?1:0;}
-    wallViews.push({wall:w,view,group:`${w.kind}:${w.axis}:${gx},${gy}`});depthItems.push({view,bounds:()=>({x:w.x,y:w.y,width:w.axis==='x'?1:0,height:w.axis==='y'?1:0,tie:3})});
+    wallViews.push({wall:w,view,group:w.kind==='railing'?railingGroup(scene,w,allWalls):`${w.kind}:${w.axis}:${gx},${gy}`});depthItems.push({view,bounds:()=>({x:w.x,y:w.y,width:w.axis==='x'?1:0,height:w.axis==='y'?1:0,tie:3})});
     view.eventMode='static';view.cursor='pointer';
-    view.on('pointertap',()=>{if(gestures.blocked())return;if(editor&&!editor.brush&&!editor.wallTool)editor.onwall?.(w);else if(!editor&&w.exitId)goTo(w.exitId);});
+    view.on('pointertap',()=>{if(gestures.blocked())return;if(editor&&!editor.onpick&&!editor.brush&&!editor.wallTool)editor.onwall?.(w);else if(!editor&&w.exitId)goTo(w.exitId);});
+  }
+  const facadeOutline=new Graphics();facadeOutline.eventMode='none';labelLayer.addChild(facadeOutline);
+  function highlightFacade(){
+    facadeOutline.clear();if(!editor?.facadeEdge)return;
+    const edge=editor.facadeEdge,f=scene.facades?.find(f=>f.edge===edge)??{edge,height:1,baseLevel:0,imageId:''},p=facadeProjection(scene,f);
+    facadeOutline.poly([p.tx,p.ty+p.height,p.tx+p.width,p.ty+p.height+p.b*p.width]).stroke({color:0x71a843,width:3});
   }
   const wallPreview=new Graphics();wallPreview.eventMode='none';objects.addChild(wallPreview);wallPreview.zIndex=1e9;
   const entityViews=new Map<string,Container>();
@@ -202,7 +237,8 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       }
     }
     view.on('pointerdown',event=>{
-      if(!editor || editor.onpick || editor.wallTool || event.button!==0 || drag)return;
+      // Pixi handles this event before the native paint listener: keep the brush active.
+      if(!editor || editor.onpick || editor.brush || editor.wallTool || event.button!==0 || drag)return;
       host.focus({preventScroll:true});editor.onselect(e.id);
       const start=world.toLocal(event.global);
       drag={id:e.id,pointerId:event.pointerId,start,original:{...e.position},position:{...e.position}};
@@ -226,7 +262,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   function highlight(id:string,position?:Cell){
     selectedEntity=id;refreshLabels();
     selection.clear();
-    for(const [key,view]of entityViews){view.tint=editor&&key===id?0xe3ffc8:0xffffff;view.cursor=editor?'grab':scene.entities.find(e=>e.id===key)?.interaction?'pointer':'default';}
+    for(const [key,view]of entityViews){view.tint=editor&&key===id?0xe3ffc8:0xffffff;view.cursor=editor?(editor.brush||editor.wallTool?'crosshair':'grab'):scene.entities.find(e=>e.id===key)?.interaction?'pointer':'default';}
     host.dataset.selected=editor?id:'';
     const e=scene.entities.find(e=>e.id===id);if(!e||!editor)return;
     const p=projectSurface(scene,position??e.position),w=(e.size?.x??1)*32,h=(e.size?.y??1)*32;
@@ -262,7 +298,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     // Preserve painting empty cells inside the editor's working rectangle.
     if(editor?.brush){const base=terrainCellAt(scene,local,true);if(base.x>=0&&base.y>=0&&base.x<scene.width&&base.y<scene.height)return false;}
     // Tall objects/walls may protrude past the floor silhouette.
-    for(const view of [...entityViews.values(),...wallViews.map(w=>w.view)]){
+    for(const view of [...entityViews.values(),...wallViews.map(w=>w.view),...facadeDoors]){
       if(!view.visible)continue;const b=view.getBounds();if(screen.x>=b.x&&screen.y>=b.y&&screen.x<=b.x+b.width&&screen.y<=b.y+b.height)return false;
     }
     if(avatar.visible){const b=avatar.getBounds();if(screen.x>=b.x&&screen.y>=b.y&&screen.x<=b.x+b.width&&screen.y<=b.y+b.height)return false;}
@@ -396,7 +432,17 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   let lastCameraSignature='';
   function cameraState():CameraState{return {zoom:zoomLevel,scale:cameraScale,fitScale,action:cameraAction(cameraScale,fitScale)};}
   function notifyCamera(){const state=cameraState(),signature=`${state.action}:${state.zoom.toFixed(4)}:${state.scale.toFixed(4)}:${state.fitScale.toFixed(4)}`;if(signature!==lastCameraSignature){lastCameraSignature=signature;onCameraChange?.(state);}}
-  function fit() {if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;if(app.screen.width!==w||app.screen.height!==h)app.renderer.resize(w,h);fitScale=Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135+Math.max(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT-minimumHeight));const scale=(cameraBaseScale??fitScale)*zoomLevel;world.scale.set(Math.max(.2,scale));cameraScale=world.scale.x;world.position.set(w/2-(scene.width-scene.height)*16*scale,h/2-(scene.width+scene.height)*8*scale+35*scale+panY);world.x+=panX;host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);host.dataset.cameraAction=cameraAction(cameraScale,fitScale);notifyCamera();}
+  function fit() {
+    if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;
+    if(app.screen.width!==w||app.screen.height!==h)app.renderer.resize(w,h);
+    const terrainTop=Math.max(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT;
+    const facadeTop=Math.max(0,...(scene.facades??[]).map(f=>f.height*32+facadeBaseLevel(scene,f)*LEVEL_HEIGHT));
+    const extra=Math.max(0,facadeTop-terrainTop-70);
+    fitScale=Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135+terrainTop-minimumHeight+extra));
+    const scale=(cameraBaseScale??fitScale)*zoomLevel;world.scale.set(Math.max(scene.facades?.length ? .02 : .2,scale));cameraScale=world.scale.x;
+    world.position.set(w/2-(scene.width-scene.height)*16*cameraScale+panX,h/2-(scene.width+scene.height)*8*cameraScale+(35+extra/2)*cameraScale+panY);
+    host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);host.dataset.cameraAction=cameraAction(cameraScale,fitScale);notifyCamera();
+  }
   function followPlayer(snap=false,dt=0){
     const active=shouldFollow(followEnabled,!!editor,followSuspended||!!panGesture||gestures.blocked(),cameraScale,fitScale);
     host.dataset.follow=active?'active':followSuspended?'paused':'off';
@@ -536,7 +582,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         view.hitArea=updated.hitArea;view.addChild(...updated.removeChildren());updated.destroy();displayedCompletion.set(e.id,completed.has(e.id));
       }
     },
-    setEditor(value:WorldEditor|undefined){editor=value;paintHover.clear();levelHint.visible=false;zeroGrid.visible=baseBrush();avatar.visible=!editor;avatar.eventMode=editor?'none':'static';if(editor){badge.visible=false;playerHovered=false;}panCursor();highlight(editor?.selectedId??'');},
+    setEditor(value:WorldEditor|undefined){editor=value;highlightFacade();paintHover.clear();levelHint.visible=false;zeroGrid.visible=baseBrush();avatar.visible=!editor;avatar.eventMode=editor?'none':'static';if(editor){badge.visible=false;playerHovered=false;}panCursor();highlight(editor?.selectedId??'');},
     goTo, zoom(delta:number){zoomLevel=Math.max(.65,Math.min(3,zoomLevel+delta));fit();followPlayer(true);},recenter(){followSuspended=false;cameraBaseScale=undefined;zoomLevel=1;panX=0;panY=0;fit();},
     setFollowCamera(enabled:boolean){
       followEnabled=enabled;

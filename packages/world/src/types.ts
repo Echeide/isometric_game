@@ -5,8 +5,10 @@ export type TileKind = BuiltinTileKind | CustomTileKind;
 export const isCustomTile=(id:unknown):id is CustomTileKind=>typeof id==='string'&&/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id);
 export const isTileKind=(id:unknown):id is TileKind=>typeof id==='string'&&((tileKinds as readonly string[]).includes(id)||isCustomTile(id));
 export type WallMaterial = 'white'|'glass'|'stone'|'cobble';
-export type Wall = {x:number;y:number;axis:'x'|'y';kind:'wall'|'door';exitId?:string;material?:WallMaterial};
-export type MapBrush = TileKind | 'void' | 'erase' | `height:${number}` | `stairs:${Facing}` | 'stairs:erase';
+export type RailingStyle = 'stone'|'metal';
+export interface MapFacade {edge:'ne'|'nw';imageId:string;height:number;baseLevel:number;baseMode?:'terrain'|'fixed'}
+export type Wall = {x:number;y:number;axis:'x'|'y';kind:'wall'|'door'|'railing';exitId?:string;material?:WallMaterial;railingStyle?:RailingStyle;railingFamily?:string;railingVariant?:string};
+export type MapBrush = TileKind | 'void' | 'erase' | `height:${number}` | `stairs:${Facing}` | 'stairs:erase' | `terrain:${string}`;
 export type Cell = { x: number; y: number };
 export type Facing = 'ne' | 'se' | 'sw' | 'nw';
 export type ActorPose = 'idle' | 'walk' | 'sit' | 'work' | 'talk' | 'celebrate';
@@ -36,13 +38,24 @@ export interface WorldScene {
   id: string;
   name: string;
   theme: 'office' | 'castle' | 'outdoors' | 'rock' | 'beach';
+  /** Independent appearance settings; omitted fields are initialized from the old theme. */
+  environment?: 'interior'|'exterior';
+  baseTile?: TileKind;
+  wallMaterial?: WallMaterial;
+  cutColor?: number;
+  /** Generated perimeter segments materialized when walls are edited. */
+  automaticWalls?: string[];
   width: number;
   height: number;
   spawn: Cell;
   entities: WorldEntity[];
   blocked?: Cell[];
   tiles?: Record<string,TileKind|'void'>;
+  /** Automatic terrain cells; tiles retain a concrete fallback for geometry/imports. */
+  terrains?: Record<string,string>;
+  baseTerrain?: string;
   walls?: Wall[];
+  facades?: MapFacade[];
   elevations?: Record<string,number>;
   stairs?: Record<string,Facing>;
 }
@@ -80,11 +93,12 @@ export interface WorldController {
 
 /** Optional authoring hooks. Omit them for normal gameplay. */
 export interface WorldEditor {
+  facadeEdge?:MapFacade['edge'];
   selectedId: string;
   /** Optional tile picker used when choosing a destination in another map. */
   onpick?: (cell: Cell) => void;
   brush?: MapBrush;
-  wallTool?: 'wall'|'door'|'remove';
+  wallTool?: 'wall'|'door'|'railing'|'remove';
   onwall?: (wall:Wall)=>void;
   /** Select a floor cell separately from the empty canvas background. */
   onselectTerrain?: (cell:Cell)=>void;

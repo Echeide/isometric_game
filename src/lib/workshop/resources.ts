@@ -1,5 +1,5 @@
-import {characterImage,actorPoses,visualCatalog,resolveVisualCatalog,isCustomTile,type CharacterPack,type ObjectSprite,type PixelArtPack,type VisualAsset,type TileKind,type BuiltinTileKind,type VisualCatalogOverrides} from '@isometrico/world';
-export type ResourceKind='object'|'npc'|'player'|'tile';
+import {resolveEnvironment,characterImage,actorPoses,visualCatalog,resolveVisualCatalog,isCustomTile,type CharacterPack,type ObjectSprite,type PixelArtPack,type VisualAsset,type TileKind,type BuiltinTileKind,type VisualCatalogOverrides} from '@isometrico/world';
+export type ResourceKind='object'|'npc'|'player'|'tile'|'railing';
 export type ResourceEntry={id:string;kind:ResourceKind;name:string;image:string;custom:boolean;category?:VisualAsset['category'];frame?:[number,number,number,number]};
 export function resourceSearchText(value:string){return value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();}
 /** Family names are searchable too; every visible tile occurs in exactly one section. */
@@ -56,11 +56,13 @@ export function workshopEntries(pack:PixelArtPack,catalog:VisualAsset[]=[],overr
   ...assets.filter(a=>a.kind==='person'&&!a.id.startsWith('custom.')&&!pack.objects[a.id]).map((a):ResourceEntry=>{const item=workshopNpc(pack,a.id);return {id:a.id,kind:'npc',name:catalogAssetName(a,overrides),category:a.category,image:item.image,frame:item.frame,custom:false};}),
   {id:'default',kind:'player',name:'Explorador original',category:'people',image:characterImage(pack.character,'idle','728da5'),custom:false,frame:characterThumbnail(pack.character)},
   ...Object.entries(pack.players??{}).map(([id,p]):ResourceEntry=>({id,kind:'player',name:p.name,category:'people',image:characterImage(p.character,'idle'),frame:characterThumbnail(p.character),custom:true})),
+  ...Object.entries(pack.railingFamilies??{}).map(([id,f]):ResourceEntry=>({id,kind:'railing',name:f.name,image:f.image,frame:[0,0,64,64],custom:true})),
   ...workshopTiles(pack).map(({id,label,image,frame}):ResourceEntry=>({id,kind:'tile',name:label,image,frame,custom:isCustomTile(id)||image.startsWith('asset:')}))
  ];
 }
 export function supportOrigin(item:Pick<ObjectSprite,'width'|'height'|'rotation'>,size:{x:number;y:number}):[number,number]{const cx=(size.x-size.y)*16,cy=(size.x+size.y)*8,a=(item.rotation??0)*Math.PI/180;return [item.width/2-cx*Math.cos(a)-cy*Math.sin(a),item.height+cx*Math.sin(a)-cy*Math.cos(a)];}
-export function resourceUsages(maps:import('@isometrico/world').WorldScene[],entry:ResourceEntry,story?:import('../story/types').StoryDefinition){
- if(entry.kind==='tile')return maps.filter(m=>Object.values(m.tiles??{}).includes(entry.id as TileKind)||({office:'office',castle:'cobble',outdoors:'grass',rock:'cobble',beach:'sand'}[m.theme]===entry.id)||(m.theme==='outdoors'&&entry.id==='path')).map(m=>m.name);
+export function resourceUsages(maps:import('@isometrico/world').WorldScene[],entry:ResourceEntry,story?:import('../story/types').StoryDefinition,families:import('@isometrico/world').TileFamilies={}){
+ if(entry.kind==='railing')return maps.filter(m=>m.walls?.some(w=>w.railingFamily===entry.id)).map(m=>m.name);
+ if(entry.kind==='tile')return maps.filter(m=>Object.values(m.tiles??{}).includes(entry.id as TileKind)||resolveEnvironment(m).tile===entry.id||[m.baseTerrain,...Object.values(m.terrains??{})].some(id=>id&&Object.hasOwn(families[id]?.tiles??{},entry.id))).map(m=>m.name);
  return maps.filter(m=>m.entities.some(e=>e.visualId===entry.id)||story?.entities.some(b=>b.mapId===m.id&&b.states.some(s=>s.visualId===entry.id))).map(m=>m.name);
 }

@@ -7,7 +7,7 @@
  import {resourceCatalog,type CatalogCategory} from './catalog';
  import TileCatalog from './TileCatalog.svelte';
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
- let {entries,kind,kinds=['object','npc','player','tile'],query=$bindable(''),category=$bindable('all'),objectFamilies={},tileFamilies={},selected='',dirty=false,busy=false,activePlayer='default',resolve,tools,contained=false,scroll=$bindable(0),onkindchange,onselect}:{entries:ResourceEntry[];kind:ResourceKind;kinds?:ResourceKind[];query?:string;category?:CatalogCategory;objectFamilies?:ObjectFamilies;tileFamilies?:TileFamilies;selected?:string;dirty?:boolean;busy?:boolean;activePlayer?:string;resolve:(url:string)=>string;tools?:Snippet;contained?:boolean;scroll?:number;onkindchange?:(kind:ResourceKind)=>void;onselect:(id:string)=>void}=$props();
+ let {entries,kind,kinds=['object','npc','player','tile','railing'],query=$bindable(''),category=$bindable('all'),objectFamilies={},tileFamilies={},selected='',dirty=false,busy=false,activePlayer='default',resolve,tools,contained=false,scroll=$bindable(0),onkindchange,onselect}:{entries:ResourceEntry[];kind:ResourceKind;kinds?:ResourceKind[];query?:string;category?:CatalogCategory;objectFamilies?:ObjectFamilies;tileFamilies?:TileFamilies;selected?:string;dirty?:boolean;busy?:boolean;activePlayer?:string;resolve:(url:string)=>string;tools?:Snippet;contained?:boolean;scroll?:number;onkindchange?:(kind:ResourceKind)=>void;onselect:(id:string)=>void}=$props();
  const catalog=$derived(resourceCatalog(entries,{kind,query,category,objectFamilies,tileFamilies}));
 </script>
 <section class="catalog" class:contained aria-label={ui.text("Catálogo de recursos de la aventura")}>

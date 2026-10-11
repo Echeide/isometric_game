@@ -1,27 +1,30 @@
 import {zipSync,unzipSync,strToU8,strFromU8} from 'fflate';
 import type {ObjectSprite,CharacterPack,VisualAsset,PixelArtPack,TileKind} from '@isometrico/world';
+import {validateRailingFamilies,type RailingFamily} from '@isometrico/world';
 import {validateCharacterGraphics,validateObjectGraphics} from '../../../packages/world/src/graphics-validation';
 import {pngSize} from '../storage/adventure-package';
 import {characterImage} from '../../../packages/world/src/character';
 import type {ResourceKind} from './resources';
 export const RESOURCE_MAX=60_000_000;
-export interface SharedResource {format:'isometric-resource';version:1;kind:ResourceKind;name:string;category:VisualAsset['category'];size:{x:number;y:number};object?:ObjectSprite;character?:CharacterPack;tile?:{image:string;originalImage?:string;frame:[number,number,number,number]}}
+export interface SharedResource {format:'isometric-resource';version:1;kind:ResourceKind;name:string;category:VisualAsset['category'];size:{x:number;y:number};railing?:RailingFamily;object?:ObjectSprite;character?:CharacterPack;tile?:{image:string;originalImage?:string;frame:[number,number,number,number]}}
 export interface SharedSummary {id:string;version:1;name:string;kind:ResourceKind;category:string;createdAt:string;image:string;frame?:[number,number,number,number]}
 export function mapResourceImages(value:SharedResource,replace:(url:string)=>string):SharedResource{
  const r:SharedResource=JSON.parse(JSON.stringify(value));
  if(r.object){const o=r.object;o.image=replace(o.image);if(o.originalImage)o.originalImage=replace(o.originalImage);if(o.generationImage)o.generationImage=replace(o.generationImage);for(const c of Object.values(o.animations??{}))c.image=replace(c.image);}
  if(r.character){const c=r.character;c.image=replace(c.image);for(const v of [c.variants,...Object.values(c.animations).map(a=>a.variants)])if(v)for(const k of Object.keys(v))v[k]=replace(v[k]);for(const a of Object.values(c.animations))if(a.image)a.image=replace(a.image);}
+ if(r.railing){r.railing.image=replace(r.railing.image);if(r.railing.originalImage)r.railing.originalImage=replace(r.railing.originalImage);}
  if(r.tile){r.tile.image=replace(r.tile.image);if(r.tile.originalImage)r.tile.originalImage=replace(r.tile.originalImage);}
  return r;
 }
 export function resourceImages(r:SharedResource){const urls=new Set<string>();mapResourceImages(r,url=>{urls.add(url);return url;});return [...urls];}
-export function resourcePreview(r:SharedResource){if(r.character){const c=r.character;return {image:characterImage(c,'idle'),frame:[0,(c.animations.idle.row+1)*c.frameHeight,c.frameWidth,c.frameHeight] as [number,number,number,number]};}return r.tile??{image:r.object!.image,frame:r.object!.frame};}
+export function resourcePreview(r:SharedResource){if(r.railing)return {image:r.railing.image,frame:[0,0,64,64] as [number,number,number,number]};if(r.character){const c=r.character;return {image:characterImage(c,'idle'),frame:[0,(c.animations.idle.row+1)*c.frameHeight,c.frameWidth,c.frameHeight] as [number,number,number,number]};}return r.tile??{image:r.object!.image,frame:r.object!.frame};}
 export function validateResource(value:unknown,files:Record<string,Uint8Array>):SharedResource{
  const r=value as SharedResource,fail=()=>{throw Error('Recurso de biblioteca no válido.');};
- if(!r||r.format!=='isometric-resource'||r.version!==1||!['object','npc','player','tile'].includes(r.kind)||typeof r.name!=='string'||!r.name.trim()||r.name.length>120||!['office','nature','urban','people'].includes(r.category)||!r.size||![r.size.x,r.size.y].every(n=>Number.isInteger(n)&&n>=1&&n<=16))fail();
- if([r.object,r.character,r.tile].filter(Boolean).length!==1||(r.kind==='player'?!r.character:r.kind==='tile'?!r.tile:!r.object))fail();
+ if(!r||r.format!=='isometric-resource'||r.version!==1||!['object','npc','player','tile','railing'].includes(r.kind)||typeof r.name!=='string'||!r.name.trim()||r.name.length>120||!['office','nature','urban','people'].includes(r.category)||!r.size||![r.size.x,r.size.y].every(n=>Number.isInteger(n)&&n>=1&&n<=16))fail();
+ if([r.object,r.character,r.tile,r.railing].filter(Boolean).length!==1||(r.kind==='player'?!r.character:r.kind==='tile'?!r.tile:r.kind==='railing'?!r.railing:!r.object))fail();
  const sizes=new Map<string,ReturnType<typeof pngSize>>();
  for(const url of resourceImages(r)){if(typeof url!=='string'||!/^assets\/[0-9]+\.png$/.test(url)||!Object.hasOwn(files,url))fail();sizes.set(url,pngSize(files[url]));}
+ if(r.railing)validateRailingFamilies({'custom.resource':r.railing},sizes);
  if(r.character)validateCharacterGraphics(r.character,sizes);
  if(r.object)validateObjectGraphics(r.object,sizes);
  if(r.tile)validateObjectGraphics({...r.tile,width:64,height:32,origin:[32,16]},sizes);
@@ -48,7 +51,8 @@ export function instantiateResource(bytes:Uint8Array){
 export function addSharedResource(pack:PixelArtPack,catalog:VisualAsset[],resource:SharedResource,origin:{id:string;version:number}){
  resource=JSON.parse(JSON.stringify(resource));
  const next:PixelArtPack=JSON.parse(JSON.stringify(pack)),id=`custom.${crypto.randomUUID()}`;
- if(resource.kind==='player')next.players={...next.players,[id]:{name:resource.name,character:resource.character!}};
+ if(resource.kind==='railing')next.railingFamilies={...next.railingFamilies,[id]:{...resource.railing!,name:resource.name}};
+ else if(resource.kind==='player')next.players={...next.players,[id]:{name:resource.name,character:resource.character!}};
  else if(resource.kind==='tile'){const key=id as TileKind;next.tiles[key]=resource.tile!.image;next.tileFrames={...next.tileFrames,[key]:resource.tile!.frame};next.tileNames={...next.tileNames,[key]:resource.name};if(resource.tile!.originalImage)next.tileOriginalImages={...next.tileOriginalImages,[key]:resource.tile!.originalImage};}
  else {next.objects[id]=resource.object!;catalog=[...catalog,{id,label:resource.name,kind:resource.kind==='npc'?'person':'object',category:resource.kind==='npc'?'people':resource.category,size:resource.size}];}
  next.resourceOrigins={...next.resourceOrigins,[id]:origin};return {id,pack:next,catalog};

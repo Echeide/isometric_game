@@ -8,7 +8,7 @@ it('paints cells without changing furniture or collisions, and restores defaults
  const painted=paintTiles(office,[{x:3,y:5},{x:4,y:5}],'grass');
  expect(tileAt(painted,{x:3,y:5})).toBe('grass');expect(painted.entities).toEqual(office.entities);expect(office.tiles).toBeUndefined();
  expect(tileAt(paintTiles(painted,[{x:3,y:5}],'erase'),{x:3,y:5})).toBe('office');
- expect(tileAt(outdoors,{x:6,y:2})).toBe('path');
+ expect(tileAt(outdoors,{x:6,y:2})).toBe('grass');
 });
 it('rejects invalid coordinates and tile types in imported maps',()=>{
  for(const tiles of [{'13,0':'grass'},{'1.5,2':'grass'},{'01,2':'grass'},{'1,2':'water'},[]])expect(()=>parseScene({...office,tiles})).toThrow('Suelo no válido|Baldosa no válida'.split('|')[Array.isArray(tiles)?0:1]);
@@ -32,7 +32,7 @@ it('round-trips all environments and preserves custom terrain and walls',async()
  const {environments}=await import('../packages/world/src/environments');
  const {sceneWalls}=await import('../packages/world/src/walls');
  for(const theme of Object.keys(environments) as Array<keyof typeof environments>){
-  const scene=parseScene(JSON.parse(JSON.stringify({...office,theme})));
+  const scene=parseScene(JSON.parse(JSON.stringify({...office,theme,environment:undefined,baseTile:undefined,wallMaterial:undefined})));
   expect(tileAt(scene,{x:2,y:2})).toBe(environments[theme].tile);
   expect(sceneWalls(scene).length>0).toBe(!environments[theme].outdoor);
   if(theme==='castle')expect(sceneWalls(scene).every(w=>w.material==='stone')).toBe(true);

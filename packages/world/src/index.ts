@@ -24,6 +24,16 @@ export { validateSceneTiles } from './terrain';
 
 export type {Wall,MapBrush} from './types';
 
-export type {WallMaterial} from './types';
+export {wallBodyHeight} from './walls';
+export type {RailingStyle,WallMaterial} from './types';
 
+export {terrainAt,terrainTileAt} from './terrain';
+export {terrainSides,terrainMasks,terrainMaskLabel,interiorMembers} from './tile-families';
 export {environments} from './environments';
+export {resolveEnvironment,shadedGround} from './environments';
+export {changeMapEnvironment,changeWallDefault,resizeMapWalls} from './map-appearance';
+export {tileSurfaceColor} from './tile-color';
+export type {MapFacade} from './types';
+export {facadeWidth,facadeCell,facadeWall,facadeForWall,facadeProjection,facadeBaseMode,facadeBaseLevel,facadeDoorOpening,FACADE_MODULE} from './facades';
+
+export * from './railing-families';

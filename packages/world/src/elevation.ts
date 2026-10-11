@@ -21,7 +21,7 @@ export function surfaceHeight(scene:WorldScene,p:Cell){
  return height*LEVEL_HEIGHT;
 }
 export function projectSurface(scene:WorldScene,p:Cell){return {x:(p.x-p.y)*32,y:(p.x+p.y)*16-surfaceHeight(scene,p)};}
-export function wallHeight(scene:WorldScene,w:Wall){const cells=w.axis==='x'?[{x:w.x,y:w.y-1},w]:[{x:w.x-1,y:w.y},w];return Math.max(...cells.map(p=>levelAt(scene,p)))*LEVEL_HEIGHT;}
+export function wallHeight(scene:WorldScene,w:Wall){const cells=(w.axis==='x'?[{x:w.x,y:w.y-1},w]:[{x:w.x-1,y:w.y},w]).filter(p=>p.x>=0&&p.y>=0&&p.x<scene.width&&p.y<scene.height&&scene.tiles?.[`${p.x},${p.y}`]!=='void');return (cells.length?Math.max(...cells.map(p=>levelAt(scene,p))):0)*LEVEL_HEIGHT;}
 /** Hit-test the visible horizontal tops (including individual stair treads). */
 export function topContains(scene:WorldScene,cell:Cell,point:Cell){
  const stair=stairAt(scene,cell),d=stair?stairDirections[stair]:null;

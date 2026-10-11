@@ -1,4 +1,5 @@
 import {environments} from './environments';
+import {validateFacades} from './facades';
 import {levelAt,stairAt} from './elevation';
 import {isTileKind} from './types';
 import {hasTile,wallCells,wallKey,sceneWalls} from './walls';
@@ -69,6 +70,10 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
  if(v.schemaVersion!==1)return fail('Versión de mapa no compatible. Se requiere schemaVersion: 1.');
  if(typeof v.id!=='string'||!v.id.trim()||typeof v.name!=='string'||!v.name.trim())return fail('El mapa necesita id y nombre.');
  if(typeof v.theme!=='string'||!Object.hasOwn(environments,v.theme))return fail('Entorno no válido.');
+ if(v.environment!==undefined&&!['interior','exterior'].includes(v.environment as string))return fail('Tipo de entorno no válido.');
+ if(v.baseTile!==undefined&&!isTileKind(v.baseTile))return fail('Suelo base no válido.');
+ if(v.wallMaterial!==undefined&&!['white','glass','stone','cobble'].includes(v.wallMaterial as string))return fail('Acabado de paredes no válido.');
+ if(v.cutColor!==undefined&&(typeof v.cutColor!=='number'||!Number.isInteger(v.cutColor)||v.cutColor<0||v.cutColor>0xffffff))return fail('Color de corte no válido.');
  const dimension=(n:unknown)=>typeof n==='number'&&Number.isInteger(n)&&n>=1&&n<=64;
  if(!dimension(v.width)||!dimension(v.height))return fail('Las dimensiones deben estar entre 1 y 64 casillas.');
  const point=(p:unknown):p is Cell=>!!p&&typeof p==='object'&&Number.isInteger((p as Cell).x)&&Number.isInteger((p as Cell).y)&&(p as Cell).x>=0&&(p as Cell).y>=0&&(p as Cell).x<(v.width as number)&&(p as Cell).y<(v.height as number);
@@ -81,6 +86,12 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
    const [x,y]=key.split(',').map(Number);
    if(key!==`${x},${y}`||!point({x,y})||(tile!=='void'&&!isTileKind(tile)))return fail(`Baldosa no válida: ${key}.`);
   }
+ }
+ const familyId=(id:unknown)=>typeof id==='string'&&/^family\.[a-zA-Z0-9_-]{1,80}$/.test(id);
+ if(v.baseTerrain!==undefined&&!familyId(v.baseTerrain))return fail('Terreno base no válido.');
+ if(v.terrains!==undefined){
+  if(!v.terrains||typeof v.terrains!=='object'||Array.isArray(v.terrains))return fail('Terrenos no válidos.');
+  for(const [key,id]of Object.entries(v.terrains)){const [x,y]=key.split(',').map(Number);if(key!==`${x},${y}`||!point({x,y})||!familyId(id)||(v.tiles as Record<string,string>|undefined)?.[key]==='void')return fail('Terreno no válido: '+key);}
  }
  for(const field of ['elevations','stairs'] as const){
   const data=v[field];if(data===undefined)continue;
@@ -112,12 +123,19 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
   if(e.seat!==undefined){const seat=e.seat as Record<string,unknown>;if(!seat||typeof seat!=='object'||!point(seat.cell)||!['ne','se','sw','nw'].includes(seat.facing as string))return fail(`Asiento no válido: ${e.id}.`);}
  }
  const scene=JSON.parse(JSON.stringify(v)) as WorldScene;
+ // Normalize old input once; map editing uses independent settings, never preset paths.
+ scene.environment??=environments[scene.theme].outdoor?'exterior':'interior';
+ scene.baseTile??=environments[scene.theme].tile;
+ scene.wallMaterial??=environments[scene.theme].wall;
  for(const e of scene.entities)if(e.visualId===undefined||e.visualId===`builtin.${e.kind}`)e.visualId=`pixel.${e.kind}`;
  if(scene.walls!==undefined){
   if(!Array.isArray(scene.walls)||scene.walls.length>8320)return fail('Paredes no válidas.');
   const seen=new Set<string>();
   for(const w of scene.walls){
-   if(!w||!['x','y'].includes(w.axis)||!['wall','door'].includes(w.kind)||!Number.isInteger(w.x)||!Number.isInteger(w.y)||w.x<0||w.y<0||w.x>scene.width-(w.axis==='x'?1:0)||w.y>scene.height-(w.axis==='y'?1:0))return fail('Pared fuera del mapa.');
+   if(!w||!['x','y'].includes(w.axis)||!['wall','door','railing'].includes(w.kind)||!Number.isInteger(w.x)||!Number.isInteger(w.y)||w.x<0||w.y<0||w.x>scene.width-(w.axis==='x'?1:0)||w.y>scene.height-(w.axis==='y'?1:0))return fail('Pared fuera del mapa.');
+   if(w.railingFamily!==undefined&&(w.kind!=='railing'||typeof w.railingFamily!=='string'||!/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(w.railingFamily)))return fail('Familia de baranda no válida.');
+   if(w.railingVariant!==undefined&&(!w.railingFamily||typeof w.railingVariant!=='string'||!/^[-\w]{1,80}$/.test(w.railingVariant)))return fail('Variante de baranda no válida.');
+   if(w.railingStyle!==undefined&&(w.kind!=='railing'||!['stone','metal'].includes(w.railingStyle)))return fail('Acabado de baranda no válido.');
    if(w.material!==undefined&&!['white','glass','stone','cobble'].includes(w.material))return fail('Acabado de pared no válido.');
    if(seen.has(wallKey(w)))return fail('Pared duplicada.');seen.add(wallKey(w));
    if(!wallCells(w).some(p=>hasTile(scene,p)))return fail('La pared necesita una baldosa de apoyo.');
@@ -125,6 +143,7 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
    if(w.exitId){const e=scene.entities.find(e=>e.id===w.exitId)!;if(!wallCells(w).some(p=>p.x===e.position.x&&p.y===e.position.y))return fail('La salida debe permanecer junto a su puerta.');}
   }
  }
+ if(scene.automaticWalls!==undefined){const valid=new Set((scene.walls??[]).filter(w=>w.kind==='wall').map(wallKey));if(!Array.isArray(scene.automaticWalls)||scene.automaticWalls.length>128||new Set(scene.automaticWalls).size!==scene.automaticWalls.length||scene.automaticWalls.some(key=>typeof key!=='string'||!valid.has(key)))return fail('Paredes automáticas no válidas.');}
  for(const e of scene.entities)if(e.interaction?.action==='adventure.exit')e.solid=false;
  for(const key of Object.keys(scene.stairs??{}))if((scene.elevations?.[key]??0)>=2)return fail('La escalera debe comenzar por debajo del nivel 2.');
  const occupied=new Set((scene.blocked??[]).map(cellKey));
@@ -136,6 +155,7 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
   if(cells.some(p=>levelAt(scene,p)!==levelAt(scene,e.position)||stairAt(scene,p)))return fail(`El objeto ${e.label} necesita suelo plano a una misma altura.`);
   if(sceneWalls(scene).some(w=>wallCells(w).every(p=>cells.some(c=>c.x===p.x&&c.y===p.y))))return fail(`La pared atraviesa ${e.label}.`);
  }
+ validateFacades(scene);
  if(!walkable(scene,scene.spawn))return fail('La entrada está bloqueada.');
  const reachable=options.allowUnreachable?null:createNavigator(scene).reachableFrom(scene.spawn);
  for(const e of scene.entities){

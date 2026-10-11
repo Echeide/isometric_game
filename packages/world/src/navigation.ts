@@ -21,7 +21,7 @@ export function neighbors(p: Cell): Cell[] {
 export function createNavigator(scene:WorldScene){
  const blocked=new Set((scene.blocked??[]).map(cellKey));
  for(const entity of scene.entities)if(entity.solid!==false)for(const cell of footprint(entity))blocked.add(cellKey(cell));
- const walls=new Set(sceneWalls(scene).filter(w=>w.kind==='wall').map(wallKey));
+ const walls=new Set(sceneWalls(scene).filter(w=>w.kind!=='door').map(wallKey));
  const free=(p:Cell)=>Number.isInteger(p.x)&&Number.isInteger(p.y)&&hasTile(scene,p)&&!blocked.has(cellKey(p));
  const cross=(a:Cell,b:Cell)=>canChangeLevel(scene,a,b)&&!walls.has(wallKey(a.x===b.x?{axis:'x',x:a.x,y:Math.max(a.y,b.y)}:{axis:'y',x:Math.max(a.x,b.x),y:a.y}));
  function search(start:Cell,goals?:Set<string>){

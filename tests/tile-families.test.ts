@@ -42,17 +42,17 @@ describe('floor texture families',()=>{
   expect(counts.off).toBe(0);expect(counts.base/10000).toBeGreaterThan(.68);expect(counts.base/10000).toBeLessThan(.72);
   expect(sampleTileVariant([{weight:0}],0,0)).toBeUndefined();expect(sampleTileVariant([],0,0)).toBeUndefined();
  });
- it('does not turn editorial family changes into unpublished gameplay changes',()=>{
-  const original=pack(),changed=structuredClone(original);changed.tileFamilies!['family.grass'].name='Otra';changed.tileFamilies!['family.grass'].tiles.grass=1;
-  expect(graphicsChanged(changed,original)).toBe(false);expect(publicGraphics(changed).tileFamilies).toBeUndefined();expect(original.tileFamilies).toEqual(families);
-  changed.tiles['custom.flowers']=changed.tiles.sand;expect(graphicsChanged(changed,original)).toBe(true);
+ it('ignores family labels but includes playable weights and borders in publication changes',()=>{
+  const original=pack(),changed=structuredClone(original);changed.tileFamilies!['family.grass'].name='Otra';
+  expect(graphicsChanged(changed,original)).toBe(false);expect(publicGraphics(changed).tileFamilies!['family.grass'].name).toBe('family.grass');expect(original.tileFamilies).toEqual(families);
+  changed.tileFamilies!['family.grass'].tiles.grass=1;expect(graphicsChanged(changed,original)).toBe(true);changed.tiles['custom.flowers']=changed.tiles.sand;expect(graphicsChanged(changed,original)).toBe(true);
  });
  it('round-trips families, weights and concrete painted tiles in adventure ZIPs',async()=>{
   const original=pack(),source=mapImages(original,url=>'asset:'+url),before=JSON.stringify(source);
-  const scene=parseScene({schemaVersion:1,id:'empty',name:'Prueba',theme:'outdoors',width:10,height:10,spawn:{x:0,y:0},entities:[],tiles:{'1,1':'custom.flowers'}});
+  const scene=parseScene({schemaVersion:1,id:'empty',name:'Prueba',theme:'outdoors',width:10,height:10,spawn:{x:0,y:0},entities:[],tiles:{'1,1':'custom.flowers'},terrains:{'1,1':'family.grass'},baseTerrain:'family.grass'});
   const adventure=createAdventure([scene]),blob=await exportAdventure(adventure,{pack:async()=>source,blob:async id=>new Blob([readFileSync('static'+id)])});
   const restored=unpackAdventure(new Uint8Array(await blob.arrayBuffer()));
-  expect(restored.pack.tileFamilies).toEqual(families);expect(restored.pack.tileFrames).toEqual(original.tileFrames);expect(restored.adventure.maps[0].tiles).toEqual(scene.tiles);
+  expect(restored.pack.tileFamilies).toEqual(families);expect(restored.pack.tileFrames).toEqual(original.tileFrames);expect(restored.adventure.maps[0].tiles).toEqual(scene.tiles);expect(restored.adventure.maps[0].terrains).toEqual(scene.terrains);expect(restored.adventure.maps[0].baseTerrain).toBe(scene.baseTerrain);
   expect(JSON.stringify(source)).toBe(before);expect(restored.pack.tiles['custom.flowers']).toMatch(/^asset:/);
  });
 });

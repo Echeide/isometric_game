@@ -11,7 +11,7 @@
  let {kind,onincorporate,busy=false,scope='tenant',compact=false,preferences=$bindable(catalogPreferences()),onkindchange}:{scope?:'tenant'|'global';kind:ResourceKind;onincorporate?:(entry:SharedSummary)=>void;busy?:boolean;compact?:boolean;preferences?:Record<ResourceKind,CatalogPreference>;onkindchange?:(kind:ResourceKind)=>void}=$props();
  let entries=$state<SharedSummary[]>([]),working=$state(false),loaded=$state(false),error=$state(''),notice=$state(''),input:HTMLInputElement;
  const filtered=$derived(libraryCatalog(entries,kind,preferences[kind].query,preferences[kind].category));
- const labels={object:'Objeto',npc:'PNJ',player:'Personaje',tile:'Suelo'};
+ const labels={object:'Objeto',npc:'PNJ',player:'Personaje',tile:'Suelo',railing:'Baranda'};
  let menu=$state<HTMLDetailsElement>();
  function closeMenu(){if(menu)menu.open=false;}
  function menuKey(e:KeyboardEvent){if(e.key==='Escape'&&menu?.open){e.preventDefault();e.stopPropagation();closeMenu();menu.querySelector('summary')?.focus();}}

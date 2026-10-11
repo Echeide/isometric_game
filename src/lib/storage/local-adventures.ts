@@ -63,11 +63,13 @@ export const selectAdventure=(id:string)=>localAdventures.select(id);
 
 export function mapImages(pack:PixelArtPack,replace:(url:string)=>string):PixelArtPack{
  const copy:PixelArtPack=JSON.parse(JSON.stringify(pack));
+ for(const facade of Object.values(copy.facades??{}))facade.image=replace(facade.image);
  for(const character of [copy.character,...Object.values(copy.players??{}).map(p=>p.character)]){
  character.image=replace(character.image);
  for(const variants of [character.variants,...Object.values(character.animations).map(a=>a.variants)])if(variants)for(const key of Object.keys(variants))variants[key]=replace(variants[key]);
  for(const animation of Object.values(character.animations))if(animation.image)animation.image=replace(animation.image);
  }
+ for(const family of Object.values(copy.railingFamilies??{})){family.image=replace(family.image);if(family.originalImage)family.originalImage=replace(family.originalImage);}
  for(const object of Object.values(copy.objects)){object.image=replace(object.image);if(object.originalImage)object.originalImage=replace(object.originalImage);if(object.generationImage)object.generationImage=replace(object.generationImage);for(const clip of Object.values(object.animations??{}))clip.image=replace(clip.image);}
  for(const key of Object.keys(copy.tiles) as (keyof typeof copy.tiles)[])copy.tiles[key]=replace(copy.tiles[key]);
  for(const key of Object.keys(copy.tileOriginalImages??{}) as (keyof typeof copy.tiles)[])copy.tileOriginalImages![key]=replace(copy.tileOriginalImages![key]!);

@@ -1,0 +1,15 @@
+<script lang="ts">
+ import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
+ import {Plus,Pencil} from 'lucide-svelte';
+ import SpriteThumbnail from './SpriteThumbnail.svelte';
+ import type {PixelArtPack,RailingStyle} from '@isometrico/world';
+ let {graphics,style,family='',variant='',selected=false,onchoose,onvariant,onedit}:{graphics:PixelArtPack;style:RailingStyle;family?:string;variant?:string;selected?:boolean;onchoose:(style:RailingStyle,family?:string)=>void;onvariant:(id:string)=>void;onedit:(id?:string)=>void}=$props();
+ const custom=$derived(family?graphics.railingFamilies?.[family]:undefined);
+</script>
+<div class="railing-palette" aria-label={ui.text("Tipo de baranda")}>
+ <div class="families">{#each Object.entries(graphics.railingFamilies??{}) as [id,f]}<button aria-pressed={family===id} onclick={()=>onchoose(f.template,id)}><span><SpriteThumbnail image={f.image} frame={[0,0,64,64]} width={58} height={58}/></span><strong>{f.name}</strong></button>{/each}</div>
+ <details open={!Object.keys(graphics.railingFamilies??{}).length}><summary>{ui.text("Acabados básicos")}</summary><div class="defaults"><button aria-pressed={!family&&style==='stone'} onclick={()=>onchoose('stone')}>{ui.text("Balaustres de piedra")}</button><button aria-pressed={!family&&style==='metal'} onclick={()=>onchoose('metal')}>{ui.text("Verja metálica")}</button></div></details>
+ {#if custom}{#if selected}<label>{ui.text("Pieza del tramo")}<select value={variant} onchange={e=>onvariant(e.currentTarget.value)}><option value="">{ui.text("Automática según sus vecinos")}</option>{#each custom.pieces as p}<option value={p.id}>{p.label}</option>{/each}</select></label>{/if}<button class="edit" onclick={()=>onedit(family)}><Pencil size={15}/>{ui.text("Editar familia en el taller")}</button>{:else}<button class="edit" onclick={()=>onedit()}><Plus size={15}/>{ui.text("Crear barandas en el taller")}</button>{/if}
+ <p>{ui.text("Media altura de una pared. Bloquea el paso entre las casillas.")}</p>
+</div>
+<style>.families{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.families button{display:flex;flex-direction:column;align-items:center;min-width:0;padding:8px}.families strong{font-size:11px;font-weight:500;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}.families span{height:60px}button{font:inherit;font-size:12px;border:1px solid #d6dfce;background:#fff;border-radius:8px;padding:8px;cursor:pointer;color:inherit;display:flex;align-items:center;gap:6px}button[aria-pressed=true]{background:#e7efdc;border-color:#9db58b}details{margin:12px 0}summary{font-size:12px;cursor:pointer}.defaults{display:grid;gap:6px;margin-top:10px}.edit{width:100%;justify-content:center;margin-top:10px}p{font-size:11px;line-height:1.55;color:#718267}label{display:flex;flex-direction:column;gap:6px;font-size:12px;margin-top:12px}select{font:inherit;color:inherit;width:100%;min-width:0;background:white;border:1px solid #d6dfce;border-radius:7px;padding:8px}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #74994e;outline-offset:2px}</style>
