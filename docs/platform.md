@@ -36,6 +36,8 @@ Este cambio necesita PostgreSQL antes de desplegar. Crear un rol dedicado de apl
 
 Conservar el volumen `/data`; establecer PLATFORM_STORAGE_DIR=/data/platform, ORIGIN con el dominio HTTPS y BODY_SIZE_LIMIT=200M. Mantener OPENAI_API_KEY/MAGNIFIC_API_KEY exclusivamente en el servidor. La cuenta inicial se crea ejecutando el script de bootstrap una vez desde un entorno con acceso a PostgreSQL; las variables de bootstrap se pueden retirar después.
 
+`railway.json` incluye `watchPatterns: ["**"]` para desplegar cambios de toda la aplicación, incluidos el taller, las traducciones y los paquetes de interfaz. Una configuración limitada al paquete del motor puede omitir cambios de interfaz con «No changes to watched files»; comprobar siempre el estado del despliegue tras subir un commit.
+
 Hacer copia de PostgreSQL y del volumen como una unidad. Los recursos tienen referencias por hash: restaurar solo uno de los dos almacenes puede dejar referencias incompletas. No borrar los directorios antiguos hasta verificar la migración. No volver a una versión antigua de la aplicación mientras escriba esta plataforma.
 
 ## Cuotas y alcance
