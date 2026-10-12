@@ -8,7 +8,6 @@ export interface PixelArtPack {
  version:1;
  character:CharacterPack;
  objects:Record<string,ObjectSprite>;
- facades?:Record<string,{name:string;image:string}>;
  tiles:Record<TileKind,string>;
  tileFrames?:Partial<Record<TileKind,[number,number,number,number]>>;
  tileNames?:Partial<Record<TileKind,string>>;
@@ -35,7 +34,6 @@ async function preparePixelArt(pack:PixelArtPack):Promise<LoadedPixelArt>{
  const variants=characterVariants(pack.character);
  const urls=[...variants.flatMap(variant=>(Object.keys(pack.character.animations) as ActorPose[]).map(pose=>characterImage(pack.character,pose,variant))),...Object.values(pack.objects).flatMap(a=>[a.image,...Object.values(a.animations??{}).map(c=>c.image)]),...Object.values(pack.tiles),...Object.values(pack.railingFamilies??{}).map(f=>f.image),...Object.values(pack.players??{}).flatMap(p=>characterVariants(p.character).flatMap(v=>Object.keys(p.character.animations).map(pose=>characterImage(p.character,pose as ActorPose,v))))];
  const textures=new Map<string,Texture>();
- urls.push(...Object.values(pack.facades??{}).map(f=>f.image));
  await Promise.all([...new Set(urls)].map(async url=>{const texture=await Assets.load<Texture>(url.startsWith('blob:')?{src:url,parser:'loadTextures'}:url);texture.source.scaleMode='nearest';textures.set(url,texture);}));
  const masks=new Map<string,{width:number;height:number;alpha:Uint8Array}>();
  for(const url of new Set([...Object.values(pack.objects).map(item=>item.image),...Object.values(pack.railingFamilies??{}).map(f=>f.image)])){

@@ -25,6 +25,16 @@ function customPack(){
  return pack;
 }
 describe('custom resource catalogue',()=>{
+ it('saves and places a large building, while keeping the map and footprint bounds',()=>{
+  const building={...object,size:{x:30,y:25}};
+  const map=parseScene({...empty,width:40,height:40});
+  const scene=insertEntity(map,'object','building',building.id,{x:2,y:2},[building]);
+  const adventure=parseAdventure({...createAdventure([map]),maps:[scene],catalog:[building]});
+  expect(parseAdventure(JSON.parse(JSON.stringify(adventure))).maps[0].entities[0].size).toEqual(building.size);
+  expect(validateCustomCatalog([{...building,size:{x:64,y:64}}])[0].size).toEqual({x:64,y:64});
+  for(const x of [65,30.5,0])expect(()=>validateCustomCatalog([{...building,size:{x,y:25}}])).toThrow();
+  expect(()=>parseScene({...scene,width:16})).toThrow();
+ });
  it('places custom objects and PNJs with their own footprints and preserves them on save',()=>{
   let scene=insertEntity(empty,'object','o',object.id,{x:2,y:2},[object,npc]);
   scene=insertEntity(scene,'person','n',npc.id,{x:5,y:5},[object,npc]);

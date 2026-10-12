@@ -5,10 +5,12 @@
  import {npcClipRow} from '../../../packages/world/src/pixelart';
  import type {ResourceKind} from '$lib/workshop/resources';
  import {sampleTileVariant} from '../../../packages/world/src/tile-families';
+ import {stageLayout} from '$lib/workshop/stage-layout';
  let {kind,item,character,fit=false,pose='idle',direction=1,playing=true,zoom=2,size={x:1,y:1},tileImage='',tileFrame,tileVariants,tileBorders,reference,floorImage,resolve,onshift}:{kind:ResourceKind;fit?:boolean;item?:ObjectSprite;character?:CharacterPack;pose?:ActorPose;direction?:number;playing?:boolean;zoom?:number;size?:{x:number;y:number};tileImage?:string;tileFrame?:[number,number,number,number];tileBorders?:Record<string,{image:string;frame?:[number,number,number,number]}>;tileVariants?:{image:string;frame?:[number,number,number,number];weight:number}[];reference:CharacterPack;floorImage:string;resolve:(url:string)=>string;onshift?:(dx:number,dy:number)=>void}=$props();
  let canvas:HTMLCanvasElement,surface:HTMLDivElement;let fittedWidth=$state(680),fittedHeight=$state(430);
  const images=new Map<string,HTMLImageElement>();
- let elapsed=0,previousPose='',drag:{id:number;x:number;y:number}|null=null;
+ const layout=$derived(kind==='object'||kind==='npc'?stageLayout(size,item,reference,zoom):{columns:4,rows:4,footprint:size,scale:zoom,x:340,y:kind==='tile'?82:170});
+ let elapsed=0,previousPose='',previousDrawing='',drag:{id:number;x:number;y:number;view:ReturnType<typeof stageLayout>}|null=null;
  function get(url:string){const source=resolve(url);if(!source)return null;let image=images.get(source);if(!image){image=new Image();image.src=source;images.set(source,image);}return image.complete&&image.naturalWidth?image:null;}
  function paint(ctx:CanvasRenderingContext2D,url:string,frame:number[]|undefined,x:number,y:number,w:number,h:number){
   const image=get(url);if(!image||!Number.isFinite(w+h+x+y)||w<=0||h<=0)return;
@@ -18,15 +20,20 @@
  function draw(dt:number){
   const signature=`${kind}:${pose}:${direction}:${character?.animations[pose]?.image??''}:${item?.image??''}`;
   if(previousPose!==signature){elapsed=0;previousPose=signature;}if(playing)elapsed+=dt;
+  const view=drag?.view??layout;
+  // Static props need repainting only when edited or when an image finishes loading.
+  const sources=[floorImage,tileImage,item?.image??'',characterImage(reference,'idle','728da5'),...(tileVariants??[]).map(v=>v.image),...Object.values(tileBorders??{}).map(v=>v.image)].map(url=>url?resolve(url):'');
+  const drawing=JSON.stringify([kind,item,view,reference,sources,tileFrame,tileVariants,tileBorders,[...images].map(([url,image])=>[url,image.complete,image.naturalWidth])]);
+  if((kind==='object'||kind==='tile')&&drawing===previousDrawing)return;previousDrawing=drawing;
   const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,680,430);ctx.imageSmoothingEnabled=false;
-  ctx.save();ctx.translate(340,kind==='tile'?82:170);ctx.scale(zoom,zoom);
+  ctx.save();ctx.translate(view.x,view.y);ctx.scale(view.scale,view.scale);
   const floor=kind==='tile'?tileImage:floorImage;
-  for(let sum=0;sum<=6;sum++)for(let x=0;x<=3;x++){const y=sum-x;if(y<0||y>3)continue;const px=(x-y)*32,py=(x+y)*16,variant=kind==='tile'&&tileVariants?sampleTileVariant(tileVariants,x,y):undefined;const mask=(y===0?1:0)|(x===3?2:0)|(y===3?4:0)|(x===0?8:0),border=tileBorders?.[mask];paint(ctx,border?.image||variant?.image||floor,border?.image?border.frame:variant?variant.frame:kind==='tile'?tileFrame:undefined,px-32,py,64,32);}
+  for(let sum=0;sum<=view.columns+view.rows-2;sum++)for(let x=Math.max(0,sum-view.rows+1);x<=Math.min(view.columns-1,sum);x++){const y=sum-x;const px=(x-y)*32,py=(x+y)*16,variant=kind==='tile'&&tileVariants?sampleTileVariant(tileVariants,x,y):undefined;const mask=(y===0?1:0)|(x===view.columns-1?2:0)|(y===view.rows-1?4:0)|(x===0?8:0),border=tileBorders?.[mask];paint(ctx,border?.image||variant?.image||floor,border?.image?border.frame:variant?variant.frame:kind==='tile'?tileFrame:undefined,px-32,py,64,32);}
   if(kind!=='tile'){
    // Match the same grid origin and 2:1 projection as the world renderer.
    ctx.translate(0,32);
-   const w=size.x*32,h=size.y*32;
-   ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(w,w/2);ctx.lineTo(w-h,(w+h)/2);ctx.lineTo(-h,h/2);ctx.closePath();ctx.fillStyle='#9dbd6340';ctx.fill();ctx.strokeStyle='#678544';ctx.lineWidth=1/zoom;ctx.stroke();
+   const w=view.footprint.x*32,h=view.footprint.y*32;
+   ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(w,w/2);ctx.lineTo(w-h,(w+h)/2);ctx.lineTo(-h,h/2);ctx.closePath();ctx.fillStyle='#9dbd6340';ctx.fill();ctx.strokeStyle='#678544';ctx.lineWidth=1/view.scale;ctx.stroke();
    const refScale=reference.scale??1,refClip=reference.animations.idle;
    paint(ctx,characterImage(reference,'idle','728da5'),[0,(refClip.row+1)*reference.frameHeight,reference.frameWidth,reference.frameHeight],-85-reference.anchor[0]*refScale,20-reference.anchor[1]*refScale,reference.frameWidth*refScale,reference.frameHeight*refScale);
    if(kind==='player'&&character){
@@ -39,14 +46,14 @@
     ctx.save();ctx.rotate((item.rotation??0)*Math.PI/180);
     paint(ctx,clip?.image??item.image,frame,-item.origin[0],-item.origin[1],item.width,item.height);ctx.restore();
    }
-   const cx=(size.x-size.y)*16,cy=(size.x+size.y)*8;
-   ctx.strokeStyle='#d17943';ctx.lineWidth=1/zoom;ctx.beginPath();ctx.moveTo(cx-5,cy);ctx.lineTo(cx+5,cy);ctx.moveTo(cx,cy-5);ctx.lineTo(cx,cy+5);ctx.stroke();
+   const cx=(view.footprint.x-view.footprint.y)*16,cy=(view.footprint.x+view.footprint.y)*8;
+   ctx.strokeStyle='#d17943';ctx.lineWidth=1/view.scale;ctx.beginPath();ctx.moveTo(cx-5,cy);ctx.lineTo(cx+5,cy);ctx.moveTo(cx,cy-5);ctx.lineTo(cx,cy+5);ctx.stroke();
   }
   ctx.restore();
  }
  onMount(()=>{const resize=new ResizeObserver(()=>{if(fit){const w=Math.min(surface.clientWidth,surface.clientHeight*680/430);fittedWidth=w;fittedHeight=w*430/680;}});resize.observe(surface);let raf=0,last=performance.now();const tick=(now:number)=>{draw(Math.min(.05,(now-last)/1000));last=now;raf=requestAnimationFrame(tick);};raf=requestAnimationFrame(tick);return()=>{cancelAnimationFrame(raf);resize.disconnect();};});
- function down(event:PointerEvent){if(kind==='tile'||!onshift||event.button!==0)return;drag={id:event.pointerId,x:event.clientX,y:event.clientY};canvas.setPointerCapture(event.pointerId);}
- function move(event:PointerEvent){if(!drag||drag.id!==event.pointerId)return;const rect=canvas.getBoundingClientRect();onshift?.((event.clientX-drag.x)*680/rect.width/zoom,(event.clientY-drag.y)*430/rect.height/zoom);drag={id:event.pointerId,x:event.clientX,y:event.clientY};}
+ function down(event:PointerEvent){if(kind==='tile'||!onshift||event.button!==0)return;drag={id:event.pointerId,x:event.clientX,y:event.clientY,view:layout};canvas.setPointerCapture(event.pointerId);}
+ function move(event:PointerEvent){if(!drag||drag.id!==event.pointerId)return;const rect=canvas.getBoundingClientRect();onshift?.((event.clientX-drag.x)*680/rect.width/drag.view.scale,(event.clientY-drag.y)*430/rect.height/drag.view.scale);drag={...drag,x:event.clientX,y:event.clientY};}
  function up(event:PointerEvent){if(drag?.id===event.pointerId){drag=null;if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);}}
 </script>
 <div class:fit class="stage">

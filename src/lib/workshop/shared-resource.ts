@@ -20,7 +20,7 @@ export function resourceImages(r:SharedResource){const urls=new Set<string>();ma
 export function resourcePreview(r:SharedResource){if(r.railing)return {image:r.railing.image,frame:[0,0,64,64] as [number,number,number,number]};if(r.character){const c=r.character;return {image:characterImage(c,'idle'),frame:[0,(c.animations.idle.row+1)*c.frameHeight,c.frameWidth,c.frameHeight] as [number,number,number,number]};}return r.tile??{image:r.object!.image,frame:r.object!.frame};}
 export function validateResource(value:unknown,files:Record<string,Uint8Array>):SharedResource{
  const r=value as SharedResource,fail=()=>{throw Error('Recurso de biblioteca no válido.');};
- if(!r||r.format!=='isometric-resource'||r.version!==1||!['object','npc','player','tile','railing'].includes(r.kind)||typeof r.name!=='string'||!r.name.trim()||r.name.length>120||!['office','nature','urban','people'].includes(r.category)||!r.size||![r.size.x,r.size.y].every(n=>Number.isInteger(n)&&n>=1&&n<=16))fail();
+ if(!r||r.format!=='isometric-resource'||r.version!==1||!['object','npc','player','tile','railing'].includes(r.kind)||typeof r.name!=='string'||!r.name.trim()||r.name.length>120||!['office','nature','urban','people'].includes(r.category)||!r.size||![r.size.x,r.size.y].every(n=>Number.isInteger(n)&&n>=1&&n<=64))fail();
  if([r.object,r.character,r.tile,r.railing].filter(Boolean).length!==1||(r.kind==='player'?!r.character:r.kind==='tile'?!r.tile:r.kind==='railing'?!r.railing:!r.object))fail();
  const sizes=new Map<string,ReturnType<typeof pngSize>>();
  for(const url of resourceImages(r)){if(typeof url!=='string'||!/^assets\/[0-9]+\.png$/.test(url)||!Object.hasOwn(files,url))fail();sizes.set(url,pngSize(files[url]));}

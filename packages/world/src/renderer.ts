@@ -11,9 +11,9 @@ import {depthOrder,movingDepthIndex,type DepthItem} from './depth';
 import {sceneWalls,wallCells,hasTile,wallEndExposed} from './walls';
 import type {Wall} from './types';
 import { cameraGestures } from './camera-gestures';
-import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture, Matrix } from 'pixi.js';
-import {facadeForWall,facadeProjection,facadeWidth,facadeBaseLevel,facadeDoorOpening} from './facades';
+import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture } from 'pixi.js';
 import {railingArt,railingGroup} from './railing-art';
+import {decorationPosition,decorationBounds} from './decorations';
 import { loadPixelArt, pixelObject, pixelNpc, type LoadedPixelArt, type PixelArtPack } from './pixelart';
 import { createActor, facingFor } from './actor';
 import {tileAt,defaultTile,terrainAt,terrainTileAt,validateSceneTiles} from './terrain';
@@ -72,8 +72,8 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   }
   const world=new Container(); const floor=new Container(); const objects=new Container(); objects.sortableChildren=true;
   const labelLayer=new Container();labelLayer.eventMode='none';
-  const facadeLayer=new Container(),facadeDoors:Graphics[]=[];
-  world.addChild(floor,facadeLayer,objects,labelLayer);
+  const decorationLayer=new Container();
+  world.addChild(decorationLayer,floor,objects,labelLayer);
   let editor=initialEditor;
   let paused=false;
   const environment=resolveEnvironment(scene,scene.baseTile?art.tileColors?.get(scene.baseTile):undefined);
@@ -125,20 +125,6 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(hasLevels){objects.addChild(tile);depthItems.push({view:tile,bounds:()=>({x,y,width:1,height:1,tie:-1000,floor:true})});}else floor.addChild(tile);
   }
   const allWalls=sceneWalls(scene);
-  for(const facade of scene.facades??[]){
-    const resource=art.pack.facades?.[facade.imageId],texture=resource&&art.textures.get(resource.image);
-    if(!texture)throw Error('Falta una imagen de fachada.');
-    const p=facadeProjection(scene,facade),view=new Container(),sprite=new Sprite(texture);
-    sprite.width=p.width;sprite.height=p.height;sprite.eventMode='none';view.addChild(sprite);
-    view.setFromMatrix(new Matrix(p.a,p.b,p.c,p.d,p.tx,p.ty));facadeLayer.addChild(view);
-    for(const wall of allWalls.filter(w=>w.exitId&&facadeForWall(scene,w)===facade)){
-      const column=facade.edge==='ne'?wall.x:facadeWidth(scene,facade.edge)-1-wall.y,opening=facadeDoorOpening(scene,facade,column);
-      if(!opening)continue;
-      const door=new Graphics().rect(opening.x,opening.y,opening.width,opening.height).fill({color:0xbddd86,alpha:.001});
-      door.eventMode='static';door.cursor='pointer';view.addChild(door);facadeDoors.push(door);
-      door.on('pointertap',()=>{if(gestures.blocked())return;if(editor){if(!editor.brush&&!editor.wallTool&&!editor.onpick)editor.onselect(wall.exitId!);}else goTo(wall.exitId!);});
-    }
-  }
   validateSceneRailings(scene,art.pack.railingFamilies);
   const wallViews:{wall:Wall;view:Container;group:string}[]=[];
   function wallArt(w:Wall){
@@ -196,21 +182,26 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     return g;
   }
   for(const w of allWalls){
-    if(facadeForWall(scene,w))continue;
     const view=wallArt(w);view.zIndex=(w.x+w.y+.5)*100+3;objects.addChild(view);let gx=w.x,gy=w.y;
     if(w.kind==='wall')while(allWalls.some(n=>n.kind==='wall'&&n.axis===w.axis&&n.x===gx-(w.axis==='x'?1:0)&&n.y===gy-(w.axis==='y'?1:0))){gx-=w.axis==='x'?1:0;gy-=w.axis==='y'?1:0;}
     wallViews.push({wall:w,view,group:w.kind==='railing'?railingGroup(scene,w,allWalls):`${w.kind}:${w.axis}:${gx},${gy}`});depthItems.push({view,bounds:()=>({x:w.x,y:w.y,width:w.axis==='x'?1:0,height:w.axis==='y'?1:0,tie:3})});
     view.eventMode='static';view.cursor='pointer';
     view.on('pointertap',()=>{if(gestures.blocked())return;if(editor&&!editor.onpick&&!editor.brush&&!editor.wallTool)editor.onwall?.(w);else if(!editor&&w.exitId)goTo(w.exitId);});
   }
-  const facadeOutline=new Graphics();facadeOutline.eventMode='none';labelLayer.addChild(facadeOutline);
-  function highlightFacade(){
-    facadeOutline.clear();if(!editor?.facadeEdge)return;
-    const edge=editor.facadeEdge,f=scene.facades?.find(f=>f.edge===edge)??{edge,height:1,baseLevel:0,imageId:''},p=facadeProjection(scene,f);
-    facadeOutline.poly([p.tx,p.ty+p.height,p.tx+p.width,p.ty+p.height+p.b*p.width]).stroke({color:0x71a843,width:3});
-  }
   const wallPreview=new Graphics();wallPreview.eventMode='none';objects.addChild(wallPreview);wallPreview.zIndex=1e9;
   const entityViews=new Map<string,Container>();
+  const decorationViews=new Map<string,Container>();
+  for(const d of scene.decorations??[]){
+    const sprite=pixelObject(art,d.visualId);if(!sprite)throw Error('Falta el gráfico del decorado exterior.');
+    const view=new Container();view.addChild(sprite);view.scale.set(d.scale);const p=decorationPosition(d);view.position.set(p.x,p.y);decorationLayer.addChild(view);decorationViews.set(d.id,view);
+    const item=art.pack.objects[d.visualId],mask=art.masks.get(item.image);if(mask)view.hitArea=alphaHitArea(mask,item);
+    view.eventMode=initialEditor?'static':'none';view.cursor='grab';
+    view.on('pointerdown',event=>{if(!editor||editor.onpick||editor.brush||editor.wallTool||event.button!==0||drag||panMode||spaceHeld)return;host.focus({preventScroll:true});editor.onselect(d.id);drag={id:d.id,pointerId:event.pointerId,start:world.toLocal(event.global),original:{...d.position},position:{...d.position}};app.canvas.setPointerCapture(event.pointerId);highlight(d.id);});
+  }
+  const decorationGrid=new Graphics();decorationGrid.eventMode='none';world.addChild(decorationGrid);
+  for(let x=-64;x<=scene.width+64;x++){const a=project({x,y:-64}),b=project({x,y:scene.height+64});decorationGrid.moveTo(a.x,a.y).lineTo(b.x,b.y);}
+  for(let y=-64;y<=scene.height+64;y++){const a=project({x:-64,y}),b=project({x:scene.width+64,y});decorationGrid.moveTo(a.x,a.y).lineTo(b.x,b.y);}
+  decorationGrid.stroke({color:0x47663c,alpha:.16,width:1});decorationGrid.visible=!!editor?.exteriorPlacement;
   const labels=new Map<string,Container>();
   const exitBadges=new Map<string,Graphics>();
   let lastIndicators='';
@@ -258,10 +249,17 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     objects.addChild(view);entityViews.set(e.id,view);
   }
   const selection=new Graphics();selection.eventMode='none';floor.addChild(selection);
+  const decorationSelection=new Graphics();decorationSelection.eventMode='none';world.addChild(decorationSelection);
+  const objectPosition=(id:string,position:Cell)=>{const d=scene.decorations?.find(d=>d.id===id);return d?decorationPosition(d,position):projectSurface(scene,position);};
+  const objectView=(id:string)=>decorationViews.get(id)??entityViews.get(id);
   let drag:{id:string;pointerId:number;start:{x:number;y:number};original:Cell;position:Cell}|null=null;
   function highlight(id:string,position?:Cell){
     selectedEntity=id;refreshLabels();
     selection.clear();
+    decorationSelection.clear();
+    for(const [key,view]of decorationViews){view.eventMode=editor?'static':'none';view.tint=editor&&key===id?0xe3ffc8:0xffffff;}
+    const d=scene.decorations?.find(d=>d.id===id);
+    if(d&&editor){const p=decorationPosition(d,position),w=d.size.x*32,h=d.size.y*32;decorationSelection.poly([p.x,p.y,p.x+w,p.y+w/2,p.x+w-h,p.y+(w+h)/2,p.x-h,p.y+h/2]).stroke({color:0x437e2e,width:2});host.dataset.selected=id;}
     for(const [key,view]of entityViews){view.tint=editor&&key===id?0xe3ffc8:0xffffff;view.cursor=editor?(editor.brush||editor.wallTool?'crosshair':'grab'):scene.entities.find(e=>e.id===key)?.interaction?'pointer':'default';}
     host.dataset.selected=editor?id:'';
     const e=scene.entities.find(e=>e.id===id);if(!e||!editor)return;
@@ -276,13 +274,13 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     const p=world.toLocal({x:(event.clientX-rect.left)*app.screen.width/rect.width,y:(event.clientY-rect.top)*app.screen.height/rect.height});
     const dx=p.x-drag.start.x,dy=p.y-drag.start.y;
     drag.position={x:drag.original.x+Math.round(dx/64+dy/32),y:drag.original.y+Math.round(dy/32-dx/64)};
-    const at=projectSurface(scene,drag.position);entityViews.get(drag.id)?.position.set(at.x,at.y);highlight(drag.id,drag.position);
+    const at=objectPosition(drag.id,drag.position);objectView(drag.id)?.position.set(at.x,at.y);highlight(drag.id,drag.position);
   }
   function endDrag(event:PointerEvent){
     if(!drag||event.pointerId!==drag.pointerId)return;
     const finished=drag;drag=null;
     if(app.canvas.hasPointerCapture(event.pointerId))app.canvas.releasePointerCapture(event.pointerId);
-    const at=projectSurface(scene,finished.original);entityViews.get(finished.id)?.position.set(at.x,at.y);
+    const at=objectPosition(finished.id,finished.original);objectView(finished.id)?.position.set(at.x,at.y);
     highlight(finished.id,finished.original);
     if(event.type!=='pointercancel'&&(finished.position.x!==finished.original.x||finished.position.y!==finished.original.y))editor?.onmove(finished.id,finished.position);
   }
@@ -298,7 +296,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     // Preserve painting empty cells inside the editor's working rectangle.
     if(editor?.brush){const base=terrainCellAt(scene,local,true);if(base.x>=0&&base.y>=0&&base.x<scene.width&&base.y<scene.height)return false;}
     // Tall objects/walls may protrude past the floor silhouette.
-    for(const view of [...entityViews.values(),...wallViews.map(w=>w.view),...facadeDoors]){
+    for(const view of [...entityViews.values(),...(editor?[...decorationViews.values()]:[]),...wallViews.map(w=>w.view)]){
       if(!view.visible)continue;const b=view.getBounds();if(screen.x>=b.x&&screen.y>=b.y&&screen.x<=b.x+b.width&&screen.y<=b.y+b.height)return false;
     }
     if(avatar.visible){const b=avatar.getBounds();if(screen.x>=b.x&&screen.y>=b.y&&screen.x<=b.x+b.width&&screen.y<=b.y+b.height)return false;}
@@ -345,6 +343,19 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       panY+=(to.y-rect.top)*app.screen.height/rect.height-moved.y;fit();
     }
   });
+  let exteriorTap:{id:number;x:number;y:number}|null=null;
+  function exteriorDown(event:PointerEvent){
+    if(!editor?.exteriorPlacement||!editor.onpick||panMode||spaceHeld||event.button!==0)return;
+    event.preventDefault();event.stopImmediatePropagation();exteriorTap={id:event.pointerId,x:event.clientX,y:event.clientY};app.canvas.setPointerCapture(event.pointerId);
+  }
+  function exteriorUp(event:PointerEvent){
+    if(exteriorTap?.id!==event.pointerId)return;const start=exteriorTap;exteriorTap=null;event.preventDefault();event.stopImmediatePropagation();
+    if(app.canvas.hasPointerCapture(event.pointerId))app.canvas.releasePointerCapture(event.pointerId);
+    if(event.type!=='pointerup'||gestures.blocked()||!editor?.exteriorPlacement||Math.hypot(event.clientX-start.x,event.clientY-start.y)>4)return;
+    const r=app.canvas.getBoundingClientRect(),p=world.toLocal({x:(event.clientX-r.left)*app.screen.width/r.width,y:(event.clientY-r.top)*app.screen.height/r.height});
+    editor.onpick?.({x:Math.floor(p.x/64+p.y/32),y:Math.floor(p.y/32-p.x/64)});
+  }
+  app.canvas.addEventListener('pointerdown',exteriorDown,true);app.canvas.addEventListener('pointerup',exteriorUp,true);app.canvas.addEventListener('pointercancel',exteriorUp,true);
   app.canvas.addEventListener('pointerdown',panDown,true);
   window.addEventListener('pointermove',panMove,{capture:true,passive:false});window.addEventListener('pointerup',panEnd,true);window.addEventListener('pointercancel',panEnd,true);
   host.addEventListener('keydown',spaceDown);window.addEventListener('keyup',spaceUp);window.addEventListener('blur',clearPan);host.addEventListener('blur',clearPan);
@@ -436,11 +447,15 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     if(destroyed)return;const w=host.clientWidth,h=host.clientHeight;
     if(app.screen.width!==w||app.screen.height!==h)app.renderer.resize(w,h);
     const terrainTop=Math.max(0,...Object.values(scene.elevations??{}))*LEVEL_HEIGHT;
-    const facadeTop=Math.max(0,...(scene.facades??[]).map(f=>f.height*32+facadeBaseLevel(scene,f)*LEVEL_HEIGHT));
-    const extra=Math.max(0,facadeTop-terrainTop-70);
-    fitScale=Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135+terrainTop-minimumHeight+extra));
-    const scale=(cameraBaseScale??fitScale)*zoomLevel;world.scale.set(Math.max(scene.facades?.length ? .02 : .2,scale));cameraScale=world.scale.x;
-    world.position.set(w/2-(scene.width-scene.height)*16*cameraScale+panX,h/2-(scene.width+scene.height)*8*cameraScale+(35+extra/2)*cameraScale+panY);
+    fitScale=Math.min(w/((scene.width+scene.height)*32+100),(h-55)/((scene.width+scene.height)*16+135+terrainTop-minimumHeight));
+    const scale=(cameraBaseScale??fitScale)*zoomLevel;world.scale.set(Math.max(.2,scale));cameraScale=world.scale.x;
+    world.position.set(w/2-(scene.width-scene.height)*16*cameraScale+panX,h/2-(scene.width+scene.height)*8*cameraScale+35*cameraScale+panY);
+    if(scene.decorations?.length){
+      const bounds=scene.decorations.map(d=>decorationBounds(d,art.pack.objects[d.visualId]));
+      const left=Math.min(-scene.height*32-50,...bounds.map(b=>b.left-32)),right=Math.max(scene.width*32+50,...bounds.map(b=>b.right+32));
+      const top=Math.min(-terrainTop-100,...bounds.map(b=>b.top-32)),bottom=Math.max((scene.width+scene.height)*16+35-minimumHeight,...bounds.map(b=>b.bottom+32));
+      fitScale=Math.min(w/(right-left),(h-55)/(bottom-top));cameraScale=Math.max(.01,(cameraBaseScale??fitScale)*zoomLevel);world.scale.set(cameraScale);world.position.set(w/2-(left+right)/2*cameraScale+panX,h/2-(top+bottom)/2*cameraScale+panY);
+    }
     host.dataset.pan=`${Math.round(panX)},${Math.round(panY)}`;host.dataset.zoom=String(zoomLevel);host.dataset.scale=String(world.scale.x);host.dataset.cameraAction=cameraAction(cameraScale,fitScale);notifyCamera();
   }
   function followPlayer(snap=false,dt=0){
@@ -582,7 +597,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
         view.hitArea=updated.hitArea;view.addChild(...updated.removeChildren());updated.destroy();displayedCompletion.set(e.id,completed.has(e.id));
       }
     },
-    setEditor(value:WorldEditor|undefined){editor=value;highlightFacade();paintHover.clear();levelHint.visible=false;zeroGrid.visible=baseBrush();avatar.visible=!editor;avatar.eventMode=editor?'none':'static';if(editor){badge.visible=false;playerHovered=false;}panCursor();highlight(editor?.selectedId??'');},
+    setEditor(value:WorldEditor|undefined){editor=value;decorationGrid.visible=!!editor?.exteriorPlacement;paintHover.clear();levelHint.visible=false;zeroGrid.visible=baseBrush();avatar.visible=!editor;avatar.eventMode=editor?'none':'static';if(editor){badge.visible=false;playerHovered=false;}panCursor();highlight(editor?.selectedId??'');},
     goTo, zoom(delta:number){zoomLevel=Math.max(.65,Math.min(3,zoomLevel+delta));fit();followPlayer(true);},recenter(){followSuspended=false;cameraBaseScale=undefined;zoomLevel=1;panX=0;panY=0;fit();},
     setFollowCamera(enabled:boolean){
       followEnabled=enabled;
@@ -609,7 +624,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     },
     celebrate(){celebrationUntil=time+1.5;seatedAt=null;conversation=null;route=[];destination=null;px=cell.x;py=cell.y;drawRoute();},
     setConversation(id:string|null){conversation=id;if(id){const e=scene.entities.find(e=>e.id===id);if(e)facing=facingFor(e.position.x-px,e.position.y-py,facing);}},
-    destroy(keepApplication=false){app.canvas.removeEventListener('pointermove',hoverTerrain);app.canvas.removeEventListener('pointerleave',leaveTerrain);app.ticker.remove(updateFrame);app.canvas.removeEventListener('pointermove',edgeHover);app.canvas.removeEventListener('pointerdown',edgeDown,true);gestures.destroy();app.canvas.removeEventListener('pointerdown',panDown,true);window.removeEventListener('pointermove',panMove,true);window.removeEventListener('pointerup',panEnd,true);window.removeEventListener('pointercancel',panEnd,true);host.removeEventListener('keydown',spaceDown);window.removeEventListener('keyup',spaceUp);window.removeEventListener('blur',clearPan);host.removeEventListener('blur',clearPan);app.canvas.removeEventListener('pointerdown',paintDown,true);window.removeEventListener('pointermove',paintMove,true);window.removeEventListener('pointerup',paintEnd,true);window.removeEventListener('pointercancel',paintEnd,true);window.removeEventListener('pointermove',dragMove);window.removeEventListener('pointerup',endDrag);window.removeEventListener('pointercancel',endDrag);destroyed=true;observer.disconnect();host.removeEventListener('keydown',keyboard);if(keepApplication){world.removeFromParent();world.destroy({children:true});}else app.destroy(true,{children:true});}
+    destroy(keepApplication=false){app.canvas.removeEventListener('pointermove',hoverTerrain);app.canvas.removeEventListener('pointerleave',leaveTerrain);app.ticker.remove(updateFrame);app.canvas.removeEventListener('pointermove',edgeHover);app.canvas.removeEventListener('pointerdown',edgeDown,true);gestures.destroy();app.canvas.removeEventListener('pointerdown',exteriorDown,true);app.canvas.removeEventListener('pointerup',exteriorUp,true);app.canvas.removeEventListener('pointercancel',exteriorUp,true);app.canvas.removeEventListener('pointerdown',panDown,true);window.removeEventListener('pointermove',panMove,true);window.removeEventListener('pointerup',panEnd,true);window.removeEventListener('pointercancel',panEnd,true);host.removeEventListener('keydown',spaceDown);window.removeEventListener('keyup',spaceUp);window.removeEventListener('blur',clearPan);host.removeEventListener('blur',clearPan);app.canvas.removeEventListener('pointerdown',paintDown,true);window.removeEventListener('pointermove',paintMove,true);window.removeEventListener('pointerup',paintEnd,true);window.removeEventListener('pointercancel',paintEnd,true);window.removeEventListener('pointermove',dragMove);window.removeEventListener('pointerup',endDrag);window.removeEventListener('pointercancel',endDrag);destroyed=true;observer.disconnect();host.removeEventListener('keydown',keyboard);if(keepApplication){world.removeFromParent();world.destroy({children:true});}else app.destroy(true,{children:true});}
   };
   // Upload shared image sheets only. Queuing each tile/label separately adds a
   // frame-budget delay proportional to map size; geometry is warmed by renderFrame.

@@ -32,7 +32,7 @@ export function validatePack(value:unknown,files:Record<string,Uint8Array>):Pixe
  return p;
 }
 export function validateCatalogGraphics(adventure:Adventure,pack:PixelArtPack){
- for(const map of adventure.maps)for(const f of map.facades??[])if(!Object.hasOwn(pack.facades??{},f.imageId))throw Error('Falta una imagen de fachada.');
+ for(const map of adventure.maps)for(const d of map.decorations??[])if(!Object.hasOwn(pack.objects,d.visualId))throw Error('Falta el gráfico del decorado exterior.');
  for(const map of adventure.maps)validateSceneRailings(map,pack.railingFamilies);
  for(const map of adventure.maps)validateSceneTiles(map,pack.tiles,pack.tileFamilies??{});
  const catalog=resolveVisualCatalog(adventure.catalog,adventure.catalogOverrides);

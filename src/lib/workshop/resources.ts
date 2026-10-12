@@ -64,5 +64,5 @@ export function supportOrigin(item:Pick<ObjectSprite,'width'|'height'|'rotation'
 export function resourceUsages(maps:import('@isometrico/world').WorldScene[],entry:ResourceEntry,story?:import('../story/types').StoryDefinition,families:import('@isometrico/world').TileFamilies={}){
  if(entry.kind==='railing')return maps.filter(m=>m.walls?.some(w=>w.railingFamily===entry.id)).map(m=>m.name);
  if(entry.kind==='tile')return maps.filter(m=>Object.values(m.tiles??{}).includes(entry.id as TileKind)||resolveEnvironment(m).tile===entry.id||[m.baseTerrain,...Object.values(m.terrains??{})].some(id=>id&&Object.hasOwn(families[id]?.tiles??{},entry.id))).map(m=>m.name);
- return maps.filter(m=>m.entities.some(e=>e.visualId===entry.id)||story?.entities.some(b=>b.mapId===m.id&&b.states.some(s=>s.visualId===entry.id))).map(m=>m.name);
+ return maps.filter(m=>m.decorations?.some(d=>d.visualId===entry.id)||m.entities.some(e=>e.visualId===entry.id)||story?.entities.some(b=>b.mapId===m.id&&b.states.some(s=>s.visualId===entry.id))).map(m=>m.name);
 }

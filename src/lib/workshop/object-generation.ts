@@ -10,7 +10,7 @@ export function validateObjectImageRequest(value:unknown):ObjectImageRequest {
  if(!r || typeof r.description!=='string'||!r.description.trim()||r.description.length>2000 || typeof r.style!=='string'||!r.style.trim()||r.style.length>1000)throw new Error('Escribe una descripción y un estilo válidos.');
  if(!Object.hasOwn(objectDirections,r.direction)||!['low','medium','high'].includes(r.quality))throw new Error('Orientación o calidad no válida.');
  if(![r.width,r.height].every(n=>Number.isInteger(n)&&n>=8&&n<=512))throw new Error('El dibujo debe medir entre 8 y 512 píxeles por lado.');
- if(!r.footprint || ![r.footprint.x,r.footprint.y].every(n=>Number.isInteger(n)&&n>=1&&n<=16))throw new Error('La huella debe ocupar entre 1 y 16 casillas por lado.');
+ if(!r.footprint || ![r.footprint.x,r.footprint.y].every(n=>Number.isInteger(n)&&n>=1&&n<=64))throw new Error('La huella debe ocupar entre 1 y 64 casillas por lado.');
  if(r.reference!==undefined)pngData(r.reference);
  if(r.palette!==undefined)validateAdventurePalette(r.palette);
  return r;

@@ -1,4 +1,5 @@
 export { default as World } from './World.svelte';
+export type {MapDecoration} from './types';
 export type { Cell, WorldScene, WorldEntity, WorldInteraction, WorldAdapter, WorldController, EntityKind, CameraAction, CameraState } from './types';
 export { findPath, walkable, interactionCells, project } from './navigation';
 
@@ -33,7 +34,5 @@ export {environments} from './environments';
 export {resolveEnvironment,shadedGround} from './environments';
 export {changeMapEnvironment,changeWallDefault,resizeMapWalls} from './map-appearance';
 export {tileSurfaceColor} from './tile-color';
-export type {MapFacade} from './types';
-export {facadeWidth,facadeCell,facadeWall,facadeForWall,facadeProjection,facadeBaseMode,facadeBaseLevel,facadeDoorOpening,FACADE_MODULE} from './facades';
 
 export * from './railing-families';

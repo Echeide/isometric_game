@@ -22,6 +22,7 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
  if(!Array.isArray(a.maps)||!a.maps.length||a.maps.length>64||!Array.isArray(a.exits)||a.exits.length>1024)throw new Error('La aventura admite entre 1 y 64 mapas y hasta 1024 salidas.');
  const maps=a.maps.map(m=>parseScene(m,options)), byId=new Map(maps.map(m=>[m.id,m]));
  const catalog=validateCustomCatalog(a.catalog);
+ for(const map of a.maps??[])for(const d of map.decorations??[])if(isCustomVisual(d.visualId)&&!catalog.some(r=>r.id===d.visualId&&r.kind!=='person'))throw new Error(`Falta ${d.visualId} en el catálogo de la aventura.`);
  validateCatalogOverrides(a.catalogOverrides);
  if(a.palette!==undefined)validateAdventurePalette(a.palette);
  validateChats(a.chats);

@@ -17,6 +17,13 @@ const folders:string[]=[];
 afterEach(async()=>{await Promise.all(folders.splice(0).map(p=>rm(p,{recursive:true,force:true})));});
 async function storage(){const path=await mkdtemp(join(tmpdir(),'sprite-library-test-'));folders.push(path);return new SharedLibrary(path);}
 describe('shared sprite library',()=>{
+ it('round-trips building footprints larger than 16 cells through the library',async()=>{
+  const resource={...object(),size:{x:30,y:25}};
+  const bytes=await packResource(resource,read),loaded=instantiateResource(bytes);
+  expect(loaded.resource.size).toEqual(resource.size);
+  expect(addSharedResource(graphics,[],loaded.resource,{id:'building',version:1}).catalog[0].size).toEqual(resource.size);
+  await expect(packResource({...resource,size:{x:65,y:25}},read)).rejects.toThrow();
+ });
  it('preserves a standalone object, its original and its geometry without unrelated assets',async()=>{
   const r=object(),bytes=await packResource(r,read),unpacked=unpackResource(bytes);expect(await packResource(r,read)).toEqual(bytes);expect(resourceImages(unpacked.resource)).toHaveLength(2);expect(Object.keys(unpacked.files)).toHaveLength(3);expect(unpacked.resource.object).toMatchObject({width:r.object!.width,origin:r.object!.origin});
   const a=instantiateResource(bytes),b=instantiateResource(bytes);expect(a.resource.object!.image).not.toBe(b.resource.object!.image);expect([...Object.values(a.blobs)].map(v=>v.size)).toEqual([...Object.values(b.blobs)].map(v=>v.size));

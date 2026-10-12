@@ -12,11 +12,6 @@ export function validateGraphics(pack:PixelArtPack,sizes:Map<string,ImageSize>){
 
  if(!pack||pack.version!==1||!pack.objects||!pack.tiles)fail('Catálogo gráfico no válido.');
  validateCharacterGraphics(pack.character,sizes);
- if(pack.facades!==undefined&&(!pack.facades||typeof pack.facades!=='object'||Array.isArray(pack.facades)||Object.keys(pack.facades).length>128))fail('La biblioteca admite hasta 128 fachadas.');
- for(const [id,f]of Object.entries(pack.facades??{})){
-  if(!/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id)||!f||typeof f.name!=='string'||!f.name.trim()||f.name.length>120)fail('Recurso de fachada no válido.');
-  image(f.image);
- }
  if(Object.keys(pack.players??{}).length>24)fail('La biblioteca admite hasta 24 jugadores propios.');
  for(const [id,p]of Object.entries(pack.players??{})){if(!/^custom\.[a-zA-Z0-9_-]{1,80}$/.test(id)||!p||typeof p.name!=='string'||!p.name.trim()||p.name.length>120)fail('Jugador no válido.');validateCharacterGraphics(p.character,sizes);}
  if(pack.activePlayer&&!Object.hasOwn(pack.players??{},pack.activePlayer))fail('El jugador activo no existe.');

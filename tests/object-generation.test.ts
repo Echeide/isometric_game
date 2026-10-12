@@ -13,6 +13,10 @@ import {validateGraphics} from '../packages/world/src/graphics-validation';
 const image=pngUrl(new Uint8Array(readFileSync('static'+graphics.objects['pixel.key'].image)));
 const request=():ObjectImageRequest=>({description:'Cofre de madera',style:'Pixel art terroso',direction:'se',width:96,height:64,footprint:{x:2,y:1},quality:'low'});
 describe('object image generation',()=>{
+ it('accepts large building footprints within the map limit',()=>{
+  expect(validateObjectImageRequest({...request(),footprint:{x:30,y:25}}).footprint).toEqual({x:30,y:25});
+  expect(()=>validateObjectImageRequest({...request(),footprint:{x:65,y:25}})).toThrow('huella');
+ });
  it('plans one prop with target dimensions, footprint and optional style reference',()=>{
   const plan=objectImagePlan(request());expect(plan.size).toBe('1536x1024');expect(plan.prompt).toContain('96 by 64');expect(plan.prompt).toContain('2 by 1');expect(plan.prompt).toContain('ONE isolated game prop');expect(plan.prompt).toContain('#FF00FF');
   expect(objectImagePlan({...request(),height:160}).size).toBe('1024x1536');

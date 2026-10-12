@@ -6,10 +6,11 @@ export const isCustomTile=(id:unknown):id is CustomTileKind=>typeof id==='string
 export const isTileKind=(id:unknown):id is TileKind=>typeof id==='string'&&((tileKinds as readonly string[]).includes(id)||isCustomTile(id));
 export type WallMaterial = 'white'|'glass'|'stone'|'cobble';
 export type RailingStyle = 'stone'|'metal';
-export interface MapFacade {edge:'ne'|'nw';imageId:string;height:number;baseLevel:number;baseMode?:'terrain'|'fixed'}
 export type Wall = {x:number;y:number;axis:'x'|'y';kind:'wall'|'door'|'railing';exitId?:string;material?:WallMaterial;railingStyle?:RailingStyle;railingFamily?:string;railingVariant?:string};
 export type MapBrush = TileKind | 'void' | 'erase' | `height:${number}` | `stairs:${Facing}` | 'stairs:erase' | `terrain:${string}`;
 export type Cell = { x: number; y: number };
+/** Background artwork anchored in world space, independent of walkable terrain. */
+export interface MapDecoration {id:string;label:string;visualId:string;position:Cell;size:Cell;baseLevel:number;offset:Cell;scale:number}
 export type Facing = 'ne' | 'se' | 'sw' | 'nw';
 export type ActorPose = 'idle' | 'walk' | 'sit' | 'work' | 'talk' | 'celebrate';
 export type CameraAction = 'fit' | 'player';
@@ -49,13 +50,13 @@ export interface WorldScene {
   height: number;
   spawn: Cell;
   entities: WorldEntity[];
+  decorations?: MapDecoration[];
   blocked?: Cell[];
   tiles?: Record<string,TileKind|'void'>;
   /** Automatic terrain cells; tiles retain a concrete fallback for geometry/imports. */
   terrains?: Record<string,string>;
   baseTerrain?: string;
   walls?: Wall[];
-  facades?: MapFacade[];
   elevations?: Record<string,number>;
   stairs?: Record<string,Facing>;
 }
@@ -93,10 +94,10 @@ export interface WorldController {
 
 /** Optional authoring hooks. Omit them for normal gameplay. */
 export interface WorldEditor {
-  facadeEdge?:MapFacade['edge'];
   selectedId: string;
   /** Optional tile picker used when choosing a destination in another map. */
   onpick?: (cell: Cell) => void;
+  exteriorPlacement?: boolean;
   brush?: MapBrush;
   wallTool?: 'wall'|'door'|'railing'|'remove';
   onwall?: (wall:Wall)=>void;

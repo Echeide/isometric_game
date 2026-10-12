@@ -63,7 +63,6 @@ export const selectAdventure=(id:string)=>localAdventures.select(id);
 
 export function mapImages(pack:PixelArtPack,replace:(url:string)=>string):PixelArtPack{
  const copy:PixelArtPack=JSON.parse(JSON.stringify(pack));
- for(const facade of Object.values(copy.facades??{}))facade.image=replace(facade.image);
  for(const character of [copy.character,...Object.values(copy.players??{}).map(p=>p.character)]){
  character.image=replace(character.image);
  for(const variants of [character.variants,...Object.values(character.animations).map(a=>a.variants)])if(variants)for(const key of Object.keys(variants))variants[key]=replace(variants[key]);
