@@ -2,14 +2,29 @@ import {environments} from './environments';
 import type {Cell,TileKind,WorldScene} from './types';
 import type {PixelArtPack} from './pixelart';
 import {terrainSides,interiorMembers,sampleTileVariant,type TileFamilies} from './tile-families';
+import {levelAt,stairAt,stairDirections} from './elevation';
+/** Heights at both ends of a shared edge, in increasing grid-axis order.
+ * Stair entrances meet the lower/upper landing; parallel stairs share their incline.
+ */
+function edgeLevels(scene:WorldScene,cell:Cell,toward:Cell):[number,number]{
+ const level=levelAt(scene,cell),stair=stairAt(scene,cell);if(!stair)return [level,level];
+ const d=stairDirections[stair],along=(toward.x-cell.x)*d.x+(toward.y-cell.y)*d.y;
+ if(along)return [level+(along>0?1:0),level+(along>0?1:0)];
+ return d.x+d.y>0?[level,level+1]:[level+1,level];
+}
 export function terrainAt(scene:WorldScene,cell:Cell){const key=`${cell.x},${cell.y}`;return tileAt(scene,cell)==='void'?undefined:scene.terrains?.[key]??(scene.tiles?.[key]===undefined?scene.baseTerrain:undefined);}
 /** Only an explicitly automatic cell changes graphic. Manually painted cells remain fixed. */
 export function terrainTileAt(scene:WorldScene,pack:PixelArtPack,cell:Cell):TileKind|'void'{
  const fallback=tileAt(scene,cell),id=terrainAt(scene,cell),family=id?pack.tileFamilies?.[id]:undefined;if(!family||fallback==='void')return fallback;
  let mask=0;
  for(const side of terrainSides){const neighbor={x:cell.x+side.dx,y:cell.y+side.dy},outside=neighbor.x<0||neighbor.y<0||neighbor.x>=scene.width||neighbor.y>=scene.height;
-  const same=!outside&&(terrainAt(scene,neighbor)===id||Object.hasOwn(family.tiles,tileAt(scene,neighbor)));
-  if(!same&&(outside||!family.borderAgainst||tileAt(scene,neighbor)===family.borderAgainst))mask|=side.bit;
+  const neighborTile=outside?'void':tileAt(scene,neighbor);
+  const edge=edgeLevels(scene,cell,neighbor),other=edgeLevels(scene,neighbor,cell);
+  const disconnected=outside||neighborTile==='void'||edge.some((height,i)=>height!==other[i]);
+  const same=!disconnected&&(terrainAt(scene,neighbor)===id||Object.hasOwn(family.tiles,neighborTile));
+  // A physical boundary always ends the surface. borderAgainst only filters
+  // material transitions on a continuous surface, not cliffs or holes.
+  if(disconnected||!same&&(!family.borderAgainst||neighborTile===family.borderAgainst))mask|=side.bit;
  }
  return family.borders?.[String(mask)]??sampleTileVariant(interiorMembers(family),cell.x,cell.y)?.id??fallback;
 }

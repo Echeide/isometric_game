@@ -44,3 +44,12 @@ export async function replacedColorsPNG(frame:Frame,replacements:ColorReplacemen
  }
  signal?.throwIfAborted();return new Blob([new Uint8Array(encodePalettePNG(result))],{type:'image/png'});
 }
+export async function harmonizedColorsPNG(frame:Frame,harmonize:(r:number,g:number,b:number)=>number[],signal?:AbortSignal){
+ const result={...frame,data:new Uint8ClampedArray(frame.data)};
+ for(let offset=0;offset<frame.data.length;offset+=65536*4){
+  signal?.throwIfAborted();
+  for(let i=offset;i<Math.min(offset+65536*4,frame.data.length);i+=4)if(frame.data[i+3])result.data.set(harmonize(frame.data[i],frame.data[i+1],frame.data[i+2]),i);
+  await new Promise<void>(resolve=>setTimeout(resolve,0));
+ }
+ signal?.throwIfAborted();return new Blob([new Uint8Array(encodePalettePNG(result))],{type:'image/png'});
+}

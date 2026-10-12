@@ -7,6 +7,9 @@ import {graphics} from '../src/lib/demo/pixelart';
 import {terrainTemplate} from '../src/lib/workshop/terrain-template';
 import {publicGraphics} from '../src/lib/server/platform/publication-state';
 import {resourceUsages} from '../src/lib/workshop/resources';
+import {terrainSides} from '../packages/world/src/tile-families';
+import {stairDirections} from '../packages/world/src/elevation';
+import type {Facing,TileKind,WorldScene} from '../packages/world/src/types';
 const families:TileFamilies={'family.lawn':{name:'Césped',tiles:{grass:80,'custom.flower':20,'custom.ne':0,'custom.corner':0,'custom.island':0},borders:{1:'custom.ne',3:'custom.corner',15:'custom.island'}}};
 const pack={...structuredClone(graphics),tiles:{...graphics.tiles,'custom.flower':graphics.tiles.grass,'custom.ne':graphics.tiles.grass,'custom.corner':graphics.tiles.grass,'custom.island':graphics.tiles.grass},tileFamilies:families};
 const scene=()=>parseScene({schemaVersion:1,id:'yard',name:'Jardín',theme:'outdoors',baseTile:'path',width:6,height:6,spawn:{x:0,y:0},entities:[]});
@@ -30,6 +33,40 @@ it('uses stable weighted variations, falls back for missing pieces and applies a
 it('can restrict borders to a particular adjacent floor',()=>{
  const restricted={...pack,tileFamilies:{'family.lawn':{...families['family.lawn'],borderAgainst:'sand' as const}}};const a=paintTiles(scene(),cells,'terrain:family.lawn',{families});expect(terrainTileAt(a,restricted,{x:2,y:1})).not.toBe('custom.ne');
  expect(terrainTileAt(paintTiles(a,[{x:2,y:0}],'sand'),restricted,{x:2,y:1})).toBe('custom.ne');
+});
+const heightFamily={name:'Alturas',tiles:Object.fromEntries([['grass',100],...Array.from({length:15},(_,i)=>[`custom.edge${i+1}`,0])]),borders:Object.fromEntries(Array.from({length:15},(_,i)=>[String(i+1),`custom.edge${i+1}` as TileKind]))};
+const heightPack={...pack,tileFamilies:{'family.height':heightFamily}};
+const heightScene=():WorldScene=>({...scene(),baseTile:'grass',baseTerrain:'family.height'});
+it('ends each platform at changes of height, including manual family neighbors and underground levels',()=>{
+ const center={x:2,y:2};
+ for(const side of terrainSides)for(const level of [-2,-1,1,2]){
+  const neighbor={x:center.x+side.dx,y:center.y+side.dy},key=`${neighbor.x},${neighbor.y}`;
+  const a={...heightScene(),tiles:{[key]:'grass' as const},elevations:{[key]:level}};
+  expect(terrainTileAt(a,heightPack,center)).toBe(`custom.edge${side.bit}`);
+  expect(terrainTileAt(a,heightPack,neighbor)).toBe('grass'); // manual pieces stay fixed
+  expect(terrainTileAt({...a,elevations:{}},heightPack,center)).toBe('grass');
+ }
+ expect(terrainTileAt({...heightScene(),elevations:{'2,2':1}},heightPack,center)).toBe('custom.edge15');
+});
+it('keeps physical edges around holes and cliffs even with a restricted adjacent material',()=>{
+ const restricted={...heightPack,tileFamilies:{'family.height':{...heightFamily,borderAgainst:'sand' as const}}},center={x:2,y:2};
+ expect(terrainTileAt({...heightScene(),elevations:{'2,1':1}},restricted,center)).toBe('custom.edge1');
+ expect(terrainTileAt({...heightScene(),tiles:{'2,1':'void'}},restricted,center)).toBe('custom.edge1');
+ expect(terrainTileAt({...heightScene(),tiles:{'2,1':'path'}},restricted,center)).toBe('grass');
+ expect(terrainTileAt({...heightScene(),tiles:{'2,1':'sand'}},restricted,center)).toBe('custom.edge1');
+});
+it.each(Object.keys(stairDirections) as Facing[])('keeps both %s stair landings open and parallel stairs joined',facing=>{
+ const c={x:2,y:2},d=stairDirections[facing],upper={x:c.x+d.x,y:c.y+d.y},lower={x:c.x-d.x,y:c.y-d.y};
+ const upperKey=`${upper.x},${upper.y}`,a:WorldScene={...heightScene(),stairs:{'2,2':facing},elevations:{[upperKey]:1}};
+ expect(terrainTileAt(a,heightPack,lower)).toBe('grass');
+ const upperMask=terrainSides.filter(side=>side.dx!==-d.x||side.dy!==-d.y).reduce((mask,side)=>mask|side.bit,0);
+ expect(terrainTileAt(a,heightPack,upper)).toBe(`custom.edge${upperMask}`);
+ const sideMask=d.x?5:10;
+ expect(terrainTileAt(a,heightPack,c)).toBe(`custom.edge${sideMask}`);
+ const side=terrainSides.find(side=>d.x?side.dx===0:side.dy===0)!,key=`${c.x+side.dx},${c.y+side.dy}`;
+ expect(terrainTileAt({...a,stairs:{...a.stairs,[key]:facing}},heightPack,c)).toBe(`custom.edge${sideMask^side.bit}`);
+ const opposite=Object.entries(stairDirections).find(([,v])=>v.x===-d.x&&v.y===-d.y)![0] as Facing;
+ expect(terrainTileAt({...a,stairs:{...a.stairs,[key]:opposite}},heightPack,c)).toBe(`custom.edge${sideMask}`);
 });
 it('validates terrain IDs, missing families, border references/weights and cleans detached roles',()=>{
  expect(()=>validateTileFamilies(families,pack.tiles)).not.toThrow();

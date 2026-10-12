@@ -1,6 +1,7 @@
 import {encodePNG} from '../../../packages/character-generator/src/browser';
 import {pngData,pngUrl} from '../../../packages/character-generator/src/generation';
 import {processObjectFrame} from './object-generation';
+import {processTileFrame} from './tile-generation';
 export async function objectReference(blob:Blob,frame?:number[]):Promise<string> {
  const bitmap=await createImageBitmap(blob);
  try {
@@ -13,13 +14,19 @@ export async function objectReference(blob:Blob,frame?:number[]):Promise<string>
  }finally{bitmap.close();}
 }
 export async function finishObjectImage(image:string,width:number,height:number,options:Parameters<typeof processObjectFrame>[3]) {
+ return finishImage(image,frame=>processObjectFrame(frame,width,height,options));
+}
+export async function finishTileImage(image:string,options:Parameters<typeof processTileFrame>[1]) {
+ return finishImage(image,frame=>processTileFrame(frame,options));
+}
+async function finishImage(image:string,process:(frame:import('../../../packages/character-generator/src/types').Frame)=>import('../../../packages/character-generator/src/types').Frame) {
  const original=new Blob([new Uint8Array(pngData(image,20_000_000))],{type:'image/png'}),bitmap=await createImageBitmap(original);
  try {
   const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
   const context=canvas.getContext('2d',{willReadFrequently:true})!;context.drawImage(bitmap,0,0);
-  const frame=processObjectFrame({width:bitmap.width,height:bitmap.height,data:context.getImageData(0,0,bitmap.width,bitmap.height).data},width,height,options);
+  const frame=process({width:bitmap.width,height:bitmap.height,data:context.getImageData(0,0,bitmap.width,bitmap.height).data});
   const bytes=await encodePNG(frame);
-  return {blob:new Blob([new Uint8Array(bytes)],{type:'image/png'}),original,width,height,image:pngUrl(bytes)};
+  return {blob:new Blob([new Uint8Array(bytes)],{type:'image/png'}),original,width:frame.width,height:frame.height,image:pngUrl(bytes)};
  }finally{bitmap.close();}
 }
 export type PreparedObjectImage=Awaited<ReturnType<typeof finishObjectImage>>;

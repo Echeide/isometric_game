@@ -10,15 +10,25 @@
  import {eyedropperPixel} from './eyedropper';
  import {resourceImages,type PaletteResource} from './palette';
  import {collectSpriteColors,validateColorReplacements,colorVariantResource,type ColorReplacement,type SpriteColor} from './color-variant';
- import {decodePaletteImage,replacedColorsPNG} from './palette-browser';
+ import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
+ import type {ResourceEntry} from './resources';
+ import {referenceTones,createColorHarmonizer,type ToneGroup} from './color-harmony';
+ import {decodePaletteImage,replacedColorsPNG,harmonizedColorsPNG} from './palette-browser';
  import {cycleActions,cycleDirections} from './image-edit';
  import {actionLabels} from './resources';
 
- let {resource,name,palette,size,tileFrame,reference,floorImage,resolve,load,onaccept,onclose,initialPose='idle',initialDirection=1}:{
-  resource:PaletteResource;name:string;palette:AdventurePalette;size:{x:number;y:number};tileFrame:[number,number,number,number];reference:CharacterPack;floorImage:string;
+ let {references=[],initialMode='manual',resource,name,palette,size,tileFrame,reference,floorImage,resolve,load,onaccept,onclose,initialPose='idle',initialDirection=1}:{
+  references?:ResourceEntry[];initialMode?:'manual'|'harmony';resource:PaletteResource;name:string;palette:AdventurePalette;size:{x:number;y:number};tileFrame:[number,number,number,number];reference:CharacterPack;floorImage:string;
   resolve:(url:string)=>string;load:(url:string)=>Promise<Blob>;onaccept:(name:string,blobs:Record<string,Blob>)=>Promise<void>;onclose:()=>void;initialPose?:ActorPose;initialDirection?:number;
  }=$props();
  let dialog:HTMLDialogElement;
+ let mode=$state<'manual'|'harmony'>(untrack(()=>initialMode)),referenceId=$state(''),referenceLoading=$state(false);
+ let tones=$state<Record<ToneGroup,SpriteColor[]>>({dark:[],mid:[],light:[]}),selectedTones=$state<string[]>([]),strength=$state(65),scope=$state<'shadows'|'all'>('shadows');
+ let referenceRevision=0;
+ const toneLabels={dark:'Oscuros',mid:'Medios',light:'Claros'};
+ const referenceEntry=$derived(references.find(entry=>entry.id===referenceId));
+ const harmonyReady=$derived(!referenceLoading&&selectedTones.length>0&&strength>0);
+
  let draftName=$state(untrack(()=>`${name.slice(0,105)} · variante`)),colors=$state.raw<SpriteColor[]>([]),replacements=$state<ColorReplacement[]>([]);
  let selectedColor=$state(''),search=$state(''),preparing=$state(true),updating=$state(false),applying=$state(false),error=$state(''),completed=$state(0);
  let preview=$state.raw<PaletteResource>(),pose=$state<ActorPose>(untrack(()=>initialPose)),direction=$state(untrack(()=>initialDirection)),playing=$state(true);
@@ -32,10 +42,10 @@
  const visibleColors=$derived(matching.slice(0,256));
  const sourceColorSet=$derived(new Set(colors.map(entry=>entry.color)));
  const changes=$derived(replacements.filter(r=>r.from!==r.to));
- const canApply=$derived(!preparing&&!updating&&!applying&&!!preview&&changes.length>0&&!!draftName.trim()&&draftName.length<=120);
+ const canApply=$derived(!preparing&&!updating&&!applying&&!!preview&&(mode==='harmony'?harmonyReady:changes.length>0)&&!!draftName.trim()&&draftName.length<=120);
  function clean(){urls.forEach(url=>URL.revokeObjectURL(url));urls.clear();}
  function close(){if(!applying)onclose();}
- onDestroy(()=>{alive=false;revision++;lifetime.abort();previewAbort?.abort();clean();frames.clear();});
+ onDestroy(()=>{alive=false;revision++;referenceRevision++;lifetime.abort();previewAbort?.abort();clean();frames.clear();});
  onMount(()=>{dialog.showModal();playing=!matchMedia('(prefers-reduced-motion: reduce)').matches;void prepare();});
  async function prepare(){
   try{
@@ -48,6 +58,20 @@
    if(actions.length&&!actions.includes(pose))pose=actions[0];
   }catch(e){if(alive)error=(e as Error).message;}finally{if(alive)preparing=false;}
  }
+ async function chooseReference(){
+  const current=++referenceRevision,entry=referenceEntry;referenceLoading=true;tones={dark:[],mid:[],light:[]};selectedTones=[];
+  await updatePreview();
+  try{
+   if(!entry)return;
+   const frame=await decodePaletteImage(await load(entry.image));if(!alive||current!==referenceRevision)return;
+   tones=referenceTones(frame,entry.frame);selectedTones=(tones.dark.length?tones.dark:tones.mid.length?tones.mid:tones.light).map(t=>t.color);
+   if(!selectedTones.length)throw Error('La referencia no tiene colores visibles.');
+  }catch(e){if(alive&&current===referenceRevision)error=(e as Error).message;}
+  finally{if(alive&&current===referenceRevision){referenceLoading=false;if(selectedTones.length)void updatePreview();}}
+ }
+ function toggleTone(color:string){selectedTones=selectedTones.includes(color)?selectedTones.filter(c=>c!==color):[...selectedTones,color];void updatePreview();}
+ function chooseGroup(group:ToneGroup){selectedTones=tones[group].map(t=>t.color);void updatePreview();}
+ function changeMode(value:'manual'|'harmony'){mode=value;picking=false;void updatePreview();}
  function chooseDestination(to:string){
   if(!selectedColor)return;
   try{const next=[...replacements.filter(r=>r.from!==selectedColor),{from:selectedColor,to}];replacements=validateColorReplacements(next,palette);void updatePreview();}
@@ -67,9 +91,10 @@
   updating=true;error='';const nextUrls=new Map<string,string>(),nextBlobs:Record<string,Blob>={};
   try{
    const mapping=validateColorReplacements(replacements,palette).filter(r=>r.from!==r.to);
-   if(!mapping.length){if(alive&&revision===current){clean();blobs={};preview=resource;}return;}
+   const harmonize=mode==='harmony'&&harmonyReady?createColorHarmonizer(colors,{colors:[...selectedTones],strength,scope}):undefined;
+   if(mode==='harmony'?!harmonize:!mapping.length){if(alive&&revision===current){clean();blobs={};preview=resource;}return;}
    for(const [source,frame] of frames){
-    const blob=await replacedColorsPNG(frame,mapping,controller.signal);if(!alive||revision!==current)return;
+    const blob=harmonize?await harmonizedColorsPNG(frame,harmonize,controller.signal):await replacedColorsPNG(frame,mapping,controller.signal);if(!alive||revision!==current)return;
     nextBlobs[source]=blob;nextUrls.set(source,URL.createObjectURL(blob));
    }
    if(!alive||revision!==current)return;
@@ -91,6 +116,23 @@
  <div class="layout">
   <section class="mapping" aria-label={ui.text("Sustituciones de color")}>
    <label>{ui.text("Nombre de la variante")}<input aria-label={ui.text("Nombre de la variante")} maxlength="120" bind:value={draftName} disabled={applying}/></label>
+   <div class="mode-tabs" role="group" aria-label={ui.text('Método de color')}><button disabled={applying} aria-pressed={mode==='manual'} onclick={()=>changeMode('manual')}>{ui.text('Sustituir colores')}</button><button disabled={applying} aria-pressed={mode==='harmony'} onclick={()=>changeMode('harmony')}>{ui.text('Armonizar colores')}</button></div>
+   {#if mode==='harmony'}
+    <fieldset disabled={applying}>
+     <label>{ui.text('Sprite de referencia')}<select aria-label={ui.text('Sprite de referencia')} bind:value={referenceId} onchange={e=>{referenceId=e.currentTarget.value;void chooseReference();}}><option value="">{ui.text('Elige un recurso…')}</option>{#each references as entry}<option value={entry.id}>{entry.name}</option>{/each}</select></label>
+     {#if referenceEntry}<div class="reference-sprite"><SpriteThumbnail image={resolve(referenceEntry.image)} frame={referenceEntry.frame}/><span>{referenceEntry.name}</span></div>{/if}
+     {#if referenceLoading}<p class="hint" role="status">{ui.text('Extrayendo tonos…')}</p>{:else if referenceEntry}
+      <p class="hint">{ui.text('Selecciona un grupo o pulsa los tonos que quieras combinar.')}</p>
+      {#each ['dark','mid','light'] as group}{@const key=group as ToneGroup}
+       <div class="tone-heading"><button disabled={!tones[key].length} onclick={()=>chooseGroup(key)}>{ui.text(toneLabels[key])}</button><small>{tones[key].length}</small></div>
+       <div class="swatches" aria-label={ui.text(toneLabels[key])}>{#each tones[key] as tone}<button class:chosen={selectedTones.includes(tone.color)} style:background={tone.color} aria-label={ui.text('Seleccionar {arg0}',{arg0:tone.color})} aria-pressed={selectedTones.includes(tone.color)} title={tone.color} onclick={()=>toggleTone(tone.color)}></button>{/each}</div>
+      {/each}
+     {/if}
+     <label>{ui.text('Intensidad')} · {strength}%<input aria-label={ui.text('Intensidad de armonización')} type="range" min="0" max="100" step="5" bind:value={strength} oninput={e=>{strength=e.currentTarget.valueAsNumber;void updatePreview();}}/></label>
+     <label>{ui.text('Aplicar a')}<select aria-label={ui.text('Aplicar armonización a')} bind:value={scope} onchange={e=>{scope=e.currentTarget.value as 'shadows'|'all';void updatePreview();}}><option value="shadows">{ui.text('Solo sombras')}</option><option value="all">{ui.text('Todo el recurso')}</option></select></label>
+     <p class="hint">{ui.text('Conserva el dibujo, la transparencia y el contraste. Los tonos se mezclan sin cambiar la paleta de la aventura.')}</p>
+    </fieldset>
+   {:else}
    <fieldset disabled={applying}>
     <legend>1. Elige un color del recurso</legend>
     <button class="eyedropper" aria-pressed={picking} onclick={()=>{picking=!picking;pickMessage='';}}><Pipette size={14}/> {picking?ui.text("Haz clic en Original"):ui.text("Cuentagotas")}</button>
@@ -107,6 +149,7 @@
    <div class="mapping-heading"><h3>{ui.text("Cambios")} <span>{changes.length}</span></h3><button class="icon" aria-label={ui.text("Restablecer cambios de color")} disabled={applying||!replacements.length} onclick={reset}><RotateCcw size={15}/></button></div>
    <div class="replacements">{#each replacements as replacement}<div class="replacement"><span class="sample" style:background={replacement.from}></span><code>{replacement.from}</code><span>→</span><span class="sample" style:background={replacement.to}></span><code>{replacement.to}</code><button class="icon" disabled={applying} aria-label={ui.text("Eliminar sustitución {arg0}",{arg0:replacement.from})} onclick={()=>remove(replacement.from)}><Trash2 size={14}/></button></div>{:else}<p class="hint">{ui.text("Puedes cambiar varios tonos de sombra, base y luz.")}</p>{/each}</div>
    <p class="hint">{ui.text("El mismo color cambia en todo el recurso, aunque aparezca en partes distintas.")}</p>{#if colors.length>256}<p class="hint">{ui.text("Para cambiar gamas con muchos tonos similares, adapta primero el recurso a la paleta desde Piskel.")}</p>{/if}
+   {/if}
   </section>
   <section class="comparison" aria-label={ui.text("Comparación de colores")}>
    <div class="controls">{#if actions.length}<label>{ui.text("Acción")}<select aria-label={ui.text("Acción de variante")} bind:value={pose} disabled={applying}>{#each actions as action}<option value={action}>{ui.text(actionLabels[action]??'')}</option>{/each}</select></label>{/if}{#if directions.length}<label>{ui.text("Dirección")}<select aria-label={ui.text("Dirección de variante")} bind:value={direction} disabled={applying}>{#each directions as facing,i}<option value={i}>{facing.toUpperCase()}</option>{/each}</select></label>{/if}{#if actions.length}<label class="play"><input type="checkbox" bind:checked={playing}/> {ui.text("Reproducir")}</label>{/if}<span class="progress" role="status">{#if updating}<LoaderCircle size={14} class="spin"/> {ui.text("Actualizando…")}{/if}</span></div>
@@ -119,5 +162,7 @@
 </dialog>
 
 <style>
- dialog{box-sizing:border-box;width:min(1260px,calc(100% - 32px));max-height:92vh;overflow:auto;padding:20px;border:1px solid #cbd8bf;border-radius:14px;color:#304535;background:#fafbf7}dialog::backdrop{background:#16231780}header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}h2{font-size:20px;margin:0 0 6px;overflow-wrap:anywhere}header p{margin:0;font-size:12px;color:#627354}.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px}.mapping,.comparison,.compare>div{min-width:0}label{display:grid;gap:6px;font-size:12px;margin-bottom:14px}input,select{box-sizing:border-box;width:100%;font:inherit;border:1px solid #cbd8bf;border-radius:6px;padding:8px;background:white;color:inherit;min-width:0}fieldset{padding:0;margin:0 0 14px;border:0;min-width:0}legend{font-size:12px;font-weight:600;margin-bottom:8px}.search{font-size:11px;margin-bottom:8px}.swatches{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;max-height:200px;overflow:auto;padding:3px}.swatches button{padding:0;aspect-ratio:1;min-width:0;border:1px solid #84917860;border-radius:4px}.swatches .chosen{outline:2px solid #304535;outline-offset:1px}small{display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.5;color:#627354;margin-top:5px}.eyedropper{margin-bottom:8px;font-size:11px}.eyedropper[aria-pressed=true]{background:#e5edda}.picking :global(canvas){cursor:crosshair!important}.mapping-heading{display:flex;align-items:center;justify-content:space-between}h3{font-size:12px;margin:8px 0}h3 span{font-weight:400;color:#627354}.replacements{max-height:180px;overflow:auto}.replacement{display:flex;align-items:center;gap:6px;padding:5px 0}.sample{width:18px;height:18px;border:1px solid #84917860;border-radius:3px;flex-shrink:0}code{font-size:10px}.replacement .icon{margin-left:auto}.hint{font-size:11px;line-height:1.5;color:#627354}.controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:50px}.controls label{margin:0}.controls select{padding:6px}.play{display:flex;align-items:center;gap:6px}.play input{width:auto;accent-color:#476238}.progress{display:flex;gap:5px;align-items:center;font-size:11px;color:#627354}.compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;align-items:start}button{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border:1px solid #cbd8bf;border-radius:7px;background:white;color:#3f5634;font:12px system-ui;cursor:pointer}button:disabled{opacity:.45;cursor:default}.icon{padding:6px;background:transparent}.primary{background:#476238;color:white}footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:18px;border-top:1px solid #dce3d5;padding-top:14px}footer small{margin-right:auto}.error{font-size:12px;color:#963f31;background:#fbeae3;padding:12px;border-radius:7px}.loading{display:flex;align-items:center;gap:8px;min-height:100px;font-size:13px}.loading :global(.spin),.progress :global(.spin),footer :global(.spin){animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #74994e;outline-offset:3px}@media(max-width:1050px){.layout{grid-template-columns:260px minmax(0,1fr)}.compare :global(.legend){display:none}}@media(max-width:650px){dialog{padding:14px;width:calc(100% - 20px)}.layout{display:flex;flex-direction:column;gap:12px}.comparison{order:-1}.compare :global(.legend){display:none}.swatches{grid-template-columns:repeat(8,minmax(0,1fr))}footer{flex-wrap:wrap}footer small{width:100%}h2{font-size:17px}}@media(prefers-reduced-motion:reduce){.loading :global(.spin),.progress :global(.spin),footer :global(.spin){animation:none}}
+ .mode-tabs{display:flex;gap:6px;margin-bottom:16px}.mode-tabs button{flex:1;padding:8px 6px}.mode-tabs button[aria-pressed=true]{background:#e5edda;border-color:#809c68}.reference-sprite{display:flex;align-items:center;gap:12px;padding:8px;border:1px solid #dce3d5;border-radius:8px;margin-bottom:10px}.reference-sprite :global(canvas){width:64px;height:64px;flex-shrink:0}.reference-sprite span{font-size:12px}.tone-heading{display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px}.tone-heading button{font-size:11px;padding:4px 8px}input[type=range]{padding:0;accent-color:#476238}
+
+ dialog{box-sizing:border-box;width:min(1260px,calc(100% - 32px));max-height:92vh;overflow:auto;padding:20px;border:1px solid #cbd8bf;border-radius:14px;color:#304535;background:#fafbf7}dialog::backdrop{background:#16231780}header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}h2{font-size:20px;margin:0 0 6px;overflow-wrap:anywhere}header p{margin:0;font-size:12px;color:#627354}.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px}.mapping,.comparison,.compare>div{min-width:0}label{display:grid;gap:6px;font-size:12px;margin-bottom:14px}input,select{box-sizing:border-box;width:100%;font:inherit;border:1px solid #cbd8bf;border-radius:6px;padding:8px;background:white;color:inherit;min-width:0}fieldset{padding:0;margin:0 0 14px;border:0;min-width:0}legend{font-size:12px;font-weight:600;margin-bottom:8px}.search{font-size:11px;margin-bottom:8px}.swatches{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;max-height:200px;overflow:auto;padding:3px}.swatches button{padding:0;aspect-ratio:1;min-width:0;border:1px solid #84917860;border-radius:4px}.swatches .chosen{outline:2px solid #304535;outline-offset:1px}small{display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.5;color:#627354;margin-top:5px}.eyedropper{margin-bottom:8px;font-size:11px}.eyedropper[aria-pressed=true]{background:#e5edda}.picking :global(canvas){cursor:crosshair!important}.mapping-heading{display:flex;align-items:center;justify-content:space-between}h3{font-size:12px;margin:8px 0}h3 span{font-weight:400;color:#627354}.replacements{max-height:180px;overflow:auto}.replacement{display:flex;align-items:center;gap:6px;padding:5px 0}.sample{width:18px;height:18px;border:1px solid #84917860;border-radius:3px;flex-shrink:0}code{font-size:10px}.replacement .icon{margin-left:auto}.hint{font-size:11px;line-height:1.5;color:#627354}.controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:50px}.controls label{margin:0}.controls select{padding:6px}.play{display:flex;align-items:center;gap:6px}.play input{width:auto;accent-color:#476238}.progress{display:flex;gap:5px;align-items:center;font-size:11px;color:#627354}.compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px;align-items:start}button{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border:1px solid #cbd8bf;border-radius:7px;background:white;color:#3f5634;font:12px system-ui;cursor:pointer}button:disabled{opacity:.45;cursor:default}.icon{padding:6px;background:transparent}.primary{background:#476238;color:white}footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:18px;border-top:1px solid #dce3d5;padding-top:14px}footer small{margin-right:auto}.error{font-size:12px;color:#963f31;background:#fbeae3;padding:12px;border-radius:7px}.loading{display:flex;align-items:center;gap:8px;min-height:100px;font-size:13px}.loading :global(.spin),.progress :global(.spin),footer :global(.spin){animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #74994e;outline-offset:3px}@media(max-width:1050px){.layout{grid-template-columns:260px minmax(0,1fr)}.compare :global(.legend){display:none}}@media(max-width:650px){dialog{padding:14px;width:calc(100% - 20px)}.layout{display:flex;flex-direction:column;gap:12px}.comparison{order:-1}.compare :global(.legend){display:none}.swatches{grid-template-columns:repeat(8,minmax(0,1fr))}footer{flex-wrap:wrap}footer small{width:100%}h2{font-size:17px}}@media(prefers-reduced-motion:reduce){.loading :global(.spin),.progress :global(.spin),footer :global(.spin){animation:none}}
 </style>

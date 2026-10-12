@@ -1,8 +1,8 @@
-import {expect,it} from 'vitest';
+import {expect,it,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {zipSync,unzipSync,strFromU8,strToU8} from 'fflate';
-import {exportAdventure,unpackAdventure,pngSize} from '../src/lib/storage/adventure-package';
-import {mapImages,imageUrls,type AdventureRepository} from '../src/lib/storage/local-adventures';
+import {exportAdventure,unpackAdventure,pngSize,importAdventure,type AdventureImportProgress} from '../src/lib/storage/adventure-package';
+import {mapImages,imageUrls,localAdventures,type AdventureRepository} from '../src/lib/storage/local-adventures';
 import {graphics} from '../src/lib/demo/pixelart';
 import {createAdventure} from '../src/lib/demo/adventure';
 import {office,outdoors} from '../src/lib/demo/scenes';
@@ -59,4 +59,28 @@ it('keeps drawing inclination in portable adventures while preserving footprints
  expect(restored.pack.objects['pixel.sofa'].rotation).toBe(6.5);
  expect(restored.adventure.maps).toEqual(adventure.maps);
  expect(restored.pack.objects['pixel.sofa'].width).toBe(pack.objects['pixel.sofa'].width);
+});
+
+it('reports actual image progress and stays in the saving phase until persistence finishes',async()=>{
+ const bytes=await archive(),events:AdventureImportProgress[]=[],closed=vi.fn();
+ const library={version:1 as const,activeId:adventure.id,adventures:[adventure]};
+ let finish!:()=>void;
+ const gate=new Promise<void>(resolve=>finish=resolve);
+ const load=vi.spyOn(localAdventures,'load').mockResolvedValue(library);
+ const save=vi.spyOn(localAdventures,'save').mockImplementation(async()=>{await gate;return library;});
+ vi.stubGlobal('createImageBitmap',vi.fn(async()=>({close:closed})));
+ try{
+  let done=false;
+  const pending=importAdventure(new File([bytes as Uint8Array<ArrayBuffer>],'adventure.zip'),event=>events.push(event)).then(value=>{done=true;return value;});
+  await vi.waitFor(()=>expect(save).toHaveBeenCalledOnce());
+  const total=imageUrls(graphics).length;
+  expect(events[0]).toEqual({phase:'reading'});
+  expect(events.filter(e=>e.phase==='validating').map(e=>e.completed)).toEqual(Array.from({length:total+1},(_,i)=>i));
+  expect(events.at(-1)).toEqual({phase:'saving'});
+  expect(closed).toHaveBeenCalledTimes(total);
+  expect(done).toBe(false);
+  finish();const imported=await pending;
+  expect(imported.id).not.toBe(adventure.id);
+  expect(done).toBe(true);
+ }finally{finish();load.mockRestore();save.mockRestore();vi.unstubAllGlobals();}
 });

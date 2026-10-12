@@ -4,29 +4,32 @@
  import type {AdventurePalette} from '$lib/demo/adventure-palette';
  import {Sparkles,LoaderCircle} from 'lucide-svelte';
  import {validateObjectImageRequest,type ObjectImageRequest} from './object-generation';
- import {objectReference,finishObjectImage,type PreparedObjectImage} from './object-image-browser';
- let {palette,width,height,footprint,references,onreference,onpreview,onaccept,onbusy,open=$bindable(false),embedded=false}:{open?:boolean;embedded?:boolean;palette?:AdventurePalette;width:number;height:number;footprint:{x:number;y:number};references:{id:string;name:string}[];onreference:(id:string)=>Promise<string>;onpreview:(image:string|null)=>void;onaccept:(image:PreparedObjectImage)=>Promise<void>;onbusy:(value:boolean)=>void}=$props();
- let description=$state(''),style=$state('Pixel art, formas limpias, paleta terrosa limitada, iluminación suave desde arriba a la izquierda'),direction=$state<ObjectImageRequest['direction']>('se');
+ import {validateTileImageRequest,type TileImageRequest} from './tile-generation';
+ import {objectReference,finishObjectImage,finishTileImage,type PreparedObjectImage} from './object-image-browser';
+ let {mode='object',palette,width,height,footprint,references,onreference,onpreview,onaccept,onbusy,open=$bindable(false),embedded=false}:{mode?:'object'|'tile';open?:boolean;embedded?:boolean;palette?:AdventurePalette;width:number;height:number;footprint:{x:number;y:number};references:{id:string;name:string}[];onreference:(id:string)=>Promise<string>;onpreview:(image:string|null)=>void;onaccept:(image:PreparedObjectImage)=>Promise<void>;onbusy:(value:boolean)=>void}=$props();
+ let description=$state(''),style=$state(untrack(()=>mode==='tile'?'Pixel art, textura repetible, formas limpias, paleta terrosa limitada, iluminación uniforme':'Pixel art, formas limpias, paleta terrosa limitada, iluminación suave desde arriba a la izquierda')),direction=$state<ObjectImageRequest['direction']>('se');
  let quality=$state<'low'|'medium'|'high'>('low'),referenceId=$state(''),uploaded=$state(''),referenceName=$state('');
  let available=$state(false),checked=$state(false),connection=$state(''),working=$state(''),error=$state('');
  let useAdventurePalette=$state(true);
  let background=$state<'magenta'|'green'|'alpha'>('magenta'),tolerance=$state(90),colors=$state(28);
  let raw=$state(''),prepared=$state.raw<PreparedObjectImage>(),sourceDescription=$state(''),controller:AbortController|undefined,alive=true;
+ const endpoint=$derived(mode==='tile'?'/api/characters/tiles':'/api/characters/objects');
  const dimensions=$derived(`${width}:${height}:${footprint.x}:${footprint.y}`);
  $effect(()=>{dimensions; untrack(()=>{raw='';prepared=undefined;onpreview(null);});});
  onDestroy(()=>{alive=false;controller?.abort();onpreview(null);});
  async function connectionStatus(){
-  try {const response=await fetch('/api/characters/objects');if(!response.ok)throw Error(response.status===401?'Accede al taller privado de personajes y vuelve a comprobar la conexión.':'No se pudo comprobar la conexión.');const status=await response.json();if(alive){available=!!status.available;connection=status.message;checked=true;}}
+  try {const response=await fetch(endpoint);if(!response.ok)throw Error(response.status===401?'Accede al taller privado de personajes y vuelve a comprobar la conexión.':'No se pudo comprobar la conexión.');const status=await response.json();if(alive){available=!!status.available;connection=status.message;checked=true;}}
   catch(e){if(alive){available=false;checked=true;connection=(e as Error).message;}}
  }
  async function run(label:string,task:()=>Promise<void>){if(working)return;working=label;error='';onbusy(true);try{await task();}catch(e){if(alive)error=(e as Error).message;}finally{if(alive){working='';onbusy(false);}}}
  async function upload(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(!file)return;await run('Preparando referencia…',async()=>{if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>20_000_000)throw Error('Usa PNG, JPG o WebP de hasta 20 MB.');const image=await objectReference(file);if(alive){uploaded=image;referenceName=file.name;referenceId='upload';}});}
- async function finish(image=raw){const result=await finishObjectImage(image,width,height,{background,tolerance,colors,palette:useAdventurePalette?palette:undefined});if(alive){prepared=result;onpreview(result.image);}}
- async function generate(){await run('Generando objeto…',async()=>{
+ async function finish(image=raw){const result=await (mode==='tile'?finishTileImage(image,{colors,palette:useAdventurePalette?palette:undefined}):finishObjectImage(image,width,height,{background,tolerance,colors,palette:useAdventurePalette?palette:undefined}));if(alive){prepared=result;onpreview(result.image);}}
+ async function generate(){await run(mode==='tile'?'Generando suelo…':'Generando objeto…',async()=>{
    const reference=referenceId==='upload'?uploaded:referenceId?await onreference(referenceId):undefined;
-   const request:ObjectImageRequest={description,style,direction,width,height,footprint:{...footprint},quality,reference:reference||undefined,palette:useAdventurePalette?palette:undefined};validateObjectImageRequest(request);
-   controller=new AbortController();const response=await fetch('/api/characters/objects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request),signal:controller.signal});
-   if(!response.ok){let message='No se pudo generar el objeto. No se reintenta automáticamente.';try{message=(await response.json()).error??message;}catch{}throw Error(message);}
+   const common={description,style,quality,reference:reference||undefined,palette:useAdventurePalette?palette:undefined};
+   const request:TileImageRequest|ObjectImageRequest=mode==='tile'?validateTileImageRequest(common):validateObjectImageRequest({...common,direction,width,height,footprint:{...footprint}});
+   controller=new AbortController();const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request),signal:controller.signal});
+   if(!response.ok){let message=mode==='tile'?'No se pudo generar el suelo. No se reintenta automáticamente.':'No se pudo generar el objeto. No se reintenta automáticamente.';try{message=(await response.json()).error??message;}catch{}throw Error(message);}
    const result=await response.json();if(!alive)return;raw=result.image;prepared=undefined;onpreview(null);sourceDescription=description;await finish();
  });}
  async function accept(){if(prepared)await run('Aplicando propuesta…',async()=>{await onaccept(prepared!);if(alive){raw='';prepared=undefined;onpreview(null);}});}
@@ -36,23 +39,23 @@
 <details class:embedded class="assistant" bind:open ontoggle={e=>{if(e.currentTarget.open&&!checked)void connectionStatus();}}>
  <summary><Sparkles size={15}/> {ui.text("Generar con IA")}</summary>
  {#if palette}<p class="size">{ui.text("Paleta de aventura:")} {palette.name} {ui.text("· 64 colores.")}</p>{/if}
- <p class="size">{ui.text("Salida")} {width} × {height} {ui.text("px · huella")} {footprint.x} × {footprint.y}{ui.text(". Ajusta estos valores en las propiedades antes de generar.")}</p>
+ {#if mode==='tile'}<p class="size">{ui.text("Baldosa de 64 × 32 px. La textura se adapta al rombo y se repite en el mosaico.")}</p>{:else}<p class="size">{ui.text("Salida")} {width} × {height} {ui.text("px · huella")} {footprint.x} × {footprint.y}{ui.text(". Ajusta estos valores en las propiedades antes de generar.")}</p>{/if}
  <fieldset disabled={!!working}>
- <label>{ui.text("Descripción del objeto")}<textarea rows="3" maxlength="2000" bind:value={description} placeholder={ui.text("Cofre de madera con herrajes oscuros…")}></textarea></label>
+ <label>{ui.text(mode==='tile'?"Descripción del suelo":"Descripción del objeto")}<textarea rows="3" maxlength="2000" bind:value={description} placeholder={ui.text(mode==='tile'?"Adoquines de piedra volcánica con pequeñas juntas de musgo…":"Cofre de madera con herrajes oscuros…")}></textarea></label>
  <label>{ui.text("Referencia de estilo")}<select bind:value={referenceId}><option value="">{ui.text("Sin referencia")}</option>{#each references as ref}<option value={ref.id}>{ref.name}</option>{/each}{#if uploaded}<option value="upload">{referenceName}</option>{/if}</select></label>
  <label class="upload">{ui.text("Importar referencia")}<input type="file" accept="image/png,image/jpeg,image/webp" onchange={upload}/></label>
- {#if referenceId==='upload'&&uploaded}<img class="reference" src={uploaded} alt={ui.text("Referencia de estilo del objeto")}/>{/if}
- <details><summary>{ui.text("Estilo y orientación")}</summary><label>{ui.text("Estilo")}<textarea rows="2" maxlength="1000" bind:value={style}></textarea></label><label>{ui.text("Orientación")}<select bind:value={direction}><option value="se">{ui.text("SE · frente y derecha")}</option><option value="sw">{ui.text("SW · frente e izquierda")}</option><option value="ne">{ui.text("NE · detrás y derecha")}</option><option value="nw">{ui.text("NW · detrás e izquierda")}</option></select></label><label>{ui.text("Calidad")}<select bind:value={quality}><option value="low">{ui.text("Borrador")}</option><option value="medium">{ui.text("Media")}</option><option value="high">{ui.text("Alta")}</option></select></label></details>
+ {#if referenceId==='upload'&&uploaded}<img class="reference" src={uploaded} alt={ui.text(mode==='tile'?"Referencia de estilo del suelo":"Referencia de estilo del objeto")}/>{/if}
+ <details><summary>{ui.text(mode==='tile'?"Estilo y calidad":"Estilo y orientación")}</summary><label>{ui.text("Estilo")}<textarea rows="2" maxlength="1000" bind:value={style}></textarea></label>{#if mode==='object'}<label>{ui.text("Orientación")}<select bind:value={direction}><option value="se">{ui.text("SE · frente y derecha")}</option><option value="sw">{ui.text("SW · frente e izquierda")}</option><option value="ne">{ui.text("NE · detrás y derecha")}</option><option value="nw">{ui.text("NW · detrás e izquierda")}</option></select></label>{/if}<label>{ui.text("Calidad")}<select bind:value={quality}><option value="low">{ui.text("Borrador")}</option><option value="medium">{ui.text("Media")}</option><option value="high">{ui.text("Alta")}</option></select></label></details>
  {#if !available}<p>{connection||ui.text("Comprobando conexión…")}</p>{#if checked}<button type="button" onclick={connectionStatus}>{ui.text("Comprobar conexión")}</button><a href="/characters" target="_blank" rel="noreferrer">{ui.text("Acceder al taller privado")}</a>{/if}{/if}
  <p>{ui.text("Cada generación consume uso de OpenAI. Si eliges una referencia, también se enviará al proveedor.")}</p>
- <button class="primary" type="button" disabled={!available||!description.trim()} onclick={generate}>{#if working}<LoaderCircle class="spinner" size={16}/>{working}{:else}<Sparkles size={16}/>{raw?ui.text("Generar otra propuesta"):ui.text("Generar objeto")}{/if}</button>
+ <button class="primary" type="button" disabled={!available||!description.trim()} onclick={generate}>{#if working}<LoaderCircle class="spinner" size={16}/>{ui.text(working)}{:else}<Sparkles size={16}/>{raw?ui.text("Generar otra propuesta"):ui.text(mode==='tile'?"Generar suelo":"Generar objeto")}{/if}</button>
  {#if raw}
- <div class="proposal"><strong>{ui.text("Propuesta ·")} {sourceDescription}</strong><p>{ui.text("La vista central muestra la propuesta. El objeto se sustituye al pulsar «Usar esta imagen».")}</p>
- <details open><summary>{ui.text("Acabado · sin volver a generar")}</summary><label>{ui.text("Fondo")}<select bind:value={background}><option value="magenta">{ui.text("Magenta")}</option><option value="green">{ui.text("Verde")}</option><option value="alpha">{ui.text("Transparencia existente")}</option></select></label><label>{ui.text("Tolerancia ·")} {tolerance}<input type="range" min="0" max="255" bind:value={tolerance}/></label>{#if palette}<label><span><input type="checkbox" bind:checked={useAdventurePalette}/> {ui.text("Usar")} {palette.name} {ui.text("· 64 colores")}</span></label>{/if}{#if !palette||!useAdventurePalette}<label>{ui.text("Colores")}<input type="number" min="4" max="64" bind:value={colors}/></label>{/if}<button type="button" onclick={()=>run('Actualizando acabado…',()=>finish())}>{ui.text("Actualizar acabado")}</button></details>
+ <div class="proposal"><strong>{ui.text("Propuesta ·")} {sourceDescription}</strong><p>{ui.text(mode==='tile'?"Comprueba las uniones en el mosaico. El suelo se sustituye al pulsar «Usar esta imagen».":"La vista central muestra la propuesta. El objeto se sustituye al pulsar «Usar esta imagen».")}</p>
+ <details open><summary>{ui.text("Acabado · sin volver a generar")}</summary>{#if mode==='object'}<label>{ui.text("Fondo")}<select bind:value={background}><option value="magenta">{ui.text("Magenta")}</option><option value="green">{ui.text("Verde")}</option><option value="alpha">{ui.text("Transparencia existente")}</option></select></label><label>{ui.text("Tolerancia ·")} {tolerance}<input type="range" min="0" max="255" bind:value={tolerance}/></label>{/if}{#if palette}<label><span><input type="checkbox" bind:checked={useAdventurePalette}/> {ui.text("Usar")} {palette.name} {ui.text("· 64 colores")}</span></label>{/if}{#if !palette||!useAdventurePalette}<label>{ui.text("Colores")}<input type="number" min="4" max="64" bind:value={colors}/></label>{/if}<button type="button" onclick={()=>run('Actualizando acabado…',()=>finish())}>{ui.text("Actualizar acabado")}</button></details>
  <div class="actions"><button type="button" class="primary" disabled={!prepared} onclick={accept}>{ui.text("Usar esta imagen")}</button><button type="button" onclick={discardProposal}>{ui.text("Descartar propuesta")}</button></div></div>
  {/if}
  </fieldset>
- {#if working}<p role="status">{working} {ui.text("Puede tardar unos minutos.")}</p>{/if}
+ {#if working}<p role="status">{ui.text(working)} {ui.text("Puede tardar unos minutos.")}</p>{/if}
  {#if error}<p role="alert" class="error">{ui.text(error)}</p>{/if}
 </details>
 <style>

@@ -72,10 +72,17 @@ export function unpackAdventure(bytes:Uint8Array){
  for(const url of imageUrls(pack)){const id=crypto.randomUUID();refs.set(url,`asset:${id}`);blobs[id]=new Blob([files[url] as Uint8Array<ArrayBuffer>],{type:'image/png'});}
  return {adventure,pack:mapImages(pack,url=>refs.get(url)!),blobs};
 }
-export async function importAdventure(file:File){
+export type AdventureImportProgress={phase:'preparing'|'reading'|'validating'|'saving'|'opening';completed?:number;total?:number};
+export async function importAdventure(file:File,onProgress?:(progress:AdventureImportProgress)=>void){
  if(file.size>MAX)throw new Error('El paquete no puede superar 100 MB.');
- const content=unpackAdventure(new Uint8Array(await file.arrayBuffer()));
- for(const blob of Object.values(content.blobs)){const bitmap=await createImageBitmap(blob);bitmap.close();}
+ onProgress?.({phase:'reading'});
+ const bytes=new Uint8Array(await file.arrayBuffer());
+ // Give the browser a paint opportunity before unpacking a large ZIP synchronously.
+ await new Promise<void>(resolve=>setTimeout(resolve,0));
+ const content=unpackAdventure(bytes),blobs=Object.values(content.blobs);
+ onProgress?.({phase:'validating',completed:0,total:blobs.length});
+ for(const [index,blob] of blobs.entries()){const bitmap=await createImageBitmap(blob);bitmap.close();onProgress?.({phase:'validating',completed:index+1,total:blobs.length});}
+ onProgress?.({phase:'saving'});
  const library=await localAdventures.load();
  if(library.adventures.some(a=>a.id===content.adventure.id))content.adventure={...content.adventure,id:crypto.randomUUID(),name:content.adventure.name+' (importada)'};
  await localAdventures.save(content.adventure,content);return content.adventure;
