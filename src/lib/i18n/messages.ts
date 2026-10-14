@@ -2,6 +2,24 @@ import * as m from '../paraglide/messages.js';
 import type {UiLocale} from './locale';
 /** Stable source keys permit incremental migration without translating authored content. */
 const keys={
+  "Editar sprite": "ui_edit_map_sprite",
+  "Reducir a 1:1": "ui_reduce_sized_0",
+  "Recuperar tamaño original": "ui_reduce_sized_1",
+  "Imagen reducida a 1:1. Revisa el resultado y pulsa «Guardar en aventura». Puedes recuperar el tamaño original.": "ui_reduce_sized_2",
+  "Tamaño original recuperado. Pulsa «Guardar en aventura».": "ui_reduce_sized_3",
+
+  "Exportar PNG a 1:1": "ui_export_sized_0",
+  "Recorta la imagen y la exporta al tamaño configurado en el juego, sin el zoom de la vista.": "ui_export_sized_1",
+
+  "Eliminar aventura": "ui_delete_adventure_0",
+  "Se eliminarán sus mapas y configuración. Si está publicada, dejará de estar disponible para los jugadores. Esta acción no se puede deshacer.": "ui_delete_adventure_1",
+  "Los recursos de la biblioteca y las demás aventuras se conservan. Puedes cancelar y exportar un ZIP desde el editor antes de continuar.": "ui_delete_adventure_2",
+  "Escribe ELIMINAR para confirmar.": "ui_delete_adventure_3",
+  "Eliminando…": "ui_delete_adventure_4",
+  "Eliminar definitivamente": "ui_delete_adventure_5",
+  "Aventura eliminada.": "ui_delete_adventure_6",
+  "La aventura ha cambiado. Cierra este diálogo, actualiza la lista y vuelve a confirmar.": "ui_delete_adventure_7",
+
   "Armonizar colores": "ui_color_harmony_0",
   "Sustituir colores": "ui_color_harmony_1",
   "Método de color": "ui_color_harmony_2",

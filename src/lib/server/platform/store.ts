@@ -63,6 +63,22 @@ export class PlatformStore {
   FROM platform_publications p LEFT JOIN platform_adventures a ON a.tenant_id=p.tenant_id AND a.id=p.adventure_id
   WHERE p.tenant_id=$1`,[t])).rows.map(r=>({slug:r.slug,adventure_id:r.adventure_id,active:r.active,published_at:r.published_at,hasUnpublishedChanges:!!r.active&&(r.definition_changed||graphicsChanged(r.current_graphics,r.published_graphics))})),usage:(await db.query("SELECT kind,used FROM platform_usage WHERE tenant_id=$1 AND month=to_char(now(),'YYYY-MM')",[t])).rows}));}
  async adventure(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT * FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Aventura no encontrada.');return a;});}
+ async deleteAdventure(p:Principal,id:unknown,revision:unknown,confirmation:unknown){
+  const t=tenant(p);
+  if(typeof id!=='string'||!idValid(id)||!Number.isInteger(revision)||Number(revision)<1)throw new PlatformError(400,'Versión no válida.');
+  if(confirmation!=='ELIMINAR')throw new PlatformError(400,'Escribe ELIMINAR para confirmar.');
+  return this.database.transaction(t,false,async db=>{
+   await this.lock(db,t);
+   const old=(await db.query('SELECT revision FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];
+   if(!old)throw new PlatformError(404,'Aventura no encontrada.');
+   if(old.revision!==revision)throw new PlatformError(409,'La aventura ha cambiado. Cierra este diálogo, actualiza la lista y vuelve a confirmar.');
+   // Withdraw every public release atomically. Assets and immutable archives may
+   // be shared with other adventures, so deletion never purges their files.
+   await db.query('DELETE FROM platform_publications WHERE tenant_id=$1 AND adventure_id=$2',[t,id]);
+   await db.query('DELETE FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[t,id]);
+   await audit(db,p,'adventure.delete',id);return{ok:true};
+  });
+ }
  async asset(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT * FROM platform_assets WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(a.hash,a);});}
  async save(p:Principal,value:unknown,pack:PixelArtPack|undefined,blobs:Record<string,Uint8Array>,revision:number){
   const t=tenant(p),adventure=parseAdventure(value);if(!idValid(adventure.id)||JSON.stringify(adventure).length>10_000_000)throw new PlatformError(400,'Aventura no válida.');delete (adventure as any)._revision;

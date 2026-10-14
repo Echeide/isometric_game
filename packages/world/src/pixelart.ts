@@ -3,7 +3,7 @@ import type { ActorPose, Facing, TileKind } from './types';
 import {characterFps,characterImage,characterVariants,type CharacterPack} from './character';
 import {tileSurfaceColor} from './tile-color';
 export interface NpcClip {image:string;frameWidth:number;frameHeight:number;row:number;frames:number;fps:number;directions?:Facing[]}
-export interface ObjectSprite {image:string;originalImage?:string;generationImage?:string;width:number;height:number;origin:[number,number];rotation?:number;frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
+export interface ObjectSprite {image:string;originalImage?:string;generationImage?:string;reductionOriginal?:{image:string;frame:[number,number,number,number];width:number;height:number;origin:[number,number]};width:number;height:number;origin:[number,number];rotation?:number;frame?:[number,number,number,number];animations?:Partial<Record<'idle'|'talk',NpcClip>>}
 export interface PixelArtPack {
  version:1;
  character:CharacterPack;

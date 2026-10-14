@@ -10,7 +10,7 @@ export interface SharedResource {format:'isometric-resource';version:1;kind:Reso
 export interface SharedSummary {id:string;version:1;name:string;kind:ResourceKind;category:string;createdAt:string;image:string;frame?:[number,number,number,number]}
 export function mapResourceImages(value:SharedResource,replace:(url:string)=>string):SharedResource{
  const r:SharedResource=JSON.parse(JSON.stringify(value));
- if(r.object){const o=r.object;o.image=replace(o.image);if(o.originalImage)o.originalImage=replace(o.originalImage);if(o.generationImage)o.generationImage=replace(o.generationImage);for(const c of Object.values(o.animations??{}))c.image=replace(c.image);}
+ if(r.object){const o=r.object;o.image=replace(o.image);if(o.originalImage)o.originalImage=replace(o.originalImage);if(o.generationImage)o.generationImage=replace(o.generationImage);if(o.reductionOriginal)o.reductionOriginal.image=replace(o.reductionOriginal.image);for(const c of Object.values(o.animations??{}))c.image=replace(c.image);}
  if(r.character){const c=r.character;c.image=replace(c.image);for(const v of [c.variants,...Object.values(c.animations).map(a=>a.variants)])if(v)for(const k of Object.keys(v))v[k]=replace(v[k]);for(const a of Object.values(c.animations))if(a.image)a.image=replace(a.image);}
  if(r.railing){r.railing.image=replace(r.railing.image);if(r.railing.originalImage)r.railing.originalImage=replace(r.railing.originalImage);}
  if(r.tile){r.tile.image=replace(r.tile.image);if(r.tile.originalImage)r.tile.originalImage=replace(r.tile.originalImage);}

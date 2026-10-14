@@ -12,6 +12,7 @@ async function route(e:RequestEvent){const p=e.locals.principal;if(!p)throw new 
  if(path==='storage'&&!post)return json(await store.storageStatus(p));
  if(path==='storage/migrate'&&post){const b=await body(e);if(b.dryRun===true)return json(await store.storageStatus(p));if(b.dryRun!==false)throw new PlatformError(400,'Indica dryRun: true para revisar o false para migrar.');return json(await store.migrateStorage(p,b.limit??5));}
  if(path==='adventures')return revalidatedJson(e.request,await store.list(p));
+ if(path==='delete-adventure'&&post){const b=await body(e);return json(await store.deleteAdventure(p,b.id,b.revision,b.confirmation));}
  const parts=path.split('/');
  if(parts[0]==='adventures'&&parts.length===2){
   if(!post)return revalidatedJson(e.request,await store.adventure(p,parts[1]));

@@ -1949,5 +1949,20 @@
   "ui_color_harmony_15": "Todo el recurso",
   "ui_color_harmony_16": "Conserva el dibujo, la transparencia y el contraste. Los tonos se mezclan sin cambiar la paleta de la aventura.",
   "ui_color_harmony_17": "La referencia no tiene colores visibles.",
-  "ui_color_harmony_18": "Elige tonos de referencia y una intensidad entre 0 y 100."
+  "ui_color_harmony_18": "Elige tonos de referencia y una intensidad entre 0 y 100.",
+  "ui_delete_adventure_0": "Eliminar aventura",
+  "ui_delete_adventure_1": "Se eliminarán sus mapas y configuración. Si está publicada, dejará de estar disponible para los jugadores. Esta acción no se puede deshacer.",
+  "ui_delete_adventure_2": "Los recursos de la biblioteca y las demás aventuras se conservan. Puedes cancelar y exportar un ZIP desde el editor antes de continuar.",
+  "ui_delete_adventure_3": "Escribe ELIMINAR para confirmar.",
+  "ui_delete_adventure_4": "Eliminando…",
+  "ui_delete_adventure_5": "Eliminar definitivamente",
+  "ui_delete_adventure_6": "Aventura eliminada.",
+  "ui_delete_adventure_7": "La aventura ha cambiado. Cierra este diálogo, actualiza la lista y vuelve a confirmar.",
+  "ui_export_sized_0": "Exportar PNG a 1:1",
+  "ui_export_sized_1": "Recorta la imagen y la exporta al tamaño configurado en el juego, sin el zoom de la vista.",
+  "ui_reduce_sized_0": "Reducir a 1:1",
+  "ui_reduce_sized_1": "Recuperar tamaño original",
+  "ui_reduce_sized_2": "Imagen reducida a 1:1. Revisa el resultado y pulsa «Guardar en aventura». Puedes recuperar el tamaño original.",
+  "ui_reduce_sized_3": "Tamaño original recuperado. Pulsa «Guardar en aventura».",
+  "ui_edit_map_sprite": "Editar sprite"
 }

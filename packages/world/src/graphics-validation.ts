@@ -70,6 +70,7 @@ export function validateObjectGraphics(o:ObjectSprite,sizes:Map<string,ImageSize
   if(o.rotation!==undefined&&(!Number.isFinite(o.rotation)||Math.abs(o.rotation)>180))fail('La inclinación debe estar entre −180 y 180 grados.');
   image(o.image);if(o.frame)frame(o.frame,o.image);
   if(o.generationImage!==undefined)image(o.generationImage);
+  if(o.reductionOriginal!==undefined){const original=o.reductionOriginal;if(!original||!positive(original.width)||!positive(original.height)||!point(original.origin))fail('Copia original de reducción no válida.');frame(original.frame,original.image);}
   if(o.originalImage!==undefined){const original=image(o.originalImage),current=image(o.image);if(original.width!==current.width||original.height!==current.height)fail('El original y la imagen retocada deben tener las mismas dimensiones.');}
   for(const [pose,clip]of Object.entries(o.animations??{})){
    if(!['idle','talk'].includes(pose))fail('Un PNJ solo admite idle y talk.');

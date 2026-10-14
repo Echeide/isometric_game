@@ -32,6 +32,37 @@ describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
  it('bootstraps once and stores only password and token hashes',async()=>{expect(await auth.bootstrap('other-root',password)).toBe(false);const rows=await database.pool.query('SELECT password_hash FROM platform_users');expect(rows.rows.every(r=>r.password_hash.startsWith('scrypt-v1:')&&!r.password_hash.includes(password))).toBe(true);expect((await database.pool.query('SELECT token_hash FROM platform_sessions')).rows.some(r=>r.token_hash===token)).toBe(false);});
  it('isolates identical adventure IDs across tenants, including raw RLS reads',async()=>{await store.save(a,adventure(),graphics,{},0);await store.save(b,adventure('Privada B'),graphics,{},0);expect((await store.list(a)).adventures.map(x=>x.name)).toEqual(['Privada A']);expect((await store.list(b)).adventures.map(x=>x.name)).toEqual(['Privada B']);const rows=await database.transaction(ta,false,async db=>(await db.query('SELECT tenant_id FROM platform_adventures')).rows);expect(rows.map(r=>r.tenant_id)).toEqual([ta]);expect(await database.transaction(null,false,async db=>(await db.query('SELECT * FROM platform_adventures')).rowCount)).toBe(0);});
  it('rejects lost updates instead of overwriting another editor',async()=>{await store.save(a,adventure('A editada'),undefined,{},1);await expect(store.save(a,adventure('A obsoleta'),undefined,{},1)).rejects.toMatchObject({status:409});expect((await store.adventure(a,'example')).definition.name).toBe('A editada');});
+ it('requires the exact deletion word, current revision and owning tenant',async()=>{
+  const draft={...adventure('Confirmación de borrado'),id:'delete-confirmation'};await store.save(a,draft,graphics,{},0);
+  for(const word of [undefined,'','eliminar','DELETE',' ELIMINAR'])await expect(store.deleteAdventure(a,draft.id,1,word)).rejects.toMatchObject({status:400});
+  for(const revision of [0,-1,'1',1.5,null])await expect(store.deleteAdventure(a,draft.id,revision,'ELIMINAR')).rejects.toMatchObject({status:400});
+  await expect(store.deleteAdventure(root,draft.id,1,'ELIMINAR')).rejects.toMatchObject({status:403});
+  await expect(store.deleteAdventure(b,draft.id,1,'ELIMINAR')).rejects.toMatchObject({status:404});
+  await store.save(a,{...draft,name:'Editada en otra pestaña'},undefined,{},1);
+  await expect(store.deleteAdventure(a,draft.id,1,'ELIMINAR')).rejects.toMatchObject({status:409});
+  expect((await store.adventure(a,draft.id)).definition.name).toBe('Editada en otra pestaña');
+  await store.deleteAdventure(a,draft.id,2,'ELIMINAR');await expect(store.deleteAdventure(a,draft.id,2,'ELIMINAR')).rejects.toMatchObject({status:404});
+  await expect(store.save(a,draft,graphics,{},2)).rejects.toMatchObject({status:409});
+ });
+ it('deletes a published adventure atomically while preserving other tenants, shared images and library resources',async()=>{
+  const draft={...adventure('Eliminar publicada'),id:'delete-publication'},copy={...draft,id:'delete-surviving-copy'},pack=structuredClone(graphics);
+  const bytes=new Uint8Array(await readFile('static'+pack.objects['pixel.key'].image));pack.objects['pixel.key'].image='asset:deletion-shared-key';
+  await store.save(a,draft,pack,{'deletion-shared-key':bytes},0);await store.save(a,copy,pack,{},0);await store.save(b,draft,graphics,{},0);
+  const resource=await packResource({format:'isometric-resource',version:1,kind:'object',name:'Llave conservada',category:'office',size:{x:1,y:1},object:graphics.objects['pixel.key']},async()=>new Blob([new Uint8Array(bytes)])),saved=await store.saveResource(a,resource);
+  const pub=await store.publish(a,draft.id,true),game=await store.published(pub.slug!),release=game.graphics.objects['pixel.key'].image.split('/')[4];
+  await store.publish(a,draft.id,true);await store.deleteAdventure(a,draft.id,1,'ELIMINAR');
+  expect((await store.list(a)).adventures.some(row=>row.id===draft.id)).toBe(false);expect((await store.list(a)).publications.some(row=>row.adventure_id===draft.id)).toBe(false);
+  await expect(store.adventure(a,draft.id)).rejects.toMatchObject({status:404});await expect(store.published(pub.slug!)).rejects.toMatchObject({status:404});await expect(store.publicAsset(release,'deletion-shared-key')).rejects.toMatchObject({status:404});await expect(store.publicCartridge(release,'cartucho.zip')).rejects.toMatchObject({status:404});await expect(store.publish(a,draft.id,true)).rejects.toMatchObject({status:404});
+  expect((await store.adventure(b,draft.id)).definition.name).toBe(draft.name);expect((await store.adventure(a,copy.id)).graphics).toEqual(pack);expect(await store.asset(a,'deletion-shared-key')).toEqual(bytes);expect(await store.resource(a,saved.id)).toEqual(resource);
+  const entry=(await database.pool.query("SELECT actor_id,effective_id,tenant_id FROM platform_audit WHERE action='adventure.delete' ORDER BY id DESC LIMIT 1")).rows[0];expect(entry).toEqual({actor_id:a.actor.id,effective_id:a.user.id,tenant_id:ta});
+  await store.deleteAdventure(a,copy.id,1,'ELIMINAR');await store.deleteAdventure(b,draft.id,1,'ELIMINAR');
+ });
+ it('serializes deletion with an in-flight save instead of deleting newer work',async()=>{
+  const draft={...adventure('Borrado concurrente'),id:'delete-concurrent'};await store.save(a,draft,graphics,{},0);
+  const results=await Promise.allSettled([store.save(a,{...draft,name:'Nuevo contenido'},undefined,{},1),store.deleteAdventure(a,draft.id,1,'ELIMINAR')]);
+  expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(results.find(r=>r.status==='rejected')).toMatchObject({reason:{status:409}});
+  if(results[0].status==='fulfilled'){expect((await store.adventure(a,draft.id)).revision).toBe(2);await store.deleteAdventure(a,draft.id,2,'ELIMINAR');}else await expect(store.adventure(a,draft.id)).rejects.toMatchObject({status:404});
+ });
  it('reuses validated images for content-only saves but validates new uploads and object references',async()=>{
   const draft={...adventure(),id:'content-save'},pack=structuredClone(graphics),bytes=new Uint8Array(await readFile('static'+pack.objects['pixel.key'].image));
   pack.objects['pixel.key'].image='asset:content-key';

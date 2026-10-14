@@ -1949,5 +1949,20 @@
   "ui_color_harmony_15": "Entire resource",
   "ui_color_harmony_16": "Preserves the artwork, transparency and contrast. Tones are blended without changing the adventure palette.",
   "ui_color_harmony_17": "The reference has no visible colors.",
-  "ui_color_harmony_18": "Choose reference tones and a strength between 0 and 100."
+  "ui_color_harmony_18": "Choose reference tones and a strength between 0 and 100.",
+  "ui_delete_adventure_0": "Delete adventure",
+  "ui_delete_adventure_1": "Its maps and settings will be deleted. If published, it will no longer be available to players. This cannot be undone.",
+  "ui_delete_adventure_2": "Library resources and other adventures are kept. You can cancel and export a ZIP from the editor before continuing.",
+  "ui_delete_adventure_3": "Type ELIMINAR to confirm.",
+  "ui_delete_adventure_4": "Deleting…",
+  "ui_delete_adventure_5": "Delete permanently",
+  "ui_delete_adventure_6": "Adventure deleted.",
+  "ui_delete_adventure_7": "The adventure has changed. Close this dialog, refresh the list and confirm again.",
+  "ui_export_sized_0": "Export PNG at 1:1",
+  "ui_export_sized_1": "Crops the image and exports it at its configured game size, without preview zoom.",
+  "ui_reduce_sized_0": "Reduce to 1:1",
+  "ui_reduce_sized_1": "Restore original size",
+  "ui_reduce_sized_2": "Image reduced to 1:1. Review it and click “Save to adventure”. You can restore the original size.",
+  "ui_reduce_sized_3": "Original size restored. Click “Save to adventure”.",
+  "ui_edit_map_sprite": "Edit sprite"
 }
