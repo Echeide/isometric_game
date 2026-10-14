@@ -40,3 +40,9 @@ export function validateQuestionAnswer(m:RoutingContentModule,raw:string){const 
 export function resultPoints(m:RoutingContentModule,result:Pick<ModuleResult,'status'|'failures'|'hintsUsed'>){if(result.status==='failed')return m.points.fail;const hintPenalty=getHintsPenaltyPercent(m.content,result.hintsUsed),penalty=Math.min(40,hintPenalty+result.failures*(m.points.failurePenaltyPercent??DEFAULT_HINT_PENALTY_STEP_PERCENT*2));return Math.round(m.points.win*(1-penalty/100));}
 export function emptyAttempt():ModuleAttempt{return {version:1,failures:0,hintsUsed:[],status:'not-started'};}
 export function readAttempt(storage:Pick<Storage,'getItem'>,key:string,m:RoutingContentModule){try{const raw=JSON.parse(storage.getItem(key)??'null');if(raw?.version!==1||!['not-started','started','completed','failed'].includes(raw.status)||!Number.isSafeInteger(raw.failures)||raw.failures<0||raw.failures>100000)return emptyAttempt();return {...emptyAttempt(),...raw,hintsUsed:Array.isArray(raw.hintsUsed)?raw.hintsUsed.filter((id:unknown)=>typeof id==='string'&&m.content.hints?.some(h=>h.id===id)):[]};}catch{return emptyAttempt();}}
+
+/** Restart pending content without erasing attempts, hint penalties or finished results. */
+export function openingAttempt(storage:Pick<Storage,'getItem'>,key:string,m:RoutingContentModule){
+ const saved=readAttempt(storage,key,m);
+ return saved.status==='completed'||saved.status==='failed'?saved:{...emptyAttempt(),failures:saved.failures,hintsUsed:saved.hintsUsed};
+}

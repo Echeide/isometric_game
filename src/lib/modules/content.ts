@@ -3,17 +3,19 @@ import type {AdventureChat} from '../chat/editor';
 import {chatResource,embeddedChat} from '../chat/editor';
 import {chatProgressKey} from '../chat/routingtales';
 import {contentModuleTypes,type ContentModule,type ContentModuleType,type ModuleHost} from './types';
+import {contextReady,validateContext} from './context-slides';
 export const MAX_CONTENT_MODULES=16;
 export function createContentModule(type:ContentModuleType,id:string=crypto.randomUUID()):ContentModule{if(type==='context')return {id,type,title:'Contexto',text:''};if(type==='chat')return {id,type};return {id,type,title:contentModuleTypes.find(t=>t.id===type)!.label,content:{body:{es:''},...(type==='question'?{answer:{es:''},answerMode:'TEXT',hints:[],maxAttempts:0}:{}),...(type==='video'?{videoUrl:{es:''},requiredWatchPercent:80}:{})},points:{win:0,fail:0}};}
 export function contentModuleName(module:ContentModule,chats:AdventureChat[]=[],fallback='Conversación'){return module.type==='chat'?chats.find(c=>chatResource(c.id)===module.resourceId)?.name??fallback:module.title;}
-export function contentModuleReady(module:ContentModule,chats:AdventureChat[]=[],fallback='Conversación'){if(module.type==='context')return !!module.title.trim()&&!!module.text.trim();if(module.type!=='chat')return routingModuleReady(module);return !!module.resourceId&&(module.resourceId.startsWith('chat:')?chats.some(c=>chatResource(c.id)===module.resourceId):true);}
+export function contentModuleReady(module:ContentModule,chats:AdventureChat[]=[],fallback='Conversación'){if(module.type==='context')return contextReady(module);if(module.type!=='chat')return routingModuleReady(module);return !!module.resourceId&&(module.resourceId.startsWith('chat:')?chats.some(c=>chatResource(c.id)===module.resourceId):true);}
 export function validateContentModules(value:unknown,chats:AdventureChat[]=[],allowExternal=false):asserts value is ContentModule[]{
  if(!Array.isArray(value)||value.length>MAX_CONTENT_MODULES)throw Error('La lista admite hasta 16 módulos.');
  const ids=new Set<string>();
  for(const m of value){
   if(!m||typeof m.id!=='string'||!/^[-a-zA-Z0-9_]{1,80}$/.test(m.id)||ids.has(m.id))throw Error('Los módulos necesitan identificadores únicos y válidos.');ids.add(m.id);
+  if(m.repeat!==undefined&&(typeof m.repeat!=='boolean'||m.type!=='chat'))throw Error('La repetición solo se admite en conversaciones.');
   if(!contentModuleTypes.some(t=>t.id===m.type))throw Error('Tipo de módulo no válido.');
-  if(m.type==='context'){if(typeof m.title!=='string'||!m.title.trim()||m.title.length>120||typeof m.text!=='string'||m.text.length>12000)throw Error('Título o texto de contexto no válido.');}
+  if(m.type==='context')validateContext(m);
   else if(m.type!=='chat')validateRoutingModule(m);
   else if(m.resourceId!==undefined){if(typeof m.resourceId!=='string'||!m.resourceId.trim()||m.resourceId.length>2000)throw Error('Conversación no válida.');if(m.resourceId.startsWith('chat:'))embeddedChat(chats,m.resourceId);else if(!allowExternal)throw Error('Selecciona una conversación de la aventura.');}
  }

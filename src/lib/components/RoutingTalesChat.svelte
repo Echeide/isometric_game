@@ -3,7 +3,7 @@
  import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
  import type {ModuleStatus} from '$lib/story/types';
  import {onMount} from 'svelte';
- import {chatUrl,parseChat,resumeNode,type ChatConfig} from '$lib/chat/routingtales';
+ import {chatUrl,parseChat,openingNode,type ChatConfig} from '$lib/chat/routingtales';
  let {currentLang='es',adventure,storage,resource,config:embedded,progressKey,onclose,onprogress,onstate}:{currentLang?:string;adventure?:import('../demo/adventure').Adventure;storage?:Pick<Storage,'getItem'|'setItem'>;resource:string;config?:ChatConfig;progressKey:string;onclose:()=>void;onprogress?:(node:string)=>void;onstate?:(status:ModuleStatus)=>void}=$props();
  let frame=$state<HTMLIFrameElement>();
  function sendInterface(){frame?.contentWindow?.postMessage({channel:'routingtales-chat-v1',type:'interface',locale:ui.locale,labels:{input:ui.locale==='en'?'Type a message…':'Escribe algo…',send:ui.locale==='en'?'Send message':'Enviar mensaje',clear:ui.locale==='en'?'Clear input':'Limpiar entrada'}},'*');}
@@ -14,7 +14,7 @@
   const report=(node:string)=>onstate?.(node==='success'?'completed':node==='fail'?'failed':'started');
   const timeout=setTimeout(()=>{if(loading)error="La conversación está tardando demasiado. Puedes volver a intentarlo.";},15000);
   function configure(){if(!config||!ready||sent)return;sent=true;let saved:string|null=null;try{saved=(storage??localStorage).getItem(progressKey);}catch{/* Storage can be unavailable. */}
-   startNode=resumeNode(config,saved)??config.chatNodes[0].id;frame?.contentWindow?.postMessage({channel:'routingtales-chat-v1',type:'configure',config,startNode},'*');
+   startNode=openingNode(config,saved);frame?.contentWindow?.postMessage({channel:'routingtales-chat-v1',type:'configure',config,startNode},'*');
   }
   function receive(event:MessageEvent){
    if(event.source!==frame?.contentWindow||event.data?.channel!=='routingtales-chat-v1')return;

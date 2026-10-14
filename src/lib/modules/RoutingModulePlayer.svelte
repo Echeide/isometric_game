@@ -3,7 +3,7 @@
  import {onMount,onDestroy,untrack} from 'svelte';
  import {get} from 'svelte/store';
  import {safeModuleHtml} from './rich-text';
- import {readAttempt,resultPoints,validateQuestionAnswer,localized,emptyAttempt,type RoutingContentModule,type ModuleResult,type ModuleAttempt} from './routing';
+ import {openingAttempt,resultPoints,validateQuestionAnswer,localized,emptyAttempt,type RoutingContentModule,type ModuleResult,type ModuleAttempt} from './routing';
  import type {ModuleStatus} from '../story/types';
  import {audioPlayer} from './routingtales/audio/audioPlayer.js';
  import {notices,toast} from './routingtales/shared/toast.js';
@@ -36,7 +36,7 @@
     return {id:progressKey,type:value.type.toUpperCase(),points:value.points.win,content};
  }
  $effect(()=>{if(ready)prepared=prepare(inputModule,currentLang);});
- onMount(()=>{let mounted=true;void(async()=>{try{attempt=readAttempt(storage,progressKey,module);if(!done)onstate('started');else onstate(attempt.status,{status:attempt.status as 'completed'|'failed',points:resultPoints(module,{status:attempt.status as 'completed'|'failed',failures:attempt.failures,hintsUsed:attempt.hintsUsed}),failures:attempt.failures,hintsUsed:attempt.hintsUsed,answer:attempt.answer??''});
+ onMount(()=>{let mounted=true;void(async()=>{try{attempt=openingAttempt(storage,progressKey,module);if(!done){if(get(audioPlayer).trackKey?.includes(progressKey))audioPlayer.close();onstate('started');checkpoint({status:'started'});}else onstate(attempt.status,{status:attempt.status as 'completed'|'failed',points:resultPoints(module,{status:attempt.status as 'completed'|'failed',failures:attempt.failures,hintsUsed:attempt.hintsUsed}),failures:attempt.failures,hintsUsed:attempt.hintsUsed,answer:attempt.answer??''});
     prepared=prepare(inputModule,currentLang);
     const component=module.type==='info'?await import('./routingtales/info/ModuleInfo.svelte'):module.type==='video'?await import('./routingtales/video/ModuleVideo.svelte'):await import('./routingtales/question/ModuleQuestion.svelte');if(!mounted)return;Player=component.default;ready=true;
    }catch(e){error=(e as Error).message;}})();return()=>{mounted=false;};});

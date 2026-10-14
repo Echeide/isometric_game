@@ -1,5 +1,5 @@
 import {railingPiece,railingAnchor,railingFrame,validateSceneRailings} from './railing-families';
-import {cameraAction,shouldFollow,mobileCamera} from './follow-camera';
+import {cameraAction,shouldFollow,initialGameCamera} from './follow-camera';
 import {prepareWallOcclusion,wallOccludesActor} from './wall-occlusion';
 import 'pixi.js/prepare';
 import {advanceRoute} from './movement';
@@ -14,7 +14,7 @@ import { cameraGestures } from './camera-gestures';
 import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture } from 'pixi.js';
 import {railingArt,railingGroup} from './railing-art';
 import {decorationPosition,decorationBounds} from './decorations';
-import { loadPixelArt, pixelObject, pixelNpc, type LoadedPixelArt, type PixelArtPack } from './pixelart';
+import { loadPixelArt, pixelObject, pixelNpc, npcClip, directionalNpc, type LoadedPixelArt, type PixelArtPack } from './pixelart';
 import { createActor, facingFor } from './actor';
 import {tileAt,defaultTile,terrainAt,terrainTileAt,validateSceneTiles} from './terrain';
 import { seatPlacement } from './seating';
@@ -508,7 +508,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   const wallOccluders=wallViews.map(({wall,group})=>({...prepareWallOcclusion(scene,wall),group}));
   const fadedGroups=new Set<string>();
   let occlusionX=NaN,occlusionY=NaN,occlusionCellX=NaN,occlusionCellY=NaN;
-  const occupantActors=[...occupants].map(([id,actor])=>({id,actor,entity:scene.entities.find(e=>e.id===id)!}));
+  const occupantActors=[...occupants].map(([id,actor])=>{const entity=scene.entities.find(e=>e.id===id)!,stored=art.pack.objects[entity.visualId??'pixel.person'];return {id,actor,entity,item:stored?directionalNpc(stored,art.pack.character):undefined};});
   const updateFrame=(tick:import('pixi.js').Ticker)=>{
     if(paused)return;
     const dt=Math.min(tick.deltaMS,50)/1000;time+=dt;
@@ -545,7 +545,13 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     badge.position.set(avatar.x,avatar.y+14);
     const pose:ActorPose=time<celebrationUntil?'celebrate':next?'walk':seatedAt?(working?'work':'sit'):conversation?'talk':'idle';
     player.update(time,dt,pose,facing,reduceMotion);
-    for(const {id,actor,entity} of occupantActors){actor.update(time,dt,conversation===id?'talk':'idle',conversation===id?facingFor(px-entity.position.x,py-entity.position.y):'se',reduceMotion);}
+    for(const {id,actor,entity,item} of occupantActors){
+      const talking=conversation===id,pose= talking?'talk':'idle';
+      const directional=!item||!!npcClip(item,pose)?.directions;
+      // A directional sheet supplies the turn; a single-view PNG can only be mirrored.
+      actor.view.scale.x=talking?(directional?1:(px-entity.position.x)-(py-entity.position.y)<0?-1:1):(entity.flipX?-1:1);
+      actor.update(time,dt,pose,talking?facingFor(px-entity.position.x,py-entity.position.y):'se',reduceMotion);
+    }
     if(pendingArrival){const target=pendingArrival;pendingArrival=null;app.renderer.render(app.stage);onArrive(target);}
     if(host.dataset.pose!==pose)host.dataset.pose=pose;if(host.dataset.facing!==facing)host.dataset.facing=facing;const cellLabel=`${cell.x},${cell.y}`;if(host.dataset.cell!==cellLabel)host.dataset.cell=cellLabel;
 
@@ -602,7 +608,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     setFollowCamera(enabled:boolean){
       followEnabled=enabled;
       if(enabled&&!editor&&!followInitialized){followInitialized=true;
-        if(window.matchMedia('(max-width: 700px)').matches){const initial=mobileCamera(fitScale);cameraBaseScale=initial.base;zoomLevel=initial.zoom;fit();followPlayer(true);}
+        const initial=initialGameCamera(fitScale);cameraBaseScale=initial.base;zoomLevel=initial.zoom;fit();followPlayer(true);
       }
     },
     focusPlayer(){if(editor)return;followSuspended=false;panMode=false;panCursor();

@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {createContentModule,validateContentModules,contentProgressKey} from '../src/lib/modules/content';
-import {validateRoutingModule,validateQuestionAnswer,resultPoints,readAttempt,isMediaUrl,type RoutingContentModule} from '../src/lib/modules/routing';
+import {validateRoutingModule,validateQuestionAnswer,resultPoints,readAttempt,openingAttempt,isMediaUrl,type RoutingContentModule} from '../src/lib/modules/routing';
 import {importRoutingModule,exportRoutingModule} from '../src/lib/modules/routing-import';
 import {replaceHostModules} from '../src/lib/modules/adventure-modules';
 import {createAdventure,parseAdventure} from '../src/lib/demo/adventure';
@@ -26,4 +26,11 @@ describe('RoutingTales information, video and question modules',()=>{
  it('awards once per object association atomically with its completion and restores the score',()=>{const a=fixture(),q=question(),started=beginObjectModules(a,emptyStory(),emptyInventory(),host),result={status:'completed' as const,points:999,failures:1,hintsUsed:['hint-a'],answer:'cafe'},done=reportObjectModule(a,started.progress,started.inventory,host,'q','completed'),p=applyModuleResult(a,done.progress,host,'q',result);expect(moduleScore(p)).toBe(90);expect(moduleScore(applyModuleResult(a,p,host,'q',result))).toBe(90);expect(moduleScore(restoreStory(a,p))).toBe(90);expect(beginObjectModules(a,p,done.inventory,host).progress.modules).toEqual(p.modules);expect(moduleScore(emptyStory())).toBe(0);const invalid={...p,moduleResults:{...p.moduleResults,'bad':result}};expect(moduleScore(restoreStory(a,invalid))).toBe(90);});
  it('isolates object and event scores and awards repeated events once per run',()=>{const a=fixture(),q=question();a.story!.events=[{id:'intro',name:'Inicio',trigger:'map.enter',mapId:'room',enabled:true,once:false,modules:[q],effects:[]}];const r={status:'completed' as const,points:0,failures:0,hintsUsed:[],answer:'coffee'};let p=beginNarrative(a,emptyStory(),emptyInventory(),'intro'),done=advanceNarrative(a,p,emptyInventory(),'intro');p=applyModuleResult(a,done.progress,{kind:'event',eventId:'intro'},'q',r,1);p=applyModuleResult(a,p,host,'q',r);expect(moduleScore(p)).toBe(200);p=beginNarrative(a,p,emptyInventory(),'intro');done=advanceNarrative(a,p,emptyInventory(),'intro');p=applyModuleResult(a,done.progress,{kind:'event',eventId:'intro'},'q',r,2);expect(moduleScore(p)).toBe(300);expect(moduleScore(restoreStory(a,p))).toBe(300);});
  it('keeps media playback local and recognizes YouTube variants without matching misleading hosts',()=>{expect(getPlayableMediaUrl('https://video.example/file.mp4')).toBe('https://video.example/file.mp4');expect(isYouTubeUrl('https://youtube.com.evil.example/watch?v=x')).toBe(false);expect(isYouTubeUrl('https://www.youtube.com/shorts/abc123')).toBe(true);expect(youTubeId('https://youtu.be/abc123?t=2')).toBe('abc123');expect(youTubeId('https://www.youtube.com/shorts/abc123')).toBe('abc123');});
+});
+
+it('reopens pending question and video content from the start without erasing penalties or terminal results',()=>{
+ const q=question(),values=new Map<string,string>(),storage={getItem:(k:string)=>values.get(k)??null};
+ values.set('k',JSON.stringify({version:1,status:'started',failures:2,hintsUsed:['hint-a'],answer:'old answer',watchPercent:65,mediaTime:120}));
+ const opened=openingAttempt(storage,'k',q);expect(opened).toMatchObject({status:'not-started',failures:2,hintsUsed:['hint-a']});expect(opened.answer).toBeUndefined();expect(opened.mediaTime).toBeUndefined();expect(opened.watchPercent).toBeUndefined();
+ for(const status of ['completed','failed']){values.set('k',JSON.stringify({version:1,status,failures:2,hintsUsed:['hint-a'],answer:'final',watchPercent:100,mediaTime:180}));expect(openingAttempt(storage,'k',q)).toMatchObject({status,answer:'final',watchPercent:100,mediaTime:180});}
 });

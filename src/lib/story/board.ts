@@ -1,3 +1,4 @@
+import {moduleSequence} from '../modules/sequence';
 import {contentModuleName} from '../modules/content';
 import type {Adventure} from '../demo/adventure';
 import {behavior,entityModules} from './engine';
@@ -18,8 +19,8 @@ export function storyBoard(a:Adventure,t:(source:string,inputs?:Record<string,st
  for(const item of a.items??[])nodes.push({id:itemNode(item.id),title:item.name,location:t('Inventario'),selection:{kind:'item',itemId:item.id},action:item.stackable?t('Acumulable'):t('Artículo único'),modules:[],states:[],configured:true});
  function condition(c:Condition,target:string,owner:BoardSelection,scope:string){const source=c.kind==='item'?itemNode(c.itemId):c.kind==='event'?eventNode(c.eventId):objectNode(c);const detail=c.kind==='item'?t('Tener {arg0}',{arg0:c.quantity}):c.kind==='event'?t(statusLabels[c.status]):c.kind==='module'?(entityModules(a,c).find(m=>m.id===c.moduleId)?.name??c.moduleId)+' '+t(statusLabels[c.status]):behavior(a,c)?.states.find(s=>s.id===c.stateId)?.name??c.stateId;edges.push({id:'',source,target,owner,kind:'requirement',label:scope+': '+(c.not?t('NO '):'')+detail});}
  function effect(e:StoryEffect,source:string,owner:BoardSelection,scope:string){const target=e.kind==='state'?objectNode(e):itemNode(e.itemId),detail=e.kind==='state'?behavior(a,e)?.states.find(s=>s.id===e.stateId)?.name??e.stateId:(e.kind==='give'?t('Dar '):t('Consumir '))+e.quantity;edges.push({id:'',source,target,owner,kind:'effect',label:scope+' → '+detail});}
- for(const b of a.story?.entities??[]){const owner:BoardSelection={kind:'object',ref:b},key=objectNode(b);for(const [name,group]of [['Visible',b.visibility],['Interactuar',b.interaction]] as const)for(const c of group?.conditions??[])condition(c,key,owner,t(name)+(group?.mode==='any'?t(' · alguna'):''));for(const r of b.reactions){for(const c of r.when?.conditions??[])condition(c,key,owner,t('Reacción')+(r.when?.mode==='any'?t(' · alguna'):''));for(const e of r.effects)effect(e,key,owner,t(eventLabels[r.event]));}}
- for(const event of a.story?.events??[]){const owner:BoardSelection={kind:'event',eventId:event.id},key=eventNode(event.id);if(event.mapId)edges.push({id:'',source:mapNode(event.mapId),target:key,owner,kind:'travel',label:t('Al entrar en el mapa')});for(const c of event.when?.conditions??[])condition(c,key,owner,t('Evento')+(event.when?.mode==='any'?t(' · alguna'):''));for(const e of event.effects)effect(e,key,owner,t('Al completar el evento'));}
+ for(const b of a.story?.entities??[]){const owner:BoardSelection={kind:'object',ref:b},key=objectNode(b);for(const step of moduleSequence(b.modules??[],b.moduleSequence))if(step.kind==='condition')for(const c of step.when?.conditions??[])condition(c,key,owner,step.moduleIds.map(id=>contentModuleName(b.modules!.find(m=>m.id===id)!,a.chats)).join(' → ')||t('Condición'));for(const [name,group]of [['Visible',b.visibility],['Interactuar',b.interaction]] as const)for(const c of group?.conditions??[])condition(c,key,owner,t(name)+(group?.mode==='any'?t(' · alguna'):''));for(const r of b.reactions){for(const c of r.when?.conditions??[])condition(c,key,owner,t('Reacción')+(r.when?.mode==='any'?t(' · alguna'):''));for(const e of r.effects)effect(e,key,owner,t(eventLabels[r.event]));}}
+ for(const event of a.story?.events??[]){const owner:BoardSelection={kind:'event',eventId:event.id},key=eventNode(event.id);const triggerMap=event.trigger==='adventure.start'?a.startMap:event.mapId;if(triggerMap)edges.push({id:'',source:event.trigger==='adventure.start'?key:mapNode(triggerMap),target:event.trigger==='adventure.start'?mapNode(triggerMap):key,owner,kind:'travel',label:t(event.trigger==='adventure.start'?'Al iniciar la aventura':'Al entrar en el mapa')});for(const c of event.when?.conditions??[])condition(c,key,owner,t('Evento')+(event.when?.mode==='any'?t(' · alguna'):''));for(const e of event.effects)effect(e,key,owner,t('Al completar el evento'));}
  for(const exit of a.exits){const owner:BoardSelection={kind:'object',ref:{mapId:exit.fromMap,entityId:exit.entityId}},source=objectNode(owner.ref);edges.push({id:'',source,target:mapNode(exit.toMap),kind:'travel',label:t('Viajar al mapa'),owner});if(exit.requirement)condition({kind:'item',itemId:exit.requirement.itemId,quantity:exit.requirement.quantity},source,owner,t('Salida'));}
  for(const map of a.maps)for(const e of map.entities)if(e.pickup)effect({kind:'give',itemId:e.pickup.itemId,quantity:e.pickup.quantity},objectNode({mapId:map.id,entityId:e.id}),{kind:'object',ref:{mapId:map.id,entityId:e.id}},t('Recoger'));
  const ids=new Set(nodes.map(n=>n.id)),merged=new Map<string,BoardEdge>();for(const edge of edges){if(!ids.has(edge.source)||!ids.has(edge.target))continue;const key=JSON.stringify([edge.source,edge.target,edge.kind,edge.owner]),old=merged.get(key);if(old){if(!old.label.includes(edge.label))old.label+=' · '+edge.label;}else merged.set(key,{...edge,id:key});}
@@ -51,4 +52,29 @@ export function boardEdgePan(pointer:BoardPoint,rect:{left:number;top:number;rig
   return position<low+margin?480*(1-(position-low)/margin):position>high-margin?-480*(1-(high-position)/margin):0;
  };
  return {x:velocity(pointer.x,rect.left,rect.right),y:velocity(pointer.y,rect.top,rect.bottom)};
+}
+
+/** Choose the nearest facing card edges; controls stay outside their cards. */
+export function boardWire(a:BoardPoint,b:BoardPoint,self=false){
+ const ports=(p:BoardPoint)=>[
+  {x:p.x+224,y:p.y+71,nx:1,ny:0},
+  {x:p.x,y:p.y+71,nx:-1,ny:0},
+  {x:p.x+112,y:p.y,nx:0,ny:-1},
+  {x:p.x+112,y:p.y+142,nx:0,ny:1}
+ ];
+ let from:BoardPoint,to:BoardPoint,c1:BoardPoint,c2:BoardPoint;
+ if(self){
+  from={x:a.x+224,y:a.y+38};to={x:a.x+224,y:a.y+104};
+  c1={x:a.x+310,y:a.y-24};c2={x:a.x+310,y:a.y+156};
+ }else{
+  const pairs=ports(a).flatMap(from=>ports(b).map(to=>({from,to,distance:Math.hypot(to.x-from.x,to.y-from.y)})));
+  const facing=pairs.filter(({from,to})=>(to.x-from.x)*from.nx+(to.y-from.y)*from.ny>=0&&(from.x-to.x)*to.nx+(from.y-to.y)*to.ny>=0);
+  const pair=(facing.length?facing:pairs).sort((a,b)=>a.distance-b.distance)[0];
+  from=pair.from;to=pair.to;
+  const bend=Math.min(120,pair.distance*.4);
+  c1={x:from.x+pair.from.nx*bend,y:from.y+pair.from.ny*bend};
+  c2={x:to.x+pair.to.nx*bend,y:to.y+pair.to.ny*bend};
+ }
+ return {path:`M ${from.x} ${from.y} C ${c1.x} ${c1.y},${c2.x} ${c2.y},${to.x} ${to.y}`,
+  x:(from.x+3*c1.x+3*c2.x+to.x)/8,y:(from.y+3*c1.y+3*c2.y+to.y)/8};
 }

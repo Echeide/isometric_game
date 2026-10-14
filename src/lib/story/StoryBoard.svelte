@@ -6,7 +6,7 @@
  import type {PixelArtPack} from '@isometrico/world';
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
  import {workshopNpc} from '../workshop/resources';
- import {storyBoard,filterBoard,boardPositions,boardDragPosition,boardEdgePan,type BoardSelection,type BoardNode} from './board';
+ import {storyBoard,filterBoard,boardPositions,boardDragPosition,boardEdgePan,boardWire,type BoardSelection,type BoardNode} from './board';
  let {adventure,graphics,selected='',onselect,onlayout}:{adventure:Adventure;graphics:PixelArtPack;selected?:string;onselect:(selection:BoardSelection,relationship?:boolean)=>void;onlayout:(positions:Record<string,{x:number;y:number}>)=>void}=$props();
  let map=$state(''),query=$state(''),allObjects=$state(false),scale=$state(.9),pan=$state({x:20,y:20}),viewport=$state<HTMLElement>();
  let dragged=$state<{id:string;x:number;y:number}|null>(null);
@@ -37,7 +37,7 @@
  function wheel(node:HTMLElement){const handler=(event:WheelEvent)=>{event.preventDefault();zoom(event.deltaY>0?-.1:.1);};node.addEventListener('wheel',handler,{passive:false});return{destroy(){node.removeEventListener('wheel',handler);}};}
  function thumbnail(node:BoardNode){if(!node.visualId)return;const image=graphics.objects[node.visualId];if(image)return image;if(node.selection.kind==='object'){const ref=node.selection.ref,entity=adventure.maps.find(m=>m.id===ref.mapId)?.entities.find(e=>e.id===ref.entityId);if(entity?.kind==='person'){try{return workshopNpc(graphics,node.visualId);}catch{/* Legacy vector actors have no PNG thumbnail. */}}} }
 
- function wire(source:string,target:string){const a=positions[source],b=positions[target];if(!a||!b)return {path:'',x:0,y:0};if(source===target)return{path:`M ${a.x+224} ${a.y+38} C ${a.x+310} ${a.y-24},${a.x+310} ${a.y+156},${a.x+224} ${a.y+104}`,x:a.x+234,y:a.y+68};const from={x:a.x+224,y:a.y+70},to={x:b.x,y:b.y+70},bend=Math.max(60,Math.abs(to.x-from.x)*.45);return {path:`M ${from.x} ${from.y} C ${from.x+bend} ${from.y},${to.x-bend} ${to.y},${to.x} ${to.y}`,x:(from.x+to.x)/2,y:(from.y+to.y)/2};}
+ function wire(source:string,target:string){const a=positions[source],b=positions[target];return a&&b?boardWire(a,b,source===target):{path:'',x:0,y:0};}
  function focusView(){void tick().then(fit);}
  function focusNode(id:string){const p=positions[id];if(!p||!viewport)return;scale=Math.max(scale,.75);pan={x:viewport.clientWidth/2-(p.x+112)*scale,y:viewport.clientHeight/2-(p.y+71)*scale};}
  $effect(()=>{const id=selected;selectedGroup;if(id)untrack(()=>{void tick().then(()=>focusNode(id));});});

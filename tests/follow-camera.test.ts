@@ -1,7 +1,7 @@
 import {expect,it} from 'vitest';
-import {cameraAction,mobileCamera,shouldFollow} from '../packages/world/src/follow-camera';
-it('starts mobile scenes at a readable scale within zoom limits',()=>{
- for(const fit of [.1,.3,.6,1.5]){const c=mobileCamera(fit);expect(c.zoom).toBeLessThanOrEqual(3);expect(c.base*c.zoom).toBeGreaterThanOrEqual(1);}
+import {cameraAction,initialGameCamera,shouldFollow} from '../packages/world/src/follow-camera';
+it('starts game scenes at maximum zoom with a readable scale on every screen',()=>{
+ for(const fit of [.1,.3,.6,1.5]){const c=initialGameCamera(fit);expect(c.zoom).toBe(3);expect(c.base*c.zoom).toBeGreaterThanOrEqual(1);}
 });
 it('chooses one control from the same crop threshold used by follow mode',()=>{
  expect(cameraAction(1,1)).toBe('player');

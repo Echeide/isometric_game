@@ -1,5 +1,5 @@
 import type {ModuleResult} from '../modules/routing';
-import type {ContentModule} from '../modules/types';
+import type {ContentModule,ModuleStep} from '../modules/types';
 export const moduleStatuses=['not-started','started','completed','failed'] as const;
 export type ModuleStatus=typeof moduleStatuses[number];
 export const statusLabels:Record<ModuleStatus,string>={'not-started':'No iniciado',started:'Iniciado',completed:'Completado',failed:'Fallado'};
@@ -12,7 +12,7 @@ export const storyEvents=['interact','module.started','module.completed','module
 export type StoryEvent=typeof storyEvents[number];
 export const eventLabels:Record<StoryEvent,string>={interact:'Al ejecutar la interacción','module.started':'Al iniciar un módulo','module.completed':'Al completar un módulo','module.failed':'Al fallar un módulo'};
 export interface StoryReaction {id:string;event:StoryEvent;moduleId?:string;once:boolean;when?:ConditionGroup;effects:StoryEffect[]}
-export interface EntityBehavior extends EntityRef {states:ObjectState[];initialState?:string;visibility?:ConditionGroup;interaction?:ConditionGroup;blockedMessage?:string;reactions:StoryReaction[];modules?:ContentModule[]}
+export interface EntityBehavior extends EntityRef {states:ObjectState[];initialState?:string;visibility?:ConditionGroup;interaction?:ConditionGroup;blockedMessage?:string;reactions:StoryReaction[];modules?:ContentModule[];moduleSequence?:ModuleStep[];moduleMode?:'sequence'|'conditional'}
 export type NarrativeModule=ContentModule;
 export interface NarrativeEvent {id:string;name:string;trigger:'adventure.start'|'map.enter';mapId?:string;enabled:boolean;once:boolean;when?:ConditionGroup;modules:NarrativeModule[];effects:StoryEffect[]}
 export interface NarrativeRun {status:ModuleStatus;module:number;run:number;moduleId?:string}

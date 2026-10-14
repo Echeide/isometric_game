@@ -11,7 +11,7 @@ export function cameraAction(scale:number,fitScale:number):CameraAction{
 export function shouldFollow(enabled:boolean,editor:boolean,suspended:boolean,scale:number,fitScale:number){
  return enabled&&!editor&&!suspended&&isCameraCropped(scale,fitScale);
 }
-export function mobileCamera(fitScale:number){
+export function initialGameCamera(fitScale:number){
  const base=Math.max(fitScale,1/3);
- return {base,zoom:Math.max(1,Math.min(3,1/base))};
+ return {base,zoom:3};
 }

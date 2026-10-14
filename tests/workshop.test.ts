@@ -7,7 +7,7 @@ import {mapImages,imageUrls} from '../src/lib/storage/local-adventures';
 import {exportAdventure,unpackAdventure,pngSize,validateCatalogGraphics} from '../src/lib/storage/adventure-package';
 import {validateGraphics} from '../packages/world/src/graphics-validation';
 import {parseScene,validateCustomCatalog,type VisualAsset} from '../packages/world/src/scene';
-import {npcClip,npcClipRow} from '../packages/world/src/pixelart';
+import {npcClip,npcClipRow,directionalNpc} from '../packages/world/src/pixelart';
 import {standaloneCharacter,supportOrigin,workshopEntries,workshopNpc} from '../src/lib/workshop/resources';
 
 const object:VisualAsset={id:'custom.locker',label:'Taquilla',kind:'object',category:'office',size:{x:2,y:1}};
@@ -74,8 +74,9 @@ describe('resource graphics validation',()=>{
   for(const clip of Object.values(legacy.animations!)){clip.row++;delete clip.directions;}
   pack.objects['pixel.person-lucia']=legacy;const snapshot=structuredClone(legacy),upgraded=workshopNpc(pack,'pixel.person-lucia');
   expect(npcClipRow(upgraded.animations!.idle!)).toBe(legacy.animations!.idle!.row);
+  expect(directionalNpc(legacy,pack.character).animations!.idle).toEqual(upgraded.animations!.idle);
   expect(upgraded.animations!.idle!.directions).toEqual(['ne','se','sw','nw']);expect(legacy).toEqual(snapshot);
-  legacy.animations!.idle!.image='asset:custom-sheet';expect(workshopNpc(pack,'pixel.person-lucia').animations!.idle!.directions).toBeUndefined();
+  legacy.animations!.idle!.image='asset:custom-sheet';expect(directionalNpc(legacy,pack.character).animations!.idle!.directions).toBeUndefined();expect(workshopNpc(pack,'pixel.person-lucia').animations!.idle!.directions).toBeUndefined();
   pack.objects['custom.guide']=legacy;expect(workshopNpc(pack,'custom.guide')).toBe(legacy);
  });
  it('exposes existing PNJs with their original palette and optional animation rows',()=>{

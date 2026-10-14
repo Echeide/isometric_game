@@ -29,7 +29,7 @@ export function localizeScene(a:Adventure,scene:WorldScene,locale:string,progres
 export function localizeModule(a:Adventure,module:ContentModule,locale:string,association:string[]):ContentModule{
  const path=['module',...association,module.id],text=(ids:string[],source:string)=>adventureText(a,locale,[...path,...ids],source),base=a.localization?.defaultLocale??'es';
  const title='title'in module?{title:text(['title'],module.title)}:{};
- if(module.type==='context')return {...module,...title,text:text(['text'],module.text)};
+ if(module.type==='context')return {...module,...title,text:text(['text'],module.text),...(module.slides?{slides:module.slides.map(slide=>({...slide,text:text(['slide',slide.id,'text'],slide.text),...(slide.title!==undefined?{title:text(['slide',slide.id,'title'],slide.title)}:{}),...(slide.image!==undefined?{image:text(['slide',slide.id,'image'],slide.image)}:{})}))}:{})};
  if(module.type==='chat')return {...module,...title};
  const localizedField=(ids:string[],field:LocalizedText|undefined):LocalizedText|undefined=>{if(field===undefined)return field;const source=typeof field==='string'?field:field[base]??'',entry=a.localization?.translations?.[locale]?.[textKey(...path,...ids)];if(!entry)return field;return {...(typeof field==='string'?{[base]:field}:field),[locale]:text(ids,source)};};
  const content={...module.content};for(const key of ['title','body','answer','correct_answer','audio','videoUrl','mediaUrl']as const){const value=localizedField(['content',key],content[key] as LocalizedText|undefined);if(value!==undefined)content[key]=value;}

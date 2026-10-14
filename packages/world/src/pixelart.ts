@@ -94,14 +94,28 @@ export function pixelActor(art:LoadedPixelArt,color:number,me:boolean){
 export function npcClip(item:ObjectSprite,pose:ActorPose){return pose==='talk'?(item.animations?.talk??item.animations?.idle):item.animations?.idle;}
 /** Legacy NPC clips use one absolute row; directional sheets start at their NE row. */
 export function npcClipRow(clip:NpcClip,facing:Facing='se'){return clip.row+(clip.directions?Math.max(0,clip.directions.indexOf(facing)):0);}
+/** Original built-in sheets already contain all four rows, even in older catalogs. */
+export function directionalNpc(item:ObjectSprite,character:CharacterPack):ObjectSprite{
+ const animations={...item.animations};
+ for(const pose of ['idle','talk'] as const){
+  const clip=animations[pose],original=character.animations[pose];
+  if(clip&&!clip.directions&&characterVariants(character).some(variant=>clip.image===characterImage(character,pose,variant))&&clip.frameWidth===character.frameWidth&&clip.frameHeight===character.frameHeight&&clip.row===original.row+1&&clip.frames===original.frames)
+   animations[pose]={...clip,row:original.row,directions:[...character.directions]};
+ }
+ return {...item,animations};
+}
 export function pixelNpc(art:LoadedPixelArt,id:string){
- const item=art.pack.objects[id],view=new Container(),sprite=pixelObject(art,id)!;view.addChild(sprite);
- const still=sprite.texture,clips=new Map<NpcClip,Texture[]>();
- for(const clip of Object.values(item.animations??{}))clips.set(clip,Array.from({length:clip.frames},(_,i)=>new Texture({source:art.textures.get(clip.image)!.source,frame:new Rectangle(i*clip.frameWidth,npcClipRow(clip)*clip.frameHeight,clip.frameWidth,clip.frameHeight)})));
+ const item=directionalNpc(art.pack.objects[id],art.pack.character),view=new Container(),sprite=pixelObject(art,id)!;view.addChild(sprite);
+ const still=sprite.texture,clips=new Map<NpcClip,Map<Facing,Texture[]>>();
+ for(const clip of Object.values(item.animations??{})){
+  const directions=new Map<Facing,Texture[]>();
+  for(const facing of ['ne','se','sw','nw'] as const)directions.set(facing,Array.from({length:clip.frames},(_,i)=>new Texture({source:art.textures.get(clip.image)!.source,frame:new Rectangle(i*clip.frameWidth,npcClipRow(clip,facing)*clip.frameHeight,clip.frameWidth,clip.frameHeight)})));
+  clips.set(clip,directions);
+ }
  let last:ActorPose='idle',elapsed=0;
- function update(_time:number,dt:number,pose:ActorPose,_facing:Facing,reduced=false){
+ function update(_time:number,dt:number,pose:ActorPose,facing:Facing,reduced=false){
   if(pose!==last){elapsed=0;last=pose;}elapsed+=dt;
-  const clip=npcClip(item,pose),frames=clip?clips.get(clip)!:undefined;
+  const clip=npcClip(item,pose),frames=clip?clips.get(clip)!.get(facing):undefined;
   sprite.texture=clip&&frames?frames[reduced?0:Math.floor(elapsed*clip.fps)%frames.length]:still;
   sprite.width=item.width;sprite.height=item.height;
  }

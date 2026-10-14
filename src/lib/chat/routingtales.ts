@@ -24,3 +24,8 @@ export function chatUrl(resource:string):string {
 }
 export function chatProgressKey(adventure:string,map:string,entity:string,resource:string){return 'isometrico.chat.v1:'+JSON.stringify([adventure,map,entity,resource]);}
 export function resumeNode(config:ChatConfig,saved:string|null):string|undefined {return config.chatNodes.some(n=>n.id===saved)?saved!:undefined;}
+
+/** Unfinished chats restart; terminal nodes preserve completed/failed results. */
+export function openingNode(config:ChatConfig,saved:string|null){
+ const terminal=saved==='success'||saved==='fail';return (terminal?resumeNode(config,saved):undefined)??config.chatNodes[0].id;
+}
