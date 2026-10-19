@@ -12,6 +12,7 @@ export function adventureEntry(adventure:Adventure, options:{previewMapId?:strin
 /** Runtime resources, including every narrative appearance of objects in this map. */
 export function mapGraphics(pack:PixelArtPack, adventure:Adventure, scene:WorldScene):PixelArtPack{
  const objects=new Set(scene.entities.map(e=>e.visualId??`pixel.${e.kind}`));
+ for(const entity of scene.entities)if(entity.seat){objects.add('pixel.chair-base');objects.add(`pixel.chair-back-${entity.seat.facing}`);}
  for(const decoration of scene.decorations??[])objects.add(decoration.visualId);
  for(const behavior of adventure.story?.entities??[])if(behavior.mapId===scene.id)for(const state of behavior.states)if(state.visualId)objects.add(state.visualId);
  if(objects.has('pixel.goal'))objects.add('pixel.goal-completed');

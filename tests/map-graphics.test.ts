@@ -48,3 +48,8 @@ it('does not create object URLs when a pending download completes after release'
  const preparing=loader.ensure(a.maps[0]);loader.release();complete(new Blob(['image']));
  await expect(preparing).rejects.toThrow('Closed');
 });
+it('includes the separate base and facing-specific back of interactive seats',()=>{
+ const scene={...a.maps[0],entities:[{...a.maps[0].entities[0],seat:{cell:{x:0,y:1},facing:'ne' as const}}]};
+ const selected=mapGraphics({...pack,objects:{...pack.objects,'pixel.chair-base':sprite('/base.png'),'pixel.chair-back-ne':sprite('/back-ne.png'),'pixel.chair-back-sw':sprite('/back-sw.png')}},a,scene);
+ expect(selected.objects['pixel.chair-base']).toBeDefined();expect(selected.objects['pixel.chair-back-ne']).toBeDefined();expect(selected.objects['pixel.chair-back-sw']).toBeUndefined();
+});
