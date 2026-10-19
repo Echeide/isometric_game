@@ -7,7 +7,7 @@ import {parseScene} from '../packages/world/src/scene';
 import {createAdventure,parseAdventure} from '../src/lib/demo/adventure';
 import {emptyInventory} from '../src/lib/demo/inventory';
 import {emptyStory,type NarrativeEvent,type StoryProgress} from '../src/lib/story/types';
-import {beginNarrative,advanceNarrative,scheduleNarratives,canBeginNarrative,narrativeStatus,restoreNarratives,setNarrativeStatus,attachNarrativeChat,replaceNarrativeEvent,narrativeChatKey} from '../src/lib/story/narrative';
+import {beginNarrative,advanceNarrative,scheduleNarratives,resumeNarratives,canBeginNarrative,narrativeStatus,restoreNarratives,setNarrativeStatus,attachNarrativeChat,replaceNarrativeEvent,narrativeChatKey} from '../src/lib/story/narrative';
 import {restoreStory,allows,replaceBehavior} from '../src/lib/story/engine';
 import {storyUsesItem} from '../src/lib/story/validation';
 import {createChat} from '../src/lib/chat/editor';
@@ -20,6 +20,14 @@ function fixture(){
 function intro(id='intro',values:Partial<NarrativeEvent>={}):NarrativeEvent{return {id,name:id,trigger:'adventure.start',enabled:true,once:true,modules:[{id:'text',type:'context',title:'Bienvenida',text:'Tu historia comienza aquí.'}],effects:[{kind:'give',itemId:'key',quantity:1}],...values};}
 class MemoryStorage{values=new Map<string,string>();get length(){return this.values.size;}key(i:number){return [...this.values.keys()][i]??null;}getItem(k:string){return this.values.get(k)??null;}setItem(k:string,v:string){this.values.set(k,v);}removeItem(k:string){this.values.delete(k);}clear(){this.values.clear();}}
 describe('narrative event lifecycle',()=>{
+ it('resumes pending and interrupted events without replaying completed repeatable map entries',()=>{
+  const a=fixture();a.story!.events=[intro(),intro('arrival',{trigger:'map.enter',mapId:'room',once:false}),intro('later',{trigger:'map.enter',mapId:'room'}),intro('elsewhere',{trigger:'map.enter',mapId:'garden'})];
+  const queued=scheduleNarratives(a,emptyStory(),'room'),started=beginNarrative(a,queued.progress,emptyInventory(),'intro');
+  expect(resumeNarratives(a,started,'room',['arrival','later','missing'])).toEqual(['intro','arrival','later']);
+  let p=advanceNarrative(a,started,emptyInventory(),'intro').progress;p=beginNarrative(a,p,emptyInventory(),'arrival');p=advanceNarrative(a,p,emptyInventory(),'arrival').progress;
+  expect(resumeNarratives(a,p,'room',['later'])).toEqual(['later']);expect(scheduleNarratives(a,p,'room').ids).toContain('arrival');
+  p=beginNarrative(a,p,emptyInventory(),'later');expect(resumeNarratives(a,p,'room')).toEqual(['later']);expect(resumeNarratives(a,p,'garden')).toEqual([]);
+ });
  it('keeps narrative content and board positions in the adventure ZIP',async()=>{const a=fixture();a.story!.events=[intro('intro',{effects:[]})];a.story!.layout={node:{x:-320,y:-64}};const pack=mapImages(graphics,url=>'asset:'+url),blob=await exportAdventure(a,{pack:async()=>pack,blob:async id=>new Blob([readFileSync('static'+id)])});const restored=unpackAdventure(new Uint8Array(await blob.arrayBuffer()));expect(restored.adventure.story).toEqual(a.story);});
  it('accepts legacy adventures and validated disabled drafts, rejecting malformed triggers, references and content',()=>{
   const a=fixture();expect(()=>parseAdventure(a)).not.toThrow();a.story!.events=[intro()];expect(()=>parseAdventure(a)).not.toThrow();

@@ -1,38 +1,47 @@
 <script lang="ts">
  import {adventureLocale,adventureLanguages,adventureText,localizeScene,localizeModule} from '$lib/i18n/adventure';import {languageName} from '$lib/i18n/locale';
  import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
- let {published=null,resumeMapId=null}:{resumeMapId?:string|null;published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string}|null}=$props();
+ let {published=null}:{published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string}|null}=$props();
  import {applyModuleResult,moduleScore} from '$lib/modules/module-results';
  import type {ModuleResult} from '$lib/modules/routing';
  import AudioDock from '$lib/modules/AudioDock.svelte';
  import {audioPlayer} from '$lib/modules/routingtales/audio/audioPlayer.js';
- import {narrativeEvent,narrativeStatus,scheduleNarratives,canBeginNarrative,beginNarrative,advanceNarrative,setNarrativeStatus,narrativeChatKey} from '$lib/story/narrative';
+ import {narrativeEvent,narrativeStatus,scheduleNarratives,resumeNarratives,canBeginNarrative,beginNarrative,advanceNarrative,setNarrativeStatus,narrativeChatKey} from '$lib/story/narrative';
  import {statusLabels,emptyStory,type StoryProgress,type EntityRef,type ModuleStatus,type StoryEvent} from '$lib/story/types';
- import {readStory,saveStory} from '$lib/story/progress';
+ import {saveStory} from '$lib/story/progress';
  import {availability,resolveStoryScene,react,setObjectState,setModuleStatus,moduleStatus} from '$lib/story/engine';
  let story=$state<StoryProgress>(emptyStory()),conditionMessage=$state('');
- function refreshStoryWorld(){arrivalCamera=controller?.getCamera()??arrivalCamera;arrivalFacing=controller?.getFacing()??arrivalFacing;const cell=controller?.getPlayerCell?.();if(cell)currentScene={...currentScene,spawn:cell};worldKey++;}
- function commitStory(p:StoryProgress,i:typeof inventory,messages:string[]=[]){if(!adventure)return;if(!messages.length&&JSON.stringify(p)===JSON.stringify(story)&&JSON.stringify(i)===JSON.stringify(inventory))return;const before=JSON.stringify(resolveStoryScene(adventure,currentScene,story,inventory).entities),after=JSON.stringify(resolveStoryScene(adventure,currentScene,p,i).entities);saveStory(progressStorage,adventure.id,p,i);story=p;inventory=i;if(before!==after)refreshStoryWorld();messages.forEach(record);}
+ function refreshStoryWorld(){arrivalCamera=controller?.getCamera()??arrivalCamera;arrivalFacing=controller?.getFacing()??arrivalFacing;const cell=controller?.getPlayerCell?.();if(cell)currentScene={...currentScene,spawn:cell};controller=undefined;worldKey++;}
+ function commitStory(p:StoryProgress,i:typeof inventory,messages:string[]=[]){if(!adventure)return;if(!messages.length&&JSON.stringify(p)===JSON.stringify(story)&&JSON.stringify(i)===JSON.stringify(inventory))return;const before=JSON.stringify(resolveStoryScene(adventure,currentScene,story,inventory).entities),after=JSON.stringify(resolveStoryScene(adventure,currentScene,p,i).entities);try{session!.transaction(()=>saveStory(progressStorage,adventure!.id,p,i));testError='';}catch(e){testError=ui.text('No se pudo guardar el progreso en este navegador.');throw e;}story=p;inventory=i;if(before!==after)refreshStoryWorld();messages.forEach(record);}
  function storyEvent(ref:EntityRef,event:StoryEvent,moduleId?:string,p=$state.snapshot(story)){if(!adventure)return;const result=react(adventure,p,$state.snapshot(inventory),ref,event,moduleId);commitStory(result.progress,result.inventory,result.messages);}
  function testState(ref:EntityRef,stateId:string){if(!adventure)return;try{commitStory(setObjectState(adventure,$state.snapshot(story),ref,stateId),$state.snapshot(inventory));record('Estado de objeto simulado: '+(adventure.story?.entities.find(e=>e.mapId===ref.mapId&&e.entityId===ref.entityId)?.states.find(s=>s.id===stateId)?.name??stateId));}catch(e){testError=(e as Error).message;}}
  function testModule(ref:EntityRef,moduleId:string,value:ModuleStatus,reactions=false){if(!adventure)return;try{const p=setModuleStatus(adventure,$state.snapshot(story),ref,moduleId,value);if(reactions&&value!=='not-started')storyEvent(ref,('module.'+value) as StoryEvent,moduleId,p);else commitStory(p,$state.snapshot(inventory));record('Progreso de módulo simulado: '+statusLabels[value]);}catch(e){testError=(e as Error).message;}}
  function testItem(id:string,quantity:number){if(!adventure||!adventure.items?.some(i=>i.id===id)||!Number.isSafeInteger(quantity)||quantity<0)return;try{commitStory($state.snapshot(story),{...$state.snapshot(inventory),counts:{...inventory.counts,[id]:quantity}});record('Inventario simulado: '+id+' × '+quantity);}catch(e){testError=(e as Error).message;}}
  function objectModuleState(id:string,value:ModuleStatus,detail?:ModuleResult){if(!adventure||panel!=='chat'||currentObjectModule?.id!==id)return false;try{const ref={mapId:currentScene.id,entityId:resourceEntityId},result=reportObjectModule(adventure,$state.snapshot(story),$state.snapshot(inventory),ref,id,value),progress=detail?applyModuleResult(adventure,result.progress,{kind:'object',...ref},id,detail):result.progress;commitStory(progress,result.inventory,result.messages);objectModuleId=result.moduleId;objectModulesFinished=result.finished||objectModulesFinished;moduleError='';return true;}catch(e){moduleError=(e as Error).message;record('No se aplicó el resultado del módulo: '+moduleError);return false;}}
  function objectContinue(){if(!moduleError&&(objectModulesFinished||adventure&&currentObjectModule&&['completed','failed'].includes(moduleStatus(story,{mapId:currentScene.id,entityId:resourceEntityId},currentObjectModule.id))))void closePanel();}
- function objectBackground(ref:EntityRef,id:string,adventureId:string,detail:ModuleResult){if(disposed||!adventure||adventure.id!==adventureId)return false;try{const result=reportObjectModule(adventure,$state.snapshot(story),$state.snapshot(inventory),ref,id,detail.status);commitStory(applyModuleResult(adventure,result.progress,{kind:'object',...ref},id,detail),result.inventory,result.messages);return true;}catch{return false;}}
- function narrativeBackground(id:string,moduleId:string,run:number,adventureId:string,detail:ModuleResult){if(disposed||!adventure||adventure.id!==adventureId||story.narrative?.[id]?.run!==run||story.narrative[id].status!=='started'||story.narrative[id].moduleId!==moduleId)return false;try{const result=advanceNarrative(adventure,$state.snapshot(story),$state.snapshot(inventory),id,detail.status);commitStory(applyModuleResult(adventure,result.progress,{kind:'event',eventId:id},moduleId,detail,run),result.inventory,result.messages);return true;}catch{return false;}}
+ function objectBackground(ref:EntityRef,id:string,adventureId:string,generation:number,detail:ModuleResult){if(disposed||generation!==sessionGeneration||phase!=='playing'||!adventure||adventure.id!==adventureId)return false;try{const result=reportObjectModule(adventure,$state.snapshot(story),$state.snapshot(inventory),ref,id,detail.status);commitStory(applyModuleResult(adventure,result.progress,{kind:'object',...ref},id,detail),result.inventory,result.messages);return true;}catch{return false;}}
+ function narrativeBackground(id:string,moduleId:string,run:number,adventureId:string,generation:number,detail:ModuleResult){if(disposed||generation!==sessionGeneration||phase!=='playing'||!adventure||adventure.id!==adventureId||story.narrative?.[id]?.run!==run||story.narrative[id].status!=='started'||story.narrative[id].moduleId!==moduleId)return false;try{const result=advanceNarrative(adventure,$state.snapshot(story),$state.snapshot(inventory),id,detail.status);commitStory(applyModuleResult(adventure,result.progress,{kind:'event',eventId:id},moduleId,detail,run),result.inventory,result.messages);return true;}catch{return false;}}
  function checkInteraction(event:WorldInteraction){if(!adventure)return true;const v=availability(adventure,story,inventory,{mapId:event.sceneId,entityId:event.entityId});if(v.visible&&v.interactive)return true;conditionMessage=adventureText(adventure,contentLanguage,['entity',event.sceneId,event.entityId,'blockedMessage'],v.message);information=null;panel='condition';record('Interacción bloqueada: '+v.message);return false;}
  import AdventureTests from '$lib/components/AdventureTests.svelte';
- import {readProgress,writeProgress,resetProgress,appendActivity,milestones,type Activity} from '$lib/demo/test-progress';
+ import {writeProgress,appendActivity,milestones,type Activity} from '$lib/demo/test-progress';
  const progressPrefix=()=>published?'public:'+published.key:'preview:'+storageScope();
  import {scopedStorage} from '$lib/storage/scoped-storage';
- const progressStorage=scopedStorage(()=>localStorage,progressPrefix);
+ const legacyStorage=scopedStorage(()=>localStorage,progressPrefix);
+ import {localGameSaves,createGameSession,newGameSave,restoreGame,gameSaveKey,type GameSave,type GameSaveRepository,type GameSession,type PlayerPosition} from '$lib/storage/game-save';
+ import PlayerMenu from '$lib/components/PlayerMenu.svelte';
+ let progressStorage=$state.raw<Storage>(legacyStorage);
+ let session:GameSession|undefined,repository:GameSaveRepository|undefined,saveTimer:ReturnType<typeof setTimeout>|undefined;
+ let sessionGeneration=$state(0);
+ let playerPosition:PlayerPosition={mapId:'',cell:{x:0,y:0},facing:'se'};
+ let phase=$state<'boot'|'menu'|'loading'|'playing'>('boot'),savedGame=$state.raw<GameSave|null>(null),menuError=$state(''),restoreNotice=$state('');
+ function saveCheckpoint(){clearTimeout(saveTimer);saveTimer=undefined;if(!session||phase!=='playing')return true;try{session.transaction(()=>{writeProgress(progressStorage,adventure!.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});saveStory(progressStorage,adventure!.id,$state.snapshot(story),$state.snapshot(inventory));});testError='';return true;}catch{testError=ui.text('No se pudo guardar el progreso en este navegador.');return false;}}
+ function playerChanged(value:import('@isometrico/world').WorldPlayerState){if(phase!=='playing'||!controller||value.sceneId!==currentScene.id)return;playerPosition={mapId:value.sceneId,cell:{...value.cell},facing:value.facing};if(!value.moving)saveCheckpoint();else if(!saveTimer)saveTimer=setTimeout(saveCheckpoint,500);}
+ function openGameMenu(){if(phase!=='playing'||assetsLoading||transitionImage||!saveCheckpoint())return false;audioPlayer.close();savedGame=session!.saved;session!.close();sessionGeneration++;session=undefined;progressStorage=legacyStorage;controller=undefined;panel=null;information=null;narrativeId=null;phase='menu';mapsReady=false;menuError='';graphicsAbort.abort();graphicsLoader?.release();graphicsLoader=undefined;return true;}
  let activityLog=$state<Activity[]>([]),testError=$state('');
- function restoreProgress(a:Adventure){const p=readProgress(progressStorage,a);tasks=p.tasks;completed=p.completed;activityLog=p.log;story=readStory(progressStorage,a);testError='';}
  function record(message:string){if(!adventure)return;activityLog=appendActivity(activityLog,message);try{writeProgress(progressStorage,adventure.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});testError='';}catch{testError=ui.text("No se pudo guardar el progreso en este navegador.");}}
  function toggleTestGoal(key:string){if(!adventure)return;const goal=milestones(adventure).find(g=>g.key===key);if(!goal)return;const wasDone=completed.includes(key);completed=wasDone?completed.filter(k=>k!==key):[...completed,key];record(`${wasDone?'Reabierto':'Completado'} desde pruebas: ${goal.label} (${goal.map}).`);}
  function toggleTestTask(id:string){const task=tasks.find(t=>t.id===id);if(!task)return;const wasDone=task.status==='done';tasks=tasks.map(t=>t.id===id?{...t,status:wasDone?'todo':'done'}:t);record(`${wasDone?'Reabierta':ui.text("Completada")} desde pruebas: ${task.title}.`);}
- function restartAdventure(){if(!adventure)return;audioPlayer.close();try{const initial=parseScene(adventure.maps.find(m=>m.id===adventure!.startMap)!);const p=resetProgress(progressStorage,adventure.id);tasks=p.tasks;completed=p.completed;activityLog=p.log;inventory=emptyInventory();story=emptyStory();obtained=null;blockedExit=null;testError='';panMode=false;controller?.setConversation(null);traveler=createTraveler(adventure);changeScene(initial,'se');arrivalCamera=undefined;status="Aventura reiniciada.";}catch(e){testError=`No se pudo reiniciar: ${(e as Error).message}`;}}
+ function restartAdventure(){if(openGameMenu())void startGame('new');}
 
  import ContentModulePlayer from '$lib/modules/ContentModulePlayer.svelte';
  import {objectContentModules} from '$lib/modules/adventure-modules';
@@ -42,7 +51,7 @@
  let information=$state<WorldInteraction|null>(null);
  let obtained=$state<{name:string;quantity:number}|null>(null);
 
- import {collectedIds,collectItem,useExit,emptyInventory,readInventory} from '$lib/demo/inventory';
+ import {collectedIds,collectItem,useExit,emptyInventory} from '$lib/demo/inventory';
  let inventory=$state(emptyInventory());
 
  import {resolveEnvironment} from '@isometrico/world';
@@ -56,7 +65,7 @@
  let graphics=$state.raw(defaultGraphics);
  let graphicsLoader:ReturnType<typeof createMapGraphicsLoader>|undefined;
  let disposed=false,graphicsAbort=new AbortController(),sceneRequest=0;
- let loadProgress=$state<Progress|null>(null),assetsLoading=$state(true);
+ let loadProgress=$state<Progress|null>(null),assetsLoading=$state(false);
  async function loadGraphics(value:Adventure,initial:WorldScene){
   controller=undefined;assetsLoading=true;loadProgress=null;loadError='';
   graphicsAbort.abort();graphicsLoader?.release();graphicsAbort=new AbortController();
@@ -71,20 +80,22 @@
   }finally{assetsLoading=false;}
  }
 
- onDestroy(()=>{disposed=true;sceneRequest++;audioPlayer.close();graphicsAbort.abort();graphicsLoader?.release();});
+ onDestroy(()=>{saveCheckpoint();session?.close();clearTimeout(saveTimer);disposed=true;sceneRequest++;audioPlayer.close();graphicsAbort.abort();graphicsLoader?.release();});
  import { tick,onMount } from 'svelte';
  import MapDissolve from '$lib/components/MapDissolve.svelte';
  import {objectiveKey} from '$lib/demo/playable-adventure';
  import {loadAdventureLibrary,selectAdventure} from '$lib/storage/local-adventures';
  let adventures=$state<Adventure[]>([]);
  import {createTraveler,type Adventure} from '$lib/demo/adventure';
- import {parseScene,type WorldScene,type Facing,type CameraAction} from '@isometrico/world';
+ import {type WorldScene,type Facing,type CameraAction} from '@isometrico/world';
  import { World, type WorldController, type WorldInteraction } from '@isometrico/world';
  import { office,outdoors,makeAdapter,initialTasks,initialGoals,type Task } from '$lib/demo/scenes';
- import { ClipboardList, LockKeyhole, Package, Backpack, Layers, LayoutGrid, Map, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Flag, Armchair, CircleHelp, CheckCheck, Hand, LocateFixed } from 'lucide-svelte';
+ import { ClipboardList, LockKeyhole, Package, Backpack, Layers, LayoutGrid, Map, Menu, ChevronDown, ArrowUpRight, Plus, Minus, Scan, MousePointer2, X, Check, Play, MessageCircle, Flag, Armchair, CircleHelp, CheckCheck, Hand, LocateFixed } from 'lucide-svelte';
  let traveler:ReturnType<typeof createTraveler>|undefined;
  let adventure=$state<Adventure|null>(null),mapsReady=$state(false);let contentLanguage=$state('es');
  const contentLanguages=$derived(adventure?adventureLanguages(adventure):['es']);
+ const savedMap=$derived(adventure?.maps.find(m=>m.id===savedGame?.position.mapId)??adventure?.maps.find(m=>m.id===adventure?.startMap));
+ const savedMapName=$derived(savedMap?storyText(['map',savedMap.id,'name'],savedMap.name):'');
  function storyText(ids:string[],source:string){return adventureText(adventure,contentLanguage,ids,source);}
  function changeLanguage(locale:string){if(!adventure)return;contentLanguage=adventureLocale(adventure,locale);const url=new URL(location.href);url.searchParams.set('lang',contentLanguage);history.replaceState(history.state,'',url);}
  function moduleView(module:import('$lib/modules/types').ContentModule,association:string[]){return adventure?localizeModule(adventure,module,contentLanguage,association):module;}
@@ -99,25 +110,52 @@
  let resourceEntityId=$state(''),objectModuleId=$state<string|null>(null),objectModulesFinished=$state(false),moduleError=$state('');
  const objectModules=$derived(adventure?objectContentModules(adventure,{mapId:currentScene.id,entityId:resourceEntityId}):[]);
  const currentObjectModule=$derived(objectModules.find(m=>m.id===objectModuleId));
- async function initialize(){narrativeQueue=[];narrativeId=null;panel=null;mapsReady=false;loadError='';loadProgress=null;try{
+ function prepareMenu(){
+  if(!adventure)return;repository=localGameSaves(legacyStorage,adventure);menuError='';
+  try{savedGame=repository.read();if(!savedGame&&legacyStorage.getItem(gameSaveKey(adventure.id))!==null)menuError=ui.text('La partida guardada no es compatible o está dañada. Puedes empezar un nuevo juego.');}
+  catch{savedGame=null;menuError=ui.text('No se pudo leer la partida guardada en este navegador.');}
+  const query=new URLSearchParams(location.search);mode=adventureEntry(adventure,{savedMapId:savedGame?.position.mapId,previewMapId:published?null:query.get('map')??query.get('world')}).id;
+  phase='menu';
+ }
+ async function initialize(){phase='boot';narrativeQueue=[];narrativeId=null;panel=null;mapsReady=false;loadError='';loadProgress=null;try{
   const library=published?{activeId:published.adventure.id,adventures:[published.adventure]}:await loadAdventureLibrary();adventures=library.adventures;
   const requestedAdventure=new URLSearchParams(location.search).get('adventure');
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
-  contentLanguage=adventureLocale(adventure,new URLSearchParams(location.search).get('lang'));const query=new URLSearchParams(location.search);
-  const initial=adventureEntry(adventure,{savedMapId:resumeMapId,previewMapId:published?null:query.get('map')??query.get('world')});
-  await loadGraphics(adventure,initial);
-  restoreProgress(adventure);inventory=readInventory(progressStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;queueNarrativeEntry();
- }catch(e){if(!disposed)loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}}
- onMount(()=>{void initialize();});
- function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;graphicsLoader?.background(currentScene.id);runNarrativeQueue();}
- async function changeScene(next:WorldScene,facing:Facing,beforeEnter?:()=>void){
+  contentLanguage=adventureLocale(adventure,new URLSearchParams(location.search).get('lang'));prepareMenu();
+ }catch(e){if(!disposed)loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}}
+ async function startGame(choice:'new'|'continue'){
+  if(!adventure||!repository||phase!=='menu')return;
+  const request=++sceneRequest;phase='loading';menuError='';restoreNotice='';
+  try{
+   const query=new URLSearchParams(location.search),initial=adventureEntry(adventure,{previewMapId:published?null:query.get('map')??query.get('world')});
+   const save=choice==='continue'?repository.read():newGameSave(adventure,initial.id);if(!save)throw Error(ui.text('No hay una partida disponible para continuar.'));
+   const restored=restoreGame(adventure,save),nextTraveler=createTraveler(adventure);await loadGraphics(adventure,restored.scene);if(disposed||request!==sceneRequest)return;
+   tasks=restored.progress.tasks;completed=restored.progress.completed;activityLog=restored.progress.log;story=restored.story;inventory=restored.inventory;
+   currentScene=restored.scene;mode=currentScene.id;playerPosition=restored.position;arrivalFacing=playerPosition.facing;arrivalCamera=undefined;panMode=false;celebration=0;transitionImage=null;transitionReady=false;
+   narrativeId=null;panel=null;information=null;obtained=null;blockedExit=null;resourceEntityId='';objectModuleId=null;objectModulesFinished=false;moduleError='';narrativeError='';testError='';
+   const entry=scheduleNarratives(adventure,$state.snapshot(story),currentScene.id);story=entry.progress;
+   narrativeQueue=choice==='new'?entry.ids:resumeNarratives(adventure,$state.snapshot(story),currentScene.id,save.narrativeQueue);
+   sessionGeneration++;session=createGameSession(repository,save,()=>({position:structuredClone(playerPosition),narrativeQueue:[...narrativeQueue]}));progressStorage=session.storage;
+   session.transaction(()=>{writeProgress(progressStorage,adventure!.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});saveStory(progressStorage,adventure!.id,$state.snapshot(story),$state.snapshot(inventory));});
+   traveler=nextTraveler;worldKey++;mapsReady=true;phase='playing';
+   if(restored.adjusted&&choice==='continue')restoreNotice=ui.text('El mapa ha cambiado. Hemos ajustado tu posición a una casilla segura.');
+  }catch(e){if(!disposed&&request===sceneRequest){session?.close();session=undefined;progressStorage=legacyStorage;phase='menu';mapsReady=false;graphicsLoader?.release();menuError=ui.text('No se pudo iniciar la partida: ')+(e as Error).message;}}
+ }
+ onMount(()=>{void initialize();const flush=()=>{saveCheckpoint();};const visibility=()=>{if(document.visibilityState==='hidden')flush();};window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',visibility);return()=>{window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',visibility);};});
+ function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;playerPosition={mapId:currentScene.id,cell:c.getPlayerCell?.()??scene.spawn,facing:c.getFacing()};saveCheckpoint();if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;graphicsLoader?.background(currentScene.id);runNarrativeQueue();}
+ async function changeScene(next:WorldScene,facing:Facing,progress?:{story:StoryProgress;inventory:typeof inventory;messages:string[]}){
   const request=++sceneRequest;
   arrivalCamera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;
   assetsLoading=true;loadProgress=null;
   try{const pack=await graphicsLoader!.ensure(next,{onProgress:p=>{if(request===sceneRequest)loadProgress=p;}});if(disposed||request!==sceneRequest)return;graphics=pack;}
   catch(e){if(!disposed&&request===sceneRequest){transitionImage=null;transitionReady=true;status=`No se pudo cargar el mapa: ${(e as Error).message}`;}return;}
   finally{if(request===sceneRequest)assetsLoading=false;}
-  beforeEnter?.();celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;narrativeId=null;queueNarrativeEntry();
+  const nextInventory=progress?.inventory??$state.snapshot(inventory),entry=scheduleNarratives(adventure!,progress?.story??$state.snapshot(story),next.id);
+  const nextLog=(progress?.messages??[]).reduce((log,message)=>appendActivity(log,message),$state.snapshot(activityLog));
+  const previousPosition=playerPosition,previousQueue=narrativeQueue;playerPosition={mapId:next.id,cell:{...next.spawn},facing};narrativeQueue=entry.ids;
+  try{session!.transaction(()=>{writeProgress(progressStorage,adventure!.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:nextLog});saveStory(progressStorage,adventure!.id,entry.progress,nextInventory);});}
+  catch(e){playerPosition=previousPosition;narrativeQueue=previousQueue;transitionImage=null;transitionReady=true;testError=ui.text('No se pudo guardar el progreso en este navegador.');throw e;}
+  story=entry.progress;inventory=nextInventory;activityLog=nextLog;celebration=0;arrivalFacing=facing;controller=undefined;currentScene=next;mode=next.id;panel=null;information=null;worldKey++;status=`Has llegado a ${next.name}.`;narrativeId=null;
  }
  let tasks=$state<Task[]>(structuredClone(initialTasks));
  let panel=$state<'tests'|'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|'condition'|'narrative'|null>(null);
@@ -154,7 +192,7 @@
  const currentNarrative=$derived(adventure&&narrativeId?narrativeEvent(adventure,narrativeId):undefined);
  const currentNarrativeRun=$derived(narrativeId?story.narrative?.[narrativeId]:undefined);
  const currentNarrativeModule=$derived(currentNarrative?.modules[currentNarrativeRun?.module??0]);
- function queueNarrativeEntry(){if(!adventure)return;const queued=scheduleNarratives(adventure,$state.snapshot(story),currentScene.id);commitStory(queued.progress,$state.snapshot(inventory));narrativeQueue=queued.ids;narrativeError='';}
+
  function runNarrativeQueue(){
   if(!adventure||!controller||panel||transitionImage||narrativeRunning)return;narrativeRunning=true;
   try{while(narrativeQueue.length&&!panel){const id=narrativeQueue[0];narrativeQueue=narrativeQueue.slice(1);const event=narrativeEvent(adventure,id);if(!event||!canBeginNarrative(adventure,story,inventory,event))continue;
@@ -194,7 +232,7 @@
       if(pickup?.visualId)blockedExit.image=graphics.objects[pickup.visualId]?.image;
       opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel='locked';record(`Salida cerrada: ${blockedExit.name}. Falta ${blockedExit.item}.`);return;
     }
-    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);const reaction=react(adventure,$state.snapshot(story),progress,{mapId:event.sceneId,entityId:event.entityId},'interact');await changeScene(next.scene,next.facing,()=>{commitStory(reaction.progress,reaction.inventory,reaction.messages);record(`Viaje: ${currentScene.name} → ${next.scene.name}.`);});}
+    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);const reaction=react(adventure,$state.snapshot(story),progress,{mapId:event.sceneId,entityId:event.entityId},'interact');await changeScene(next.scene,next.facing,{story:reaction.progress,inventory:reaction.inventory,messages:[...reaction.messages,`Viaje: ${currentScene.name} → ${next.scene.name}.`]});}
     catch(e){status=(e as Error).message;}
     return;
    }
@@ -212,13 +250,11 @@
  function shortcut(entityId:string){void closePanel().then(()=>controller?.goTo(entityId));}
 
  async function switchAdventure(value:string){
-  if(!adventure||assetsLoading||transitionImage||value===adventure.id)return;audioPlayer.close();
+  if(!adventure||assetsLoading||transitionImage||value===adventure.id)return;if(phase==='playing'&&!openGameMenu())return;audioPlayer.close();
   try{
-   const next=await selectAdventure(value);await loadGraphics(next,adventureEntry(next));
-   restoreProgress(next);
-   inventory=readInventory(progressStorage,next.id);traveler=createTraveler(next);adventure=next;contentLanguage=adventureLocale(next);await changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
+   const next=await selectAdventure(value);adventure=next;contentLanguage=adventureLocale(next);narrativeQueue=[];prepareMenu();
    const url=new URL(location.href);url.search='';url.searchParams.set('adventure',value);history.replaceState(null,'',url);
-  }catch(e){status=(e as Error).message;}
+  }catch(e){menuError=(e as Error).message;}
  }
 
  function startTask(id:string){tasks=tasks.map(t=>({...t,status:t.id===id?'active':t.status==='active'?'todo':t.status}));status="En camino a tu puesto de trabajo.";record(`Tarea iniciada: ${tasks.find(t=>t.id===id)?.title}.`);void closePanel();}
@@ -234,12 +270,14 @@
  <header class="topbar">
   <a class="immersive-brand" href="/" aria-label={ui.text("Isométrico, inicio")}><span class="brand-mark"><Layers size={22}/></span><span class="wordmark">isométrico</span></a>
   <div class="header-divider"></div>
-  <div class="world-select"><label class="sr-only" for="world-select">{ui.text("Cambiar de aventura")}</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={!mapsReady||!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{storyText(['adventure','name'],item.name)}</option>{/each}</select><ChevronDown size={15}/></div></div>
-  <div class="topbar-right">{#if contentLanguages.length>1}<label class="story-language" title={ui.text('Idioma de la aventura')}><span class="sr-only">{ui.text('Idioma de la aventura')}</span><select aria-label={ui.text('Idioma de la aventura')} disabled={panel==='chat'&&currentObjectModule?.type==='chat'||panel==='narrative'&&currentNarrativeModule?.type==='chat'} value={contentLanguage} onchange={event=>changeLanguage(event.currentTarget.value)}>{#each contentLanguages as language}<option value={language}>{languageName(language)}</option>{/each}</select></label>{/if}{#if !published}<a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>{ui.text("Editar mapa")}</a><span class="demo-badge">{ui.text("VISTA PREVIA")}</span>{/if}<button class="header-action" onclick={()=>showPanel('space')} aria-label={ui.text("Abrir lugares y progreso")} title={ui.text("Lugares y progreso")}><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label={ui.text("Ayuda")} title={ui.text("Ayuda")}><CircleHelp size={19}/></button>{#if Object.keys(story.moduleResults??{}).length}<span class="module-score" role="status" aria-label={ui.text("Puntos de la aventura")}>{moduleScore(story)} pts</span>{/if}<span class="avatar-mini">E</span></div>
+  <div class="world-select"><label class="sr-only" for="world-select">{ui.text("Cambiar de aventura")}</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={phase==='boot'||phase==='loading'||!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{storyText(['adventure','name'],item.name)}</option>{/each}</select><ChevronDown size={15}/></div></div>
+  <div class="topbar-right">{#if contentLanguages.length>1}<label class="story-language" title={ui.text('Idioma de la aventura')}><span class="sr-only">{ui.text('Idioma de la aventura')}</span><select aria-label={ui.text('Idioma de la aventura')} disabled={panel==='chat'&&currentObjectModule?.type==='chat'||panel==='narrative'&&currentNarrativeModule?.type==='chat'} value={contentLanguage} onchange={event=>changeLanguage(event.currentTarget.value)}>{#each contentLanguages as language}<option value={language}>{languageName(language)}</option>{/each}</select></label>{/if}{#if !published}<a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>{ui.text("Editar mapa")}</a><span class="demo-badge">{ui.text("VISTA PREVIA")}</span>{/if}{#if phase==='playing'}<button class="header-action" disabled={assetsLoading||!!transitionImage} onclick={openGameMenu} aria-label={ui.text("Volver al menú")} title={ui.text("Menú de la aventura")}><Menu size={19}/></button><button class="header-action" onclick={()=>showPanel('space')} aria-label={ui.text("Abrir lugares y progreso")} title={ui.text("Lugares y progreso")}><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label={ui.text("Ayuda")} title={ui.text("Ayuda")}><CircleHelp size={19}/></button>{#if Object.keys(story.moduleResults??{}).length}<span class="module-score" role="status" aria-label={ui.text("Puntos de la aventura")}>{moduleScore(story)} pts</span>{/if}<span class="avatar-mini">E</span>{/if}</div>
  </header>
  <main class="immersive-world" aria-label={ui.text("Espacio virtual")}>
   <div class:outdoors={resolveEnvironment(scene).outdoor} class="map-stage">
-   {#if loadError}<div class="load-error"><p role="alert">{ui.text(loadError)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button></div>{:else if !mapsReady}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World translate={ui.text} followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{#if assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{/if}{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
+   {#if phase==='menu'&&adventure}{#key adventure.id}<PlayerMenu name={storyText(['adventure','name'],adventure.name)} hasSave={!!savedGame} savedAt={savedGame?.savedAt} mapName={savedMapName} error={menuError} onnew={()=>void startGame('new')} oncontinue={()=>void startGame('continue')}/>{/key}{:else if loadError}<div class="load-error"><p role="alert">{ui.text(loadError)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button></div>{:else if !mapsReady}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World translate={ui.text} followCamera paused={!!panel||assetsLoading} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} onplayer={playerChanged} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{#if assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{/if}{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
+   {#if phase==='playing'}
+   {#if testError||restoreNotice}<div class="save-feedback" class:save-error={!!testError} role={testError?'alert':'status'}><span>{testError||restoreNotice}</span>{#if !testError}<button onclick={()=>restoreNotice=''} aria-label={ui.text("Cerrar aviso")}><X size={16}/></button>{/if}</div>{/if}
    <div class="scene-heading"><div class="eyebrow">{adventure?storyText(['adventure','name'],adventure.name):ui.text('MI AVENTURA')}</div><h1>{scene.name}</h1><span>{ui.text(resolveEnvironment(scene).label)}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label={ui.text("Abrir inventario")} title={ui.text("Inventario")}><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
@@ -248,6 +286,7 @@
    <div class="player-hud"><div class="my-avatar">E</div><div><strong>{ui.text("Explorador")} <span>{ui.text("Tú")}</span></strong><small>{hasTasks&&active?ui.text("En foco · ")+active.title:ui.text("Disponible para explorar")}</small></div></div>
    <div class="scene-instructions"><MousePointer2 size={14}/><span>{ui.text("Haz clic para caminar · Interactúa con objetos y compañeros")}</span></div>
    <p class="sr-only" role="status">{ui.text(status)}</p>
+   {/if}
   </div>
  </main>
 </div>
@@ -262,7 +301,7 @@
    <small class="narrative-progress">{storyText(['event',currentNarrative.id,'name'],currentNarrative.name)} · {(currentNarrativeRun.module??0)+1}/{currentNarrative.modules.length}</small>
    {@const module=currentNarrativeModule}{@const event=currentNarrative}
    {#if module.type==='chat'}<h2>{contentModuleName(module,adventure.chats?.map(c=>({...c,name:storyText(['chat','chat:'+c.id,'name'],c.name)})),ui.text('Conversación'))}</h2>{/if}
-   {#key [event.id,module.id,currentNarrativeRun.run].join(':')}<ContentModulePlayer module={moduleView(module,['event',event.id])} currentLang={contentLanguage} adventure={adventure} chats={adventure.chats} storage={progressStorage} progressKey={narrativeChatKey(adventure.id,event,module,currentNarrativeRun.run)} onstate={narrativeChatState.bind(null,event.id,module.id)} onbackground={narrativeBackground.bind(null,event.id,module.id,currentNarrativeRun.run,adventure.id)} oncontinue={contextContinue} onprogress={node=>record('Evento '+event.name+' · conversación: '+node)} onclose={()=>void closePanel()}/>{/key}
+   {#key [event.id,module.id,currentNarrativeRun.run].join(':')}<ContentModulePlayer module={moduleView(module,['event',event.id])} currentLang={contentLanguage} adventure={adventure} chats={adventure.chats} storage={progressStorage} progressKey={narrativeChatKey(adventure.id,event,module,currentNarrativeRun.run)} onstate={narrativeChatState.bind(null,event.id,module.id)} onbackground={narrativeBackground.bind(null,event.id,module.id,currentNarrativeRun.run,adventure.id,sessionGeneration)} oncontinue={contextContinue} onprogress={node=>record('Evento '+event.name+' · conversación: '+node)} onclose={()=>void closePanel()}/>{/key}
   {:else if panel==='tests'&&adventure}
    {#if testError}<p role="alert">{testError}</p>{/if}<AdventureTests {adventure} {tasks} {completed} log={activityLog} {story} {inventory} onstate={testState} onmodule={testModule} onitem={testItem} onnarrative={testNarrative} ontask={toggleTestTask} ongoal={toggleTestGoal} onreset={restartAdventure}/>
   {:else if panel==='condition'}<h2>{ui.text("Acción bloqueada")}</h2><p class="drawer-description" role="status">{conditionMessage}</p><button class="primary-button" onclick={closePanel}>{ui.text("Seguir explorando")}</button>
@@ -287,7 +326,7 @@
    {#if moduleError}<p role="alert">{moduleError}</p>{/if}<small class="narrative-progress">{selectedEntity?.label} · {objectModules.findIndex(m=>m.id===currentObjectModule.id)+1}/{objectModules.length}</small>
    {#if currentObjectModule.type==='chat'}<div class="chat-heading"><span class="person-avatar">{chatName.slice(0,1)}</span><div><h2>{contentModuleName(currentObjectModule,adventure.chats?.map(c=>({...c,name:storyText(['chat','chat:'+c.id,'name'],c.name)})),ui.text('Conversación'))}</h2><p>{selectedEntity?.label}</p></div></div>{/if}
    {@const module=currentObjectModule}{@const moduleRef={mapId:currentScene.id,entityId:resourceEntityId}}
-   {#key [adventure.id,currentScene.id,resourceEntityId,module.id].join(':')}<ContentModulePlayer module={moduleView(module,['object',currentScene.id,resourceEntityId])} currentLang={contentLanguage} adventure={adventure} chats={adventure.chats} storage={progressStorage} progressKey={contentProgressKey(adventure.id,{kind:'object',mapId:currentScene.id,entityId:resourceEntityId},module)} onstate={objectModuleState.bind(null,module.id)} onbackground={objectBackground.bind(null,moduleRef,module.id,adventure.id)} oncontinue={objectContinue} onprogress={node=>record(`Módulo de ${selectedEntity?.label}: ${node==='success'?'completado':'paso '+node}.`)} onclose={()=>void closePanel()}/>{/key}
+   {#key [adventure.id,currentScene.id,resourceEntityId,module.id].join(':')}<ContentModulePlayer module={moduleView(module,['object',currentScene.id,resourceEntityId])} currentLang={contentLanguage} adventure={adventure} chats={adventure.chats} storage={progressStorage} progressKey={contentProgressKey(adventure.id,{kind:'object',mapId:currentScene.id,entityId:resourceEntityId},module)} onstate={objectModuleState.bind(null,module.id)} onbackground={objectBackground.bind(null,moduleRef,module.id,adventure.id,sessionGeneration)} oncontinue={objectContinue} onprogress={node=>record(`Módulo de ${selectedEntity?.label}: ${node==='success'?'completado':'paso '+node}.`)} onclose={()=>void closePanel()}/>{/key}
   {:else if panel==='goal'&&selectedGoal}
    <div class="drawer-icon"><Flag size={27}/></div><h2>{selectedGoal.title}</h2><p class="drawer-description">{selectedGoal.description}</p><div class="goal-callout"><Map size={28}/><p>{ui.text("Cada objetivo es un lugar al que volver. Explora a tu ritmo y marca este paso cuando lo hayas conseguido.")}</p></div><button class="primary-button" onclick={finishGoal} disabled={selectedGoal.done}>{#if selectedGoal.done}<Check size={18}/> {ui.text("Objetivo completado")}{:else}<Flag size={18}/> {ui.text("Marcar como completado")}{/if}</button>
   {:else if panel==='object'&&selectedEntity}
@@ -302,6 +341,7 @@
 {/if}
 
 <style>
+.save-feedback{position:absolute;top:18px;left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:15px;max-width:calc(100% - 30px);padding:12px 16px;border:1px solid #cedbbe;border-radius:10px;background:#fbfff5;color:#496237;font-size:12px;box-shadow:0 4px 15px #29413612}.save-feedback.save-error{color:#8a4336;background:#fff0eb;border-color:#ebd0c5}.save-feedback button{display:grid;place-items:center;flex-shrink:0}
 .story-language select{max-width:110px;padding:5px;border:1px solid #d6dfce;border-radius:7px;background:#fffef8;color:#35502f;font:12px system-ui}
 
 .module-score{padding:6px 9px;border:1px solid #d6dfce;border-radius:8px;background:#edf3e5;color:#35502f;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.narrative-progress{color:#73836a;font-size:12px}

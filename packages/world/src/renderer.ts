@@ -59,7 +59,7 @@ function entityArt(e: WorldEntity, outdoor: boolean, art:LoadedPixelArt, scene:W
   }
   return c;
 }
-export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack,existingApp?:Application,onCameraChange?:(camera:CameraState)=>void) {
+export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive: (e: WorldEntity) => void, onStatus: (s:string) => void, initialEditor: WorldEditor|undefined, graphics:PixelArtPack,existingApp?:Application,onCameraChange?:(camera:CameraState)=>void,onPlayerChange?:(state:import('./types').WorldPlayerState)=>void) {
   validateSceneTiles(scene,graphics.tiles,graphics.tileFamilies??{});
   const art=await loadPixelArt(graphics);
   const navigation=createNavigator(scene);
@@ -439,6 +439,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   const routeView=new Graphics();floor.addChild(routeView);
   let cell={...scene.spawn};let px=cell.x,py=cell.y;let route:Cell[]=[];let destination:WorldEntity|null=null;let zoomLevel=1;let cameraScale=1;let cameraBaseScale:number|undefined;let destroyed=false;
   let time=0,celebrationUntil=0,standingUntil=0;let facing:Facing='se';let working=false;let seatedAt:WorldEntity|null=null;let conversation:string|null=null;let purpose:'interact'|'work'='interact';
+  function notifyPlayer(){if(!editor)onPlayerChange?.({sceneId:scene.id,cell:{...cell},facing,moving:route.length>0});}
   const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let lastCameraSignature='';
   function cameraState():CameraState{return {zoom:zoomLevel,scale:cameraScale,fitScale,action:cameraAction(cameraScale,fitScale)};}
@@ -483,6 +484,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       if(target.kind==='person')conversation=target.id;
     }
     onStatus(seatedAt?'En tu puesto de trabajo':'Has llegado');
+    notifyPlayer();
     if(target&&purpose==='interact')pendingArrival=target;
   }
   function schedule(targets:Cell[],e:WorldEntity|null,reason:'interact'|'work'='interact') {
@@ -517,7 +519,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       if(!panGesture&&!gestures.blocked())followSuspended=false;
       const moved=advanceRoute({x:px,y:py},route,dt*4.5,facing);
       px=moved.x;py=moved.y;facing=moved.facing;
-      if(moved.reached){cell={...moved.reached};drawRoute();if(!route.length)arrive();}
+      if(moved.reached){cell={...moved.reached};drawRoute();if(!route.length)arrive();else notifyPlayer();}
     }
     const seated=seatedAt?.seat?seatPlacement(seatedAt.seat):null;
     avatar.visible=!editor;avatar.eventMode=editor?'none':'static';badge.visible=!editor&&playerHovered&&!seated;
@@ -563,7 +565,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
   const engine = {
     application:app,
     setPaused(value:boolean){paused=value;},
-    getPlayerCell(){return {x:Math.round(px),y:Math.round(py)};},
+    getPlayerCell(){return {...cell};},
     getPlayerAnchor(){const bounds=avatar.getBounds(),rect=app.canvas.getBoundingClientRect();return {x:rect.left+(bounds.x+bounds.width/2)*rect.width/app.screen.width,y:rect.top+bounds.y*rect.height/app.screen.height};},
     getEntityAnchor(id:string){const view=entityViews.get(id);if(!view)return null;const bounds=view.getBounds(),rect=app.canvas.getBoundingClientRect();return {x:rect.left+(bounds.x+bounds.width/2)*rect.width/app.screen.width,y:rect.top+bounds.y*rect.height/app.screen.height};},
     renderFrame(){updateFrame(app.ticker);app.renderer.render(app.stage);},
@@ -622,7 +624,7 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
     getCamera(){return cameraState();},
     restoreCamera(camera:{zoom:number;scale:number}){zoomLevel=camera.zoom;cameraBaseScale=camera.scale/camera.zoom;fit();followPlayer(true);},
     captureFrame(){app.renderer.render({container:app.stage});return app.canvas.toDataURL('image/png');},
-    setFacing(value:Facing){facing=value;player.update(time,0,'idle',facing,reduceMotion);host.dataset.facing=facing;},
+    setFacing(value:Facing){facing=value;player.update(time,0,'idle',facing,reduceMotion);host.dataset.facing=facing;notifyPlayer();},
     setWorking(value:boolean){
       if(working===value)return;working=value;badge.text=working?'Tú · Trabajando':'Tú';
       if(value){const desk=scene.entities.find(e=>e.seat);if(desk?.seat)schedule([desk.seat.cell],desk,'work');}

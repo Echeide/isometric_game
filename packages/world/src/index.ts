@@ -1,6 +1,6 @@
 export { default as World } from './World.svelte';
 export type {MapDecoration} from './types';
-export type { Cell, WorldScene, WorldEntity, WorldInteraction, WorldAdapter, WorldController, EntityKind, CameraAction, CameraState } from './types';
+export type { Cell, WorldScene, WorldEntity, WorldInteraction, WorldAdapter, WorldController, WorldPlayerState, EntityKind, CameraAction, CameraState } from './types';
 export { findPath, walkable, interactionCells, project } from './navigation';
 
 export { parseScene, visualCatalog } from './scene';

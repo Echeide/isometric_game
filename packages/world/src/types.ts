@@ -72,6 +72,7 @@ export interface WorldAdapter {
   interact: (event: WorldInteraction) => void | Promise<void>;
 }
 export interface WorldController {
+  /** Last fully reached cell, never an interpolated animation position. */
   getPlayerCell?: () => Cell;
   getPlayerAnchor: () => {x:number;y:number};
   getEntityAnchor: (id:string) => {x:number;y:number}|null;
@@ -91,6 +92,7 @@ export interface WorldController {
   celebrate: () => void;
   setConversation: (entityId: string | null) => void;
 }
+export interface WorldPlayerState {sceneId:string;cell:Cell;facing:Facing;moving:boolean}
 
 /** Optional authoring hooks. Omit them for normal gameplay. */
 export interface WorldEditor {

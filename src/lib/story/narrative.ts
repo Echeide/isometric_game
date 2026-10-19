@@ -18,6 +18,11 @@ export function scheduleNarratives(a:Adventure,p:StoryProgress,mapId:string){
  const ids=[...pending,...events.filter(e=>e.trigger==='map.enter'&&e.mapId===mapId).map(e=>e.id)];
  return {ids,progress:events.length&&!p.narrativeStarted?{...p,narrativeStarted:true,narrativePending:pending}:p};
 }
+/** Resuming a save is not another map entry; repeatable entry events stay completed. */
+export function resumeNarratives(a:Adventure,p:StoryProgress,mapId:string,queue:string[]=[]){
+ const events=a.story?.events??[];
+ return [...new Set([...(p.narrativePending??[]),...events.filter(e=>narrativeStatus(p,e.id)==='started'&&(e.trigger==='adventure.start'||e.mapId===mapId)).map(e=>e.id),...queue])].filter(id=>events.some(e=>e.id===id&&(e.trigger==='adventure.start'||e.mapId===mapId)));
+}
 export function canBeginNarrative(a:Adventure,p:StoryProgress,i:InventoryProgress,event:NarrativeEvent){const status=narrativeStatus(p,event.id);if(event.trigger==='adventure.start'&&p.narrativeStarted&&!p.narrativePending?.includes(event.id)&&status!=='started')return false;return event.enabled&&narrativeReady(a,event)&&!(event.once&&(status==='completed'||status==='failed'))&&allows(a,p,i,event.when);}
 export function beginNarrative(a:Adventure,p:StoryProgress,i:InventoryProgress,id:string){
  const event=narrativeEvent(a,id);if(!event||!canBeginNarrative(a,p,i,event))throw Error('El evento está desactivado, incompleto o no cumple sus requisitos.');

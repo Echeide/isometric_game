@@ -3,7 +3,7 @@ import type {Adventure} from '$lib/demo/adventure';
 import {imageUrls, mapImages} from './local-adventures';
 import {preloadItems, type PreloadOptions} from './preload';
 
-/** Resolve this before requesting graphics. A future progress provider supplies savedMapId. */
+/** Resolve the selected entry or saved map before requesting graphics. */
 export function adventureEntry(adventure:Adventure, options:{previewMapId?:string|null;savedMapId?:string|null}={}){
  const id=options.previewMapId??options.savedMapId??adventure.startMap;
  return adventure.maps.find(map=>map.id===id)??adventure.maps.find(map=>map.id===adventure.startMap)!;
