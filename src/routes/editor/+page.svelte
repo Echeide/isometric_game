@@ -16,6 +16,7 @@
  import RailingPalette from '$lib/components/RailingPalette.svelte';
  import MapTerrainPalette from '$lib/components/MapTerrainPalette.svelte';
  import MapExitControls from '$lib/components/MapExitControls.svelte';
+ import ExitArrivalEditor from '$lib/components/ExitArrivalEditor.svelte';
  import {sceneWalls,wallKey,wallCells,hasTile,automaticWallKeys} from '../../../packages/world/src/walls';
  import {tileAt,terrainAt} from '../../../packages/world/src/terrain';
  import {levelAt,stairAt} from '../../../packages/world/src/elevation';
@@ -30,7 +31,8 @@
  import { graphics as defaultGraphics } from '$lib/demo/pixelart';
  import LoadProgress from '$lib/components/LoadProgress.svelte';
  import type {LoadProgress as Progress} from '$lib/storage/preload';
- import {resolveGraphics,localAdventures} from '$lib/storage/local-adventures';
+ import {resourceBlob,localAdventures} from '$lib/storage/local-adventures';
+ import {createMapGraphicsLoader} from '$lib/storage/map-graphics';
  import {selectMainPlayer} from '$lib/storage/player-selection';
  import ContentModuleEditor from '$lib/modules/ContentModuleEditor.svelte';
  import {objectContentModules,modulesForHost,replaceHostModules,attachModuleChat,chatUseCount} from '$lib/modules/adventure-modules';
@@ -72,13 +74,20 @@
  import {onDestroy} from 'svelte';
  let graphics=$state.raw(defaultGraphics);
  let playerChanging=$state(false),graphicsReady=$state(false);
- const resourceReleases:Array<()=>void>=[];
+ let graphicsLoader=$state.raw<ReturnType<typeof createMapGraphicsLoader>>();
+ let graphicsAbort=new AbortController(),graphicsAdventureId=$state('');
+ let sceneGraphics=$state.raw(defaultGraphics),renderScene=$state.raw<WorldScene>(structuredClone(office));
+ let sceneReady=$state(false),sceneLoading=$state(false),sceneError=$state(''),renderRevision=$state(0),sceneRetry=$state(0);
  let disposed=false;
  const preloadAbort=new AbortController();let loadProgress=$state<Progress|null>(null),loadFailed=$state(false);
  async function loadGraphics(id:string){
   const wasReady=graphicsReady;arrivalCamera=controller?.getCamera()??arrivalCamera;controller=undefined;graphicsReady=false;loadFailed=false;loadProgress=null;
-  try{const resolved=await resolveGraphics(id,{signal:preloadAbort.signal,onProgress:p=>loadProgress=p});if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;graphicsReady=true;}
-  catch(cause){graphicsReady=wasReady;throw cause;}
+  try{
+   const pack=await localAdventures.pack(id);preloadAbort.signal.throwIfAborted();if(disposed)return;
+   graphicsAbort.abort();graphicsLoader?.release();graphicsAbort=new AbortController();const signal=graphicsAbort.signal;
+   graphics=pack;graphicsAdventureId=id;sceneReady=false;sceneError='';
+   graphicsLoader=createMapGraphicsLoader(pack,adventure,url=>resourceBlob(url,localAdventures,signal),signal);graphicsReady=true;
+  }catch(cause){graphicsReady=wasReady;throw cause;}
  }
 
  async function chooseMainPlayer(id:string){
@@ -91,7 +100,7 @@
   if(playerChanging)return;playerChanging=true;error='';
   try{await loadGraphics(adventure.id);revision++;notice='Jugadores actualizados desde el taller.';}catch(e){error=(e as Error).message;}finally{playerChanging=false;}
  }
- onDestroy(()=>{disposed=true;preloadAbort.abort();resourceReleases.forEach(release=>release());});
+ onDestroy(()=>{disposed=true;preloadAbort.abort();graphicsAbort.abort();graphicsLoader?.release();});
  import { untrack, onMount, tick } from 'svelte';
  import { goto, preloadCode } from '$app/navigation';
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
@@ -102,7 +111,7 @@
  import { insertEntity, moveEntity, flipEntity, paintTiles, updateEntity } from '$lib/demo/editor';
  import { office, outdoors } from '$lib/demo/scenes';
  import { UserRound, Backpack, ArrowLeft, Download, Upload, Plus, Trash2, Undo2, Redo2, Play, Check, Minus, Scan, Hand, MousePointer2, Layers, Paintbrush, Link, List, LoaderCircle, MoreHorizontal, Settings2, X, Pencil, Search, Workflow, Map as MapIcon, Clapperboard } from 'lucide-svelte';
- import {createAdventure,parseAdventure as validateAdventure,connectMaps,travel,type Adventure,type MapExit} from '$lib/demo/adventure';
+ import {createAdventure,parseAdventure as validateAdventure,connectMaps,travel,changeMapSpawn,type Adventure,type MapExit} from '$lib/demo/adventure';
  const parseScene=(value:unknown)=>validateScene(value,{allowUnreachable:true});
  const parseAdventure=(value:unknown)=>validateAdventure(value,{allowUnreachable:true});
  type ToolPanel='player'|'inventory'|'adventures'|'maps'|'objects'|'catalog'|'paint';
@@ -210,7 +219,7 @@
   openingGame=true;
   // Download the game screen while the server saves, without delaying the save on failure.
   void preloadCode('/preview').catch(()=>{});
-  try{if(await persist()){notice='Abriendo la aventura…';await goto(`/preview?adventure=${encodeURIComponent(adventure.id)}`);}}
+  try{if(await persist()){validateAdventure(bundle());notice='Abriendo la aventura…';await goto(`/preview?adventure=${encodeURIComponent(adventure.id)}`);}}
   catch(e){if(!disposed)error=`No se pudo abrir la aventura: ${(e as Error).message}`;}
   finally{openingGame=false;}
  }
@@ -248,7 +257,7 @@
   try{
    const cell=wallCells(selectedWall).find(p=>walkable(draft,p)&&!(p.x===draft.spawn.x&&p.y===draft.spawn.y));
    if(!cell)throw new Error('La puerta necesita una casilla libre junto a ella, distinta de la entrada.');
-   const id=crypto.randomUUID();let a=connectMaps(bundle(),draft.id,destination,id,undefined,cell);
+   const id=crypto.randomUUID();let a=connectMaps(bundle(),draft.id,destination,id,undefined,cell,{allowUnreachable:true});
    a={...a,maps:a.maps.map(m=>m.id!==draft.id?m:{...m,entities:m.entities.map(e=>e.id===id?{...e,solid:false,interactionPoints:[cell]}:e),walls:sceneWalls(m).map(w=>wallKey(w)===wallKey(selectedWall!)?{...w,exitId:id}:w)})};
    a=parseAdventure(a);snapshot();adopt(a);selectObject(id);notice='Puerta conectada. Configura su llegada en el inspector.';
   }catch(e){error=(e as Error).message;}
@@ -264,7 +273,7 @@
   catch(e){error=(e as Error).message;}
  }
  function move(id:string,position:{x:number;y:number}){
-  try{const next=draft.decorations?.some(d=>d.id===id)?updateDecoration(draft,id,{position}):moveEntity(draft,id,position);snapshot();restoreCanvasFocus=document.activeElement===canvasHost?.querySelector('[role=application]');draft=next;selected=id;error='';notice='Objeto movido. Puedes deshacer el cambio.';return true;}
+  try{const next=draft.decorations?.some(d=>d.id===id)?updateDecoration(draft,id,{position},{allowUnreachable:true}):moveEntity(draft,id,position,{allowUnreachable:true});snapshot();restoreCanvasFocus=document.activeElement===canvasHost?.querySelector('[role=application]');draft=next;selected=id;error='';notice='Objeto movido. Puedes deshacer el cambio.';return true;}
   catch(e){error=(e as Error).message;return false;}
  }
  function ready(next:WorldController){if(editorView!=='map')return;const camera=controller?.getCamera()??arrivalCamera;next.setFacing(arrivalFacing);const pan=controller?.getPan();if(pan)next.panBy(pan.x,pan.y);controller=next;controllerRevision=revision;if(camera){next.restoreCamera(camera);zoomLevel=camera.zoom;}else next.zoom(zoomLevel-1);arrivalCamera=undefined;transitionReady=true;if(restoreCanvasFocus){canvasHost?.querySelector<HTMLElement>('[role=application]')?.focus({preventScroll:true});restoreCanvasFocus=false;}}
@@ -276,18 +285,28 @@
   const direction=directions[event.key];if(!direction)return;event.preventDefault();move(target.id,{x:target.position.x+direction.x,y:target.position.y+direction.y});
  }
  const decoration=$derived(draft.decorations?.find(d=>d.id===selected));
- function editDecoration(patch:Partial<MapDecoration>){if(!decoration)return;try{const next=updateDecoration(draft,decoration.id,patch);snapshot();draft=next;error='';}catch(e){error=(e as Error).message;}}
- function pickDecorationHeight(cell:Cell){if(!decorationHeightId||!hasTile(draft,cell))return;try{const next=updateDecoration(draft,decorationHeightId,{baseLevel:levelAt(draft,cell)});snapshot();draft=next;decorationHeightId=null;notice='';error='';}catch(e){error=(e as Error).message;}}
+ function editDecoration(patch:Partial<MapDecoration>){if(!decoration)return;try{const next=updateDecoration(draft,decoration.id,patch,{allowUnreachable:true});snapshot();draft=next;error='';}catch(e){error=(e as Error).message;}}
+ function pickDecorationHeight(cell:Cell){if(!decorationHeightId||!hasTile(draft,cell))return;try{const next=updateDecoration(draft,decorationHeightId,{baseLevel:levelAt(draft,cell)},{allowUnreachable:true});snapshot();draft=next;decorationHeightId=null;notice='';error='';}catch(e){error=(e as Error).message;}}
  function removeDecoration(){if(!decoration)return;snapshot();draft={...draft,decorations:draft.decorations?.filter(d=>d.id!==selected)};selected=null;decorationHeightId=null;}
  const entity=$derived(draft.entities.find(e=>e.id===selected));
  const entityModules=$derived(entity?objectContentModules(bundle(),{mapId:draft.id,entityId:entity.id}):[]);
- const adapter=$derived<WorldAdapter>({scene:preview,interact:e=>{
+ const adapter=$derived<WorldAdapter>({scene:renderScene,interact:e=>{
   if(e.action==='adventure.exit'){if(transitionImage)return;try{const a=parseAdventure(bundle()),next=travel(a,e.sceneId,e.entityId,controller?.getFacing());const camera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;adopt(a,next.scene.id);arrivalCamera=camera;zoomLevel=camera?.zoom??1;arrival=next.scene.spawn;arrivalFacing=next.facing;testing=true;notice=`Has llegado a ${next.scene.name}.`; }catch(cause){error=(cause as Error).message;}}
   else notice=`Interacción: ${e.action} → ${e.resourceId}`;
  }});
  $effect(()=>{
   try {preview=parseScene(testing&&arrival?{...draft,spawn:arrival}:draft);untrack(()=>revision++);error='';}
   catch(e){error=(e instanceof Error?e.message:'Mapa no válido.')+' La vista conserva el último mapa válido.';}
+ });
+ // Prepare each edited scene before handing its revision to the renderer.
+ $effect(()=>{
+  const loader=graphicsLoader,current=preview,value=$state.snapshot(bundle());sceneRetry;
+  if(!loader||!graphicsReady||value.id!==graphicsAdventureId||editorView!=='map')return;
+  let active=true;sceneLoading=true;sceneError='';loadProgress=null;
+  void loader.ensure(current,{onProgress:p=>{if(active)loadProgress=p;}},6,value).then(pack=>{
+   if(!active||disposed)return;sceneGraphics=pack;renderScene=current;renderRevision++;sceneReady=true;
+  }).catch(cause=>{if(active&&!disposed)sceneError=(cause as Error).message;}).finally(()=>{if(active)sceneLoading=false;});
+  return()=>{active=false;};
  });
  function snapshot(){future=[];history=[...history.slice(-29),JSON.stringify({adventure:bundle(),mapId:draft.id})];}
  function update(values:Partial<WorldEntity>){try{const next=updateEntity(draft,selected??'',values);validateStory({...bundle(),maps:bundle().maps.map(m=>m.id===next.id?next:m)});snapshot();draft=next;error='';return true;}catch(e){error=(e as Error).message;return false;}}
@@ -308,8 +327,8 @@
   const asset=visualCatalog.find(a=>a.id===visualId);if(!asset)return;
   const kind=asset.kind;
   try{
-   if(placementMode==='decoration'&&cell){const id=crypto.randomUUID(),next=insertDecoration(draft,asset,id,cell);snapshot();draft=next;selectObject(id);error='';notice='Decorado añadido. Ajusta su altura y posición en Propiedades.';return;}
-   const id=crypto.randomUUID();const next=insertEntity(draft,kind,id,visualId,cell,visualCatalog);
+   if(placementMode==='decoration'&&cell){const id=crypto.randomUUID(),next=insertDecoration(draft,asset,id,cell,{allowUnreachable:true});snapshot();draft=next;selectObject(id);error='';notice='Decorado añadido. Ajusta su altura y posición en Propiedades.';return;}
+   const id=crypto.randomUUID();const next=insertEntity(draft,kind,id,visualId,cell,visualCatalog,{allowUnreachable:true});
    snapshot();draft=next;selectObject(id);
    if(kind==='person'&&visualId.startsWith('custom.')){inspectorTab='modules';notice='Personaje añadido. Crea o asigna su conversación en Módulos.';}
    const placed=next.entities.find(e=>e.id===id)!;
@@ -318,7 +337,7 @@
  }
  function flip(){
   if(!entity)return;
-  try{const next=flipEntity(draft,entity.id);snapshot();draft=next;testing=false;error='';notice='Elemento volteado. Su huella y asiento se han ajustado; puedes deshacer.';}
+  try{const next=flipEntity(draft,entity.id,{allowUnreachable:true});snapshot();draft=next;testing=false;error='';notice='Elemento volteado. Su huella y asiento se han ajustado; puedes deshacer.';}
   catch(e){error=`No se puede voltear aquí: ${(e as Error).message}`;}
  }
  function remove(){const remaining={...bundle(),story:adventure.story?{...adventure.story,entities:adventure.story.entities.filter(e=>e.mapId!==draft.id||e.entityId!==selected)}:undefined,maps:bundle().maps.map(m=>m.id!==draft.id?m:{...m,entities:m.entities.filter(e=>e.id!==selected)})};try{validateStory(remaining);}catch(e){error=(e as Error).message;return;}snapshot();adventure={...adventure,story:remaining.story};adventure={...adventure,exits:adventure.exits.filter(e=>!(e.fromMap===draft.id&&e.entityId===selected)).map(e=>e.toMap===draft.id&&e.destinationEntityId===selected?{...e,destinationEntityId:undefined}:e)};draft={...draft,entities:draft.entities.filter(e=>e.id!==selected),...(draft.walls?{walls:draft.walls.map(w=>w.exitId===selected?{...w,exitId:undefined}:w)}:{})};selected=null;}
@@ -331,12 +350,15 @@
  function beginExitPlacement(){if(!adventure.maps.some(m=>m.id===destination&&m.id!==draft.id)||!leaveChat())return;narrativeSelection=null;wallTool=null;selectedWall=null;selectedTerrain=null;brush=null;selected=null;pendingAsset=null;panMode=false;testing=false;toolPanel=null;mapProperties=false;inspectorOpen=false;exitComposer=false;pendingExit=true;error='';notice='Pulsa una casilla libre para colocar la salida.';}
  function cancelExitPlacement(){showMapProperties();exitComposer=true;notice='Colocación de salida cancelada.';error='';}
  function createExitDestination(){const source=draft.id;newMap();if(draft.id===source)return;const target=draft.id;changeWorld(source);showMapProperties();destination=target;exitComposer=true;}
- function addExit(cell?:Cell){try{const a=connectMaps(bundle(),draft.id,destination,crypto.randomUUID(),undefined,cell);snapshot();const id=a.exits.at(-1)!.entityId;adopt(a);selectObject(id);error='';notice='Salida añadida. Ajusta su posición y la casilla de llegada en el inspector.';}catch(e){error=(e as Error).message;}}
+ function addExit(cell?:Cell){try{const a=connectMaps(bundle(),draft.id,destination,crypto.randomUUID(),undefined,cell,{allowUnreachable:true});snapshot();const id=a.exits.at(-1)!.entityId;adopt(a);selectObject(id);error='';notice='Salida añadida. Ajusta su posición y la casilla de llegada en el inspector.';}catch(e){error=(e as Error).message;}}
+ function editSpawn(axis:'x'|'y',input:HTMLInputElement){
+  const previous=draft.spawn[axis];try{const next=changeMapSpawn(bundle(),draft.id,{...draft.spawn,[axis]:input.valueAsNumber});snapshot();adventure=next;draft=structuredClone(next.maps.find(m=>m.id===draft.id)!);error='';notice='Entrada actualizada. Las llegadas vinculadas siguen su nueva posición.';}catch(cause){input.value=String(previous);error=(cause as Error).message;}
+ }
  function editExit(values:Partial<MapExit>){if(!selectedExit)return;try{const a=parseAdventure({...bundle(),exits:adventure.exits.map(e=>e.id===selectedExit.id?{...e,...values}:e)});snapshot();adventure=a;error='';}catch(e){error=(e as Error).message;}}
  function chooseArrival(){if(!selectedExit)return;const exit=selectedExit;changeWorld(exit.toMap);if(draft.id===exit.toMap){pickingExitId=exit.id;panMode=false;notice='Pulsa una casilla libre para elegir la llegada. También puedes cancelar.';}}
  function cancelPicking(){const exit=adventure.exits.find(e=>e.id===pickingExitId);pickingExitId=null;if(exit){changeWorld(exit.fromMap);selected=exit.entityId;}}
- function pickArrival(cell:Cell){const exit=adventure.exits.find(e=>e.id===pickingExitId);if(!exit)return;try{const a=parseAdventure({...bundle(),exits:adventure.exits.map(e=>e.id===exit.id?{...e,arrival:cell}:e)});snapshot();adopt(a,exit.fromMap);selected=exit.entityId;pickingExitId=null;notice=`Llegada elegida en ${cell.x}, ${cell.y}.`;error='';}catch(e){error=(e as Error).message;}}
- function returnExit(){if(!selectedExit)return;try{const a=connectMaps(bundle(),selectedExit.toMap,draft.id,crypto.randomUUID());snapshot();adventure=a;notice='Conexión de vuelta creada. Selecciona el mapa destino para colocarla.';error='';}catch(e){error=(e as Error).message;}}
+ function pickArrival(cell:Cell){const exit=adventure.exits.find(e=>e.id===pickingExitId);if(!exit)return;try{const a=parseAdventure({...bundle(),exits:adventure.exits.map(e=>e.id===exit.id?{...e,arrival:cell,arrivalMode:'position' as const,destinationEntityId:undefined}:e)});snapshot();adopt(a,exit.fromMap);selected=exit.entityId;pickingExitId=null;notice=`Llegada elegida en ${cell.x}, ${cell.y}.`;error='';}catch(e){error=(e as Error).message;}}
+ function returnExit(){if(!selectedExit)return;try{const a=connectMaps(bundle(),selectedExit.toMap,draft.id,crypto.randomUUID(),undefined,undefined,{allowUnreachable:true});snapshot();adventure=a;notice='Conexión de vuelta creada. Selecciona el mapa destino para colocarla.';error='';}catch(e){error=(e as Error).message;}}
  import AdventureImportStatus from '$lib/components/AdventureImportStatus.svelte';
  import {exportAdventure,importAdventure,downloadBlob,type AdventureImportProgress} from '$lib/storage/adventure-package';
  let transferring=$state(false);
@@ -411,7 +433,7 @@
  {/if}</section>{/if}{/if}
 </div></div>
   </EditorPanel>{/if}
-  <main class="editor-preview" class:with-inspector={!!entity&&!testing&&!pickingExitId}>{#if editorView==='story'}{#key adventure.id}<StoryBoard adventure={bundle()} {graphics} selected={narrativeSelection?eventNode(narrativeSelection):selected?objectNode({mapId:draft.id,entityId:selected}):mapProperties?mapNode(draft.id):''} onselect={openBoardSelection} onlayout={boardLayout}/>{/key}{:else}<div class="editor-canvas" bind:this={canvasHost}><div class="map-heading"><h1><button onclick={showMapProperties} title={ui.text("Propiedades del mapa")}>{preview.name}</button></h1></div>{#if graphicsReady}<World {revision} {panMode} {graphics} {adapter} editor={editing} onready={ready} onstatus={s=>notice=s}/>{:else}<div class="preload-stage">{#if loadFailed}<p role="alert">{ui.text(error)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button>{:else}<LoadProgress progress={loadProgress}/>{/if}</div>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/></div><div class="editor-feedback">{#if pendingExit}<p>{ui.text("Salida hacia {arg0}: selecciona una casilla libre.",{arg0:adventure.maps.find(m=>m.id===destination)?.name??''})} <button onclick={cancelExitPlacement}>{ui.text("Cancelar")}</button></p>{:else if pendingAsset}<p>{#if placementMode==='decoration'}{ui.text('Pulsa la cuadrícula, dentro o fuera del suelo, para colocar el decorado.')}{:else}{ui.text('Pulsa una casilla para colocar')} {ui.text('el objeto')}.{/if} <button onclick={clearTools}>{ui.text("Cancelar")}</button></p>{/if}{#if pickingExitId}<p>{ui.text("Selecciona una casilla libre en este mapa.")} <button onclick={cancelPicking}>{ui.text("Cancelar selección")}</button></p>{/if}{#if error}<p role="alert" class="editor-error">{ui.text(error)}</p>{:else}<p role="status">{ui.text(notice)}</p>{/if}<small>{ui.text("Mano: desplazar vista. También espacio + arrastre o botón central. Selecciona y arrastra con ratón o dedo, o mueve con las flechas de la cuadrícula. Guardar y jugar aplica el mapa en este navegador. Exporta el JSON como copia.")}</small></div>{/if}</main>
+  <main class="editor-preview" class:with-inspector={!!entity&&!testing&&!pickingExitId}>{#if editorView==='story'}{#key adventure.id}<StoryBoard adventure={bundle()} {graphics} selected={narrativeSelection?eventNode(narrativeSelection):selected?objectNode({mapId:draft.id,entityId:selected}):mapProperties?mapNode(draft.id):''} onselect={openBoardSelection} onlayout={boardLayout}/>{/key}{:else}<div class="editor-canvas" bind:this={canvasHost}><div class="map-heading"><h1><button onclick={showMapProperties} title={ui.text("Propiedades del mapa")}>{preview.name}</button></h1></div>{#if graphicsReady&&sceneReady}<World revision={renderRevision} {panMode} graphics={sceneGraphics} {adapter} editor={editing} onready={ready} onstatus={s=>notice=s}/>{:else}<div class="preload-stage">{#if loadFailed||sceneError}<p role="alert">{ui.text(sceneError||error)}</p><button onclick={()=>{if(loadFailed)void initialize();else sceneRetry++;}}>{ui.text("Reintentar carga")}</button>{:else}<LoadProgress progress={loadProgress}/>{/if}</div>{/if}{#if graphicsReady&&sceneReady&&(sceneLoading||sceneError)}<div class="preload-stage">{#if sceneError}<p role="alert">{ui.text(sceneError)}</p><button onclick={()=>sceneRetry++}>{ui.text("Reintentar carga")}</button>{:else}<LoadProgress progress={loadProgress}/>{/if}</div>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>transitionImage=null}/></div><div class="editor-feedback">{#if pendingExit}<p>{ui.text("Salida hacia {arg0}: selecciona una casilla libre.",{arg0:adventure.maps.find(m=>m.id===destination)?.name??''})} <button onclick={cancelExitPlacement}>{ui.text("Cancelar")}</button></p>{:else if pendingAsset}<p>{#if placementMode==='decoration'}{ui.text('Pulsa la cuadrícula, dentro o fuera del suelo, para colocar el decorado.')}{:else}{ui.text('Pulsa una casilla para colocar')} {ui.text('el objeto')}.{/if} <button onclick={clearTools}>{ui.text("Cancelar")}</button></p>{/if}{#if pickingExitId}<p>{ui.text("Selecciona una casilla libre en este mapa.")} <button onclick={cancelPicking}>{ui.text("Cancelar selección")}</button></p>{/if}{#if error}<p role="alert" class="editor-error">{ui.text(error)}</p>{:else}<p role="status">{ui.text(notice)}</p>{/if}<small>{ui.text("Mano: desplazar vista. También espacio + arrastre o botón central. Selecciona y arrastra con ratón o dedo, o mueve con las flechas de la cuadrícula. Guardar y jugar aplica el mapa en este navegador. Exporta el JSON como copia.")}</small></div>{/if}</main>
   {#if inspectorVisible&&narrativeSelection&&narrativeEvent(bundle(),narrativeSelection)}{@const event=narrativeEvent(bundle(),narrativeSelection)!}<aside id="world-inspector" class="editor-inspector entity-drawer" aria-label={ui.text("Inspector del evento narrativo")}><div class="inspector-main" inert={!!chatEditing}><div class="panel-heading"><h2>{event.name}</h2><button aria-label={ui.text("Cerrar inspector del evento")} onclick={closeInspector}><X size={18}/></button></div><div class="inspector-body"><NarrativeEventEditor adventure={bundle()} {event} onchange={editNarrative} onchat={id=>void openNarrativeChat(id)} onremove={removeNarrative}/></div></div>{#if chatEditing}<section class="module-layer" aria-label={ui.text("Editar módulo del evento")}><ContentModuleEditor locales={adventure.localization?.locales??[adventure.localization?.defaultLocale??'es']} baseLocale={adventure.localization?.defaultLocale??'es'} module={chatEditing.module} chat={chatEditing.chat} title={chatEditing.title} uses={chatEditing.uses} onapply={applyContentModule} onclose={()=>void closeChatLayer()} ondirty={value=>chatDirty=value}/></section>{/if}</aside>{/if}
   {#if inspectorVisible&&(entity||decoration||mapProperties)}{#key mapProperties}<aside id="world-inspector" class="editor-inspector" class:entity-drawer={!!entity&&!mapProperties} class:map-properties={mapProperties} aria-label={ui.text("Inspector")}><div class="inspector-main" inert={!!chatEditing} aria-hidden={chatEditing?true:undefined}><div class="panel-heading"><h2>{selected===null?ui.text("Propiedades del mapa"):entity?.label??decoration?.label}</h2><div class="panel-actions"><button aria-label={ui.text("Cerrar inspector")} onclick={closeInspector}><X size={18}/></button></div></div><div class="inspector-body">
    {#if decoration}<DecorationInspector value={decoration} picking={!!decorationHeightId} onchange={editDecoration} onheight={()=>{decorationHeightId=decorationHeightId?null:decoration.id;notice='Pulsa una casilla del terreno para tomar su altura.';}} onremove={removeDecoration}/><button class="panel-primary" disabled={saving||openingGame||playerChanging||!graphicsReady} onclick={()=>openResources('object',decoration.visualId,false)}><Pencil size={15}/> {ui.text('Editar sprite')}</button>
@@ -422,7 +444,7 @@
    <MapExitControls adventure={bundle()} mapId={draft.id} bind:destination bind:expanded={exitComposer} onopen={openExitComposer} onplace={beginExitPlacement} oncreate={createExitDestination} onselect={selectObject}/>
    <MapAppearance value={draft} {graphics} onchange={updateMapAppearance}/>
 
-   <div class="pair"><label>{ui.text("Entrada X")}<input type="number" min="0" value={draft.spawn.x} onchange={e=>{snapshot();draft={...draft,spawn:{...draft.spawn,x:+e.currentTarget.value}};}}/></label><label>{ui.text("Entrada Y")}<input type="number" min="0" value={draft.spawn.y} onchange={e=>{snapshot();draft={...draft,spawn:{...draft.spawn,y:+e.currentTarget.value}};}}/></label></div>
+   <div class="pair"><label>{ui.text("Entrada X")}<input type="number" min="0" value={draft.spawn.x} onchange={e=>editSpawn('x',e.currentTarget)}/></label><label>{ui.text("Entrada Y")}<input type="number" min="0" value={draft.spawn.y} onchange={e=>editSpawn('y',e.currentTarget)}/></label></div>
 
 
    <button class="panel-primary" onclick={()=>showTool('maps')}><Layers size={16}/> {ui.text("Gestionar mapas")}</button>
@@ -436,7 +458,7 @@
     <div class="pair"><label>{ui.text("Anchura")}<input type="number" min="1" value={entity.size?.x??1} onchange={e=>entityDimension('size','x',e.currentTarget)}/></label><label>{ui.text("Profundidad")}<input type="number" min="1" value={entity.size?.y??1} onchange={e=>entityDimension('size','y',e.currentTarget)}/></label></div>
     <label class="checkbox"><input type="checkbox" checked={entity.solid!==false} onchange={e=>{update({solid:e.currentTarget.checked});e.currentTarget.checked=entity?.solid!==false;}}/> {ui.text("Bloquea el paso")}</label>
 </details>
-    {#if selectedExit}<section aria-label={ui.text("Destino de la salida")}><h3>{ui.text("Salida a otro mapa")}</h3><label>{ui.text("Artículo necesario")}<select value={selectedExit.requirement?.itemId??''} onchange={e=>editExit({requirement:e.currentTarget.value?{itemId:e.currentTarget.value,quantity:1,consume:false}:undefined})}><option value="">{ui.text("Ninguno")}</option>{#each adventure.items??[] as item}<option value={item.id}>{item.name}</option>{/each}</select></label>{#if selectedExit.requirement}<label>{ui.text("Cantidad requerida")}<input type="number" min="1" step="1" value={selectedExit.requirement.quantity} onchange={e=>editExit({requirement:{...selectedExit!.requirement!,quantity:Math.max(1,Math.floor(+e.currentTarget.value)||1)}})}/></label><label class="checkbox"><input type="checkbox" checked={selectedExit.requirement.consume} onchange={e=>editExit({requirement:{...selectedExit!.requirement!,consume:e.currentTarget.checked}})}/> {ui.text("Consumir al desbloquear")}</label>{/if}<label>{ui.text("Mapa destino")}<select value={selectedExit.toMap} onchange={e=>{const map=adventure.maps.find(m=>m.id===e.currentTarget.value)!;editExit({toMap:map.id,arrival:map.spawn,destinationEntityId:undefined});}}>{#each adventure.maps as map}<option value={map.id}>{map.name}</option>{/each}</select></label><div class="pair"><label>{ui.text("Llegada X")}<input type="number" min="0" value={selectedExit.arrival.x} onchange={e=>editExit({arrival:{...selectedExit!.arrival,x:+e.currentTarget.value}})}/></label><label>{ui.text("Llegada Y")}<input type="number" min="0" value={selectedExit.arrival.y} onchange={e=>editExit({arrival:{...selectedExit!.arrival,y:+e.currentTarget.value}})}/></label></div><p class="environment-note">{ui.text("Si existe una salida de vuelta, aparecerás sobre su baldosa mirando hacia el interior. Estas coordenadas se usan cuando no hay una entrada vinculada.")}</p><div class="paint-actions"><button onclick={chooseArrival}>{ui.text("Elegir llegada en el mapa")}</button><button onclick={returnExit}>{ui.text("Crear conexión de vuelta")}</button><button onclick={()=>changeWorld(selectedExit!.toMap)}>{ui.text("Editar mapa destino")}</button></div></section>{:else}
+    {#if selectedExit}<section aria-label={ui.text("Destino de la salida")}><h3>{ui.text("Salida a otro mapa")}</h3><label>{ui.text("Artículo necesario")}<select value={selectedExit.requirement?.itemId??''} onchange={e=>editExit({requirement:e.currentTarget.value?{itemId:e.currentTarget.value,quantity:1,consume:false}:undefined})}><option value="">{ui.text("Ninguno")}</option>{#each adventure.items??[] as item}<option value={item.id}>{item.name}</option>{/each}</select></label>{#if selectedExit.requirement}<label>{ui.text("Cantidad requerida")}<input type="number" min="1" step="1" value={selectedExit.requirement.quantity} onchange={e=>editExit({requirement:{...selectedExit!.requirement!,quantity:Math.max(1,Math.floor(+e.currentTarget.value)||1)}})}/></label><label class="checkbox"><input type="checkbox" checked={selectedExit.requirement.consume} onchange={e=>editExit({requirement:{...selectedExit!.requirement!,consume:e.currentTarget.checked}})}/> {ui.text("Consumir al desbloquear")}</label>{/if}<label>{ui.text("Mapa destino")}<select value={selectedExit.toMap} onchange={e=>{const map=adventure.maps.find(m=>m.id===e.currentTarget.value)!;editExit({toMap:map.id,arrival:map.spawn,arrivalMode:'spawn',destinationEntityId:undefined});}}>{#each adventure.maps as map}<option value={map.id}>{map.name}</option>{/each}</select></label><ExitArrivalEditor adventure={bundle()} exit={selectedExit} onchange={editExit} onpick={chooseArrival}/><div class="paint-actions"><button onclick={returnExit}>{ui.text("Crear conexión de vuelta")}</button><button onclick={()=>changeWorld(selectedExit!.toMap)}>{ui.text("Editar mapa destino")}</button></div></section>{:else}
     <details class="advanced"><summary>{ui.text("Interacción y acciones")}</summary><label class="checkbox"><input type="checkbox" checked={!!entity.interaction} onchange={e=>update({interaction:e.currentTarget.checked?{label:'Abrir',action:'space.open',resourceId:'world'}:undefined})}/> {ui.text("Tiene interacción")}</label>
     {#if entity.interaction}<label>{ui.text("Texto de la interacción")}<input value={entity.interaction.label} onchange={e=>setInteraction('label',e.currentTarget.value)}/></label><label>{ui.text("Acción del anfitrión")}<input value={entity.interaction.action} onchange={e=>setInteraction('action',e.currentTarget.value)}/></label><label>{ui.text("Recurso asociado")}<input value={entity.interaction.resourceId} onchange={e=>setInteraction('resourceId',e.currentTarget.value)}/></label>{/if}
     </details>{/if}

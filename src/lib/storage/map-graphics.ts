@@ -31,7 +31,7 @@ export function mapGraphics(pack:PixelArtPack, adventure:Adventure, scene:WorldS
 
 /** Per-player URL cache: shared sheets download once, failures can be retried. */
 export function createMapGraphicsLoader(pack:PixelArtPack, adventure:Adventure, load:(url:string)=>Promise<Blob>, signal:AbortSignal){
- const urls=new Map<string,string>(),pending=new Map<string,Promise<void>>(),packs=new Map<string,PixelArtPack>();
+ const urls=new Map<string,string>(),pending=new Map<string,Promise<void>>(),packs=new Map<string,PixelArtPack>(),warmed=new Set<string>();
  let closed=false,queue:string[]=[],running=false;
  async function resource(url:string){
   if(urls.has(url))return;
@@ -39,12 +39,12 @@ export function createMapGraphicsLoader(pack:PixelArtPack, adventure:Adventure, 
   if(!promise){promise=(async()=>{const blob=await load(url);signal.throwIfAborted();if(closed)throw new DOMException('Closed','AbortError');urls.set(url,URL.createObjectURL(blob));})().finally(()=>pending.delete(url));pending.set(url,promise);}
   await promise;
  }
- async function ensure(scene:WorldScene,options:PreloadOptions={},concurrency=6){
+ async function ensure(scene:WorldScene,options:PreloadOptions={},concurrency=6,definition:Adventure=adventure){
   signal.throwIfAborted();if(closed)throw new DOMException('Closed','AbortError');
-  const cached=packs.get(scene.id);if(cached)return cached;
-  const subset=mapGraphics(pack,adventure,scene);
+  const subset=mapGraphics(pack,definition,scene),key=JSON.stringify(subset);
+  const cached=packs.get(key);if(cached)return cached;
   await preloadItems(imageUrls(subset),resource,{...options,signal},concurrency);
-  const resolved=mapImages(subset,url=>urls.get(url)??url);packs.set(scene.id,resolved);return resolved;
+  const resolved=mapImages(subset,url=>urls.get(url)??url);packs.set(key,resolved);if(packs.size>32)packs.delete(packs.keys().next().value!);warmed.add(scene.id);return resolved;
  }
  async function drain(){
   if(running)return;running=true;
@@ -52,9 +52,9 @@ export function createMapGraphicsLoader(pack:PixelArtPack, adventure:Adventure, 
  }
  function background(currentId:string){
   const neighbors=adventure.exits.filter(exit=>exit.fromMap===currentId).map(exit=>exit.toMap);
-  queue=[...new Set([...neighbors,...adventure.maps.map(m=>m.id)])].filter(id=>id!==currentId&&!packs.has(id));
+  queue=[...new Set([...neighbors,...adventure.maps.map(m=>m.id)])].filter(id=>id!==currentId&&!warmed.has(id));
   return drain();
  }
- function release(){closed=true;queue=[];for(const url of urls.values())URL.revokeObjectURL(url);urls.clear();packs.clear();}
+ function release(){closed=true;queue=[];for(const url of urls.values())URL.revokeObjectURL(url);urls.clear();packs.clear();warmed.clear();}
  return {ensure,background,release};
 }

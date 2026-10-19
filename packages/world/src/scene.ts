@@ -160,7 +160,7 @@ export function parseScene(value: unknown, options:{allowUnreachable?:boolean}={
  if(!walkable(scene,scene.spawn))return fail('La entrada está bloqueada.');
  const reachable=options.allowUnreachable?null:createNavigator(scene).reachableFrom(scene.spawn);
  for(const e of scene.entities){
-  if(reachable&&e.interaction&&!interactionCells(scene,e).some(p=>reachable.has(cellKey(p))))return fail(`No se puede llegar a ${e.label}.`);
+  if(reachable&&e.interaction&&!interactionCells(scene,e).some(p=>reachable.has(cellKey(p))))return fail(`No se puede llegar a ${e.label} en «${scene.name}»: no hay un camino desde la entrada (${scene.spawn.x}, ${scene.spawn.y}) hasta el objeto (${e.position.x}, ${e.position.y}). Revisa el suelo, los objetos que bloquean el paso, las paredes y los desniveles.`);
   if(reachable&&e.seat&&!reachable.has(cellKey(e.seat.cell)))return fail(`No se puede llegar al asiento de ${e.label}.`);
  }
  return scene;

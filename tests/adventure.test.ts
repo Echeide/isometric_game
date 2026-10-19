@@ -15,9 +15,9 @@ it('rejects missing maps, blocked arrivals, fractional coordinates and duplicate
  expect(()=>parseAdventure({...a,startMap:'missing'})).toThrow('inicial');
  expect(()=>parseAdventure({...a,maps:[a.maps[0],a.maps[0]]})).toThrow('repetidos');
  expect(()=>parseAdventure({...a,exits:[a.exits[0],a.exits[0]]})).toThrow('únicos');
- for(const arrival of [{x:-1,y:0},{x:.5,y:1},{x:8,y:0}])expect(()=>parseAdventure({...a,exits:[{...a.exits[0],arrival}]})).toThrow('llegada');
+ for(const arrival of [{x:-1,y:0},{x:.5,y:1},{x:8,y:0}])expect(()=>parseAdventure({...a,exits:[{...a.exits[0],arrivalMode:'position',arrival}]})).toThrow('llegada');
  expect(()=>parseAdventure({...a,exits:[{...a.exits[0],toMap:'missing'}]})).toThrow('inexistente');
- const blocked={...a,maps:a.maps.map(m=>m.id==='b'?{...m,blocked:[{x:4,y:4}]}:m),exits:[{...a.exits[0],arrival:{x:4,y:4}}]};
+ const blocked={...a,maps:a.maps.map(m=>m.id==='b'?{...m,blocked:[{x:4,y:4}]}:m),exits:[{...a.exits[0],arrivalMode:'position',arrival:{x:4,y:4}}]};
  expect(()=>parseAdventure(blocked)).toThrow('bloqueada');
 });
 it('rejects isolated arrival tiles and orphan exit interactions',()=>{
@@ -41,7 +41,7 @@ it('arrives on the paired exit facing inward, including legacy solid exits',()=>
   expect(result.scene.spawn).toEqual({x:4,y:7});expect(result.facing).toBe('ne');
   expect(result.scene.entities[0].solid).toBe(false);
  }
- const legacy={...linked,exits:linked.exits.map(({destinationEntityId,...e})=>e)};
+ const legacy={...linked,exits:linked.exits.map(({destinationEntityId,arrivalMode,...e})=>e)};
  expect(travel(legacy,'a','out','ne').scene.spawn).toEqual({x:4,y:7});
 });
 it('keeps distinct paired doors between the same maps and uses configured arrivals for one-way exits',()=>{

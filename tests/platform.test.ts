@@ -15,6 +15,7 @@ import {createRailingTemplate} from '../src/lib/workshop/railing-template';
 import {encodePalettePNG} from '../src/lib/workshop/palette-browser';
 import {terrainTileAt} from '../packages/world/src/terrain';
 import {createAdventure} from '../src/lib/demo/adventure';
+import {unreachableAdventure} from './fixtures/unreachable-adventure';
 import {textKey} from '../src/lib/i18n/adventure';
 import {attachChat} from '../src/lib/chat/adventure-chats';
 import {createChat,chatResource} from '../src/lib/chat/editor';
@@ -29,6 +30,14 @@ describe.skipIf(!url)('platform integration with PostgreSQL RLS',()=>{
  beforeAll(async()=>{database=new Database(url!);await database.init();await database.pool.query('TRUNCATE platform_releases,platform_publications,platform_resources,platform_adventures,platform_assets,platform_usage,platform_audit,platform_sessions,platform_users,platform_tenants,platform_login_attempts CASCADE');folder=await mkdtemp(join(tmpdir(),'platform-test-'));auth=new Auth(database);store=new PlatformStore(database,folder,resolve('static/pixelart'));await auth.bootstrap('root-test',password);token=await auth.login('root-test',password,'test');root=(await auth.principal(token))!;ta=(await store.configure(root,{action:'tenant.create',name:'Espacio A'})).id!;tb=(await store.configure(root,{action:'tenant.create',name:'Espacio B'})).id!;aid=(await store.configure(root,{action:'user.create',username:'admin-a',password,tenantId:ta})).id!;bid=(await store.configure(root,{action:'user.create',username:'admin-b',password,tenantId:tb})).id!;a=(await auth.principal(await auth.login('admin-a',password,'a')))!;b=(await auth.principal(await auth.login('admin-b',password,'b')))!;},60000);
  afterAll(async()=>{await database?.pool.end();if(folder)await rm(folder,{recursive:true,force:true});});
  const adventure=(name='Privada A')=>({...createAdventure([structuredClone(office)]),id:'example',name});
+ it('saves and reloads unfinished drafts but refuses to publish an unreachable exit',async()=>{
+  const draft=unreachableAdventure();await store.save(a,draft,graphics,{},0);
+  const saved=(await store.adventure(a,draft.id)).definition;
+  expect(saved.maps[0].blocked).toEqual(draft.maps[0].blocked);
+  await expect(store.publish(a,draft.id,true)).rejects.toThrow('entrada (1, 0) hasta el objeto (0, 3)');
+  expect((await store.publicList()).some(row=>row.name===draft.name)).toBe(false);
+  await store.deleteAdventure(a,draft.id,1,'ELIMINAR');
+ });
  it('bootstraps once and stores only password and token hashes',async()=>{expect(await auth.bootstrap('other-root',password)).toBe(false);const rows=await database.pool.query('SELECT password_hash FROM platform_users');expect(rows.rows.every(r=>r.password_hash.startsWith('scrypt-v1:')&&!r.password_hash.includes(password))).toBe(true);expect((await database.pool.query('SELECT token_hash FROM platform_sessions')).rows.some(r=>r.token_hash===token)).toBe(false);});
  it('isolates identical adventure IDs across tenants, including raw RLS reads',async()=>{await store.save(a,adventure(),graphics,{},0);await store.save(b,adventure('Privada B'),graphics,{},0);expect((await store.list(a)).adventures.map(x=>x.name)).toEqual(['Privada A']);expect((await store.list(b)).adventures.map(x=>x.name)).toEqual(['Privada B']);const rows=await database.transaction(ta,false,async db=>(await db.query('SELECT tenant_id FROM platform_adventures')).rows);expect(rows.map(r=>r.tenant_id)).toEqual([ta]);expect(await database.transaction(null,false,async db=>(await db.query('SELECT * FROM platform_adventures')).rowCount)).toBe(0);});
  it('rejects lost updates instead of overwriting another editor',async()=>{await store.save(a,adventure('A editada'),undefined,{},1);await expect(store.save(a,adventure('A obsoleta'),undefined,{},1)).rejects.toMatchObject({status:409});expect((await store.adventure(a,'example')).definition.name).toBe('A editada');});

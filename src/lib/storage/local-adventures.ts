@@ -31,14 +31,14 @@ export async function clearWorkshopDraft(id:string){const tx=(await db()).transa
 export const browserAdventures:AdventureRepository={
  async load(){
   const saved=await read<AdventureLibrary>('library','current');
-  if(saved)return parseLibrary(saved);
+  if(saved)return parseLibrary(saved,{allowUnreachable:true});
   // Keep legacy data untouched as a recovery copy. The migration commits atomically.
   const migrated=legacyLibrary({getItem:key=>localStorage.getItem(key)},true),tx=(await db()).transaction('library','readwrite'),done=complete(tx);
   const store=tx.objectStore('library'),existing=await result<AdventureLibrary|undefined>(store.get('current'));
-  if(!existing)store.put(migrated,'current');await done;return existing?parseLibrary(existing):migrated;
+  if(!existing)store.put(migrated,'current');await done;return existing?parseLibrary(existing,{allowUnreachable:true}):migrated;
  },
  async save(value,resources){
-  const adventure=parseAdventure(value);await this.load();
+  const adventure=parseAdventure(value,{allowUnreachable:true});await this.load();
   const tx=(await db()).transaction(['library','packs','assets'],'readwrite'),done=complete(tx);
   const library=await result<AdventureLibrary>(tx.objectStore('library').get('current'));
   const next={...library,activeId:adventure.id,adventures:[...library.adventures.filter(a=>a.id!==adventure.id),adventure]};

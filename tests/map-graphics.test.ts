@@ -53,3 +53,19 @@ it('includes the separate base and facing-specific back of interactive seats',()
  const selected=mapGraphics({...pack,objects:{...pack.objects,'pixel.chair-base':sprite('/base.png'),'pixel.chair-back-ne':sprite('/back-ne.png'),'pixel.chair-back-sw':sprite('/back-sw.png')}},a,scene);
  expect(selected.objects['pixel.chair-base']).toBeDefined();expect(selected.objects['pixel.chair-back-ne']).toBeDefined();expect(selected.objects['pixel.chair-back-sw']).toBeUndefined();
 });
+it('refreshes a cached editor map when a newly placed object needs another image',async()=>{
+ const load=vi.fn(async(_url:string)=>new Blob(['image']));
+ const loader=createMapGraphicsLoader(pack,a,load,new AbortController().signal);
+ const initial=await loader.ensure(a.maps[0]);
+ const edited={...a.maps[0],entities:[...a.maps[0].entities,{...a.maps[1].entities[0],id:'added'}]};
+ const result=await loader.ensure(edited);
+ expect(result.objects.second).toBeDefined();expect(initial.objects.second).toBeUndefined();
+ expect(load.mock.calls.filter(([url])=>url==='/second.png')).toHaveLength(1);
+ expect(await loader.ensure(edited)).toBe(result);loader.release();
+});
+it('includes newly assigned narrative graphics from the current unsaved editor definition',async()=>{
+ const load=vi.fn(async(_url:string)=>new Blob(['image']));
+ const value={...a,story:undefined},loader=createMapGraphicsLoader(pack,value,load,new AbortController().signal);
+ const before=await loader.ensure(a.maps[0]);expect(before.objects.changed).toBeUndefined();
+ const after=await loader.ensure(a.maps[0],{},6,a);expect(after.objects.changed).toBeDefined();loader.release();
+});

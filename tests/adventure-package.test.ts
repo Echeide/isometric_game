@@ -84,3 +84,10 @@ it('reports actual image progress and stays in the saving phase until persistenc
   expect(done).toBe(true);
  }finally{finish();load.mockRestore();save.mockRestore();vi.unstubAllGlobals();}
 });
+
+import {unreachableAdventure} from './fixtures/unreachable-adventure';
+it('exports and restores an unfinished draft without requiring a playable route',async()=>{
+ const draft=unreachableAdventure(),restored=unpackAdventure(new Uint8Array(await (await exportAdventure(draft,repository)).arrayBuffer()));
+ expect(restored.adventure.maps[0].blocked).toEqual(draft.maps[0].blocked);
+ expect(restored.adventure.maps[0].entities[0].position).toEqual({x:0,y:3});
+});

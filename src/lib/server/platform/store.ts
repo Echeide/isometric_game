@@ -81,7 +81,8 @@ export class PlatformStore {
  }
  async asset(p:Principal,id:string){return this.database.transaction(tenant(p),false,async db=>{const a=(await db.query('SELECT * FROM platform_assets WHERE tenant_id=$1 AND id=$2',[tenant(p),id])).rows[0];if(!a)throw new PlatformError(404,'Archivo no disponible.');return this.bytes(a.hash,a);});}
  async save(p:Principal,value:unknown,pack:PixelArtPack|undefined,blobs:Record<string,Uint8Array>,revision:number){
-  const t=tenant(p),adventure=parseAdventure(value);if(!idValid(adventure.id)||JSON.stringify(adventure).length>10_000_000)throw new PlatformError(400,'Aventura no válida.');delete (adventure as any)._revision;
+  // Drafts may contain disconnected routes; playable reachability is checked at publication.
+  const t=tenant(p),adventure=parseAdventure(value,{allowUnreachable:true});if(!idValid(adventure.id)||JSON.stringify(adventure).length>10_000_000)throw new PlatformError(400,'Aventura no válida.');delete (adventure as any)._revision;
   return this.database.transaction(t,false,async db=>{
    const space=await this.lock(db,t),old=(await db.query('SELECT graphics,revision FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[t,adventure.id])).rows[0];
    if((old?.revision??0)!==revision)throw new PlatformError(409,'Otra sesión modificó esta aventura. Exporta tus cambios y vuelve a cargarla antes de guardar.');
@@ -109,7 +110,7 @@ export class PlatformStore {
   if(!active){await db.query('UPDATE platform_publications SET active=false WHERE tenant_id=$1 AND adventure_id=$2',[t,id]);await audit(db,p,'adventure.withdraw',id);return{};}
   const a=(await db.query('SELECT * FROM platform_adventures WHERE tenant_id=$1 AND id=$2',[t,id])).rows[0];if(!a)throw new PlatformError(404,'Aventura no encontrada.');const old=(await db.query('SELECT * FROM platform_publications WHERE tenant_id=$1 AND adventure_id=$2',[t,id])).rows[0];
   const count=Number((await db.query('SELECT count(*) AS n FROM platform_publications WHERE tenant_id=$1 AND active',[t])).rows[0].n);if(!old?.active&&count>=space.limits.published)throw new PlatformError(409,'Límite de aventuras publicadas alcanzado.');
-  const graphics=publicGraphics(a.graphics),definition=publicAdventure(a.definition);
+  const graphics=publicGraphics(a.graphics),definition=publicAdventure(parseAdventure(a.definition));
   const slug=old?.slug??randomUUID(),version=randomUUID(),assetIds=imageUrls(graphics).filter(u=>u.startsWith('asset:')).map(u=>u.slice(6));
   const cartridge=await buildCartridge(version,definition,graphics,u=>this.image(db,t,u)),prefix=`espacios/${t}/aventuras/${id}/versiones/${version}`;
   await this.storage(db,t,cartridge.bytes,space.limits.storageMB);

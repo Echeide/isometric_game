@@ -6,24 +6,24 @@ export function updateEntity(draft:WorldScene,id:string,values:Partial<WorldEnti
 }
 
 /** Find a valid free placement rather than stacking every new item at (1,1). */
-export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string, position?: {x:number;y:number},catalog:readonly VisualAsset[]=visualCatalog): WorldScene {
- const base=parseScene(draft);
+export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string, position?: {x:number;y:number},catalog:readonly VisualAsset[]=visualCatalog,options:{allowUnreachable?:boolean}={}): WorldScene {
+ const base=parseScene(draft,options);
  const asset=catalog.find(a=>a.kind===kind&&(!visualId||a.id===visualId));
  if(!asset)throw new Error('Este objeto no está en el catálogo.');
  const size={...asset.size};
  if(position){
-  return parseScene({...base,entities:[...base.entities,{id,label:asset.label,kind,visualId:asset.id,color:asset.color,position,size}]});
+  return parseScene({...base,entities:[...base.entities,{id,label:asset.label,kind,visualId:asset.id,color:asset.color,position,size}]},options);
  }
  // Prefer the front of the room so new objects are easy to see.
  for(let y=base.height-1;y>=0;y--)for(let x=0;x<=base.width-size.x;x++){
   const entity:WorldEntity={id,label:asset.label,kind,visualId:asset.id,position:{x,y},size};
-  try{return parseScene({...base,entities:[...base.entities,entity]});}catch{/* Try another location, preserving entrances and interaction routes. */}
+  try{return parseScene({...base,entities:[...base.entities,entity]},options);}catch{/* Try another location, preserving entrances and interaction routes. */}
  }
  throw new Error('No queda espacio libre para este objeto sin bloquear el mapa.');
 }
 
 /** Move the furniture and its attached interaction/seat coordinates as one edit. */
-export function moveEntity(draft: WorldScene, id: string, position: {x:number;y:number}): WorldScene {
+export function moveEntity(draft: WorldScene, id: string, position: {x:number;y:number},options:{allowUnreachable?:boolean}={}): WorldScene {
  const entity=draft.entities.find(e=>e.id===id);
  if(!entity)throw new Error('No se encuentra el objeto seleccionado.');
  const dx=position.x-entity.position.x,dy=position.y-entity.position.y;
@@ -31,11 +31,11 @@ export function moveEntity(draft: WorldScene, id: string, position: {x:number;y:
  return parseScene({...draft,entities:draft.entities.map(e=>e.id!==id?e:{...e,position,
   ...(e.seat?{seat:{...e.seat,cell:translate(e.seat.cell)}}:{}),
   ...(e.interactionPoints?{interactionPoints:e.interactionPoints.map(translate)}:{})
- })});
+ })},options);
 }
 
 /** Reflection across the isometric vertical axis swaps local grid x/y. */
-export function flipEntity(draft:WorldScene,id:string):WorldScene {
+export function flipEntity(draft:WorldScene,id:string,options:{allowUnreachable?:boolean}={}):WorldScene {
  const entity=draft.entities.find(e=>e.id===id);
  if(!entity)throw new Error('No se encuentra el objeto seleccionado.');
  const reflect=(p:{x:number;y:number})=>({x:entity.position.x+p.y-entity.position.y,y:entity.position.y+p.x-entity.position.x});
@@ -44,7 +44,7 @@ export function flipEntity(draft:WorldScene,id:string):WorldScene {
   ...(e.size?{size:{x:e.size.y,y:e.size.x}}:{}),
   ...(e.seat?{seat:{cell:reflect(e.seat.cell),facing:facing[e.seat.facing]}}:{}),
   ...(e.interactionPoints?{interactionPoints:e.interactionPoints.map(reflect)}:{})
- })});
+ })},options);
 }
 
 /** Apply one stroke as a single undoable edit; painting never changes collisions. */

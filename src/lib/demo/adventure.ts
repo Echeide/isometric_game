@@ -9,8 +9,30 @@ import { insertEntity } from './editor';
 import {defaultAdventurePalette,validateAdventurePalette,type AdventurePalette} from './adventure-palette';
 import {validateChats,embeddedChat,type AdventureChat,CHAT_PREFIX} from '../chat/editor';
 
-export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; destinationEntityId?:string; requirement?:{itemId:string;quantity:number;consume:boolean} }
+export interface MapExit { id:string; fromMap:string; entityId:string; toMap:string; arrival:Cell; arrivalMode?:'spawn'|'position'; destinationEntityId?:string; requirement?:{itemId:string;quantity:number;consume:boolean} }
 export interface Adventure { kind:'isometric-adventure'; version:1; id:string; name:string; startMap:string; maps:WorldScene[]; exits:MapExit[]; items?:InventoryItem[]; inventoryExampleVersion?:1; catalog?:VisualAsset[]; catalogOverrides?:VisualCatalogOverrides; palette?:AdventurePalette; chats?:AdventureChat[]; story?:StoryDefinition; localization?:AdventureLocalization }
+/** Resolve the destination once for validation, the inspector and gameplay. */
+export function exitArrival(a:Pick<Adventure,'maps'|'exits'>,exit:MapExit){
+ const map=a.maps.find(m=>m.id===exit.toMap);if(!map)throw new Error('El mapa de destino no existe.');
+ const reverse=a.exits.filter(e=>e.fromMap===exit.toMap&&e.toMap===exit.fromMap);
+ const id=exit.destinationEntityId??(exit.arrivalMode===undefined&&reverse.length===1?reverse[0].entityId:undefined);
+ const entity=id===undefined?undefined:map.entities.find(e=>e.id===id);
+ if(id!==undefined&&!entity)throw new Error('La entrada de destino no existe.');
+ const mode=entity?'entity':exit.arrivalMode==='spawn'?'spawn':'position';
+ const cell={...(entity?.position??(mode==='spawn'?map.spawn:exit.arrival))};
+ return {map,cell,entity,mode};
+}
+/** Keep old one-way links that used the map entry attached to that entry after an edit. */
+export function changeMapSpawn(value:Adventure,mapId:string,spawn:Cell):Adventure{
+ const previous=value.maps.find(m=>m.id===mapId);if(!previous)throw new Error('El mapa no existe.');
+ const exits=value.exits.map(exit=>{
+  if(exit.toMap!==mapId||exit.destinationEntityId||exit.arrivalMode==='position')return exit;
+  const old=exitArrival(value,exit);
+  const follows=old.mode==='spawn'||old.mode==='position'&&exit.arrival.x===previous.spawn.x&&exit.arrival.y===previous.spawn.y;
+  return follows?{...exit,arrivalMode:'spawn' as const,arrival:{...spawn}}:exit;
+ });
+ return parseAdventure({...value,maps:value.maps.map(m=>m.id===mapId?{...m,spawn:{...spawn}}:m),exits},{allowUnreachable:true});
+}
 export const ADVENTURE_KEY='isometrico.adventure.v1';
 export function createAdventure(maps:WorldScene[]):Adventure {
  return parseAdventure({kind:'isometric-adventure',version:1,id:'my-adventure',name:'Mi aventura',startMap:maps[0]?.id,maps,exits:[],palette:defaultAdventurePalette()});
@@ -44,9 +66,11 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
   if(!from||!to||!entity)throw new Error('Una salida referencia un mapa u objeto inexistente.');
   const key=JSON.stringify([from.id,entity.id]);if(sources.has(key))throw new Error('Un objeto solo puede tener una salida.');sources.add(key);
   if(entity.interaction?.action!=='adventure.exit'||entity.interaction.resourceId!==exit.id)throw new Error(`La salida ${entity.label} no tiene la interacción correcta.`);
-  if(exit.destinationEntityId!==undefined&&!to.entities.some(e=>e.id===exit.destinationEntityId))throw new Error('La entrada de destino no existe.');
-  if(!exit.arrival||!walkable(to,exit.arrival))throw new Error(`La llegada a ${to.name} está fuera del mapa o bloqueada.`);
-  if(!options.allowUnreachable&&findPath(to,exit.arrival,[to.spawn])===null)throw new Error(`La llegada a ${to.name} está aislada de su entrada.`);
+  if(exit.arrivalMode!==undefined&&!['spawn','position'].includes(exit.arrivalMode))throw new Error('Tipo de llegada no válido.');
+  if(!exit.arrival||!Number.isInteger(exit.arrival.x)||!Number.isInteger(exit.arrival.y)||exit.arrival.x<0||exit.arrival.y<0||exit.arrival.x>63||exit.arrival.y>63)throw new Error(`La llegada a ${to.name} no es válida.`);
+  const destination=exitArrival({maps,exits:a.exits},exit);
+  if(!walkable(to,destination.cell))throw new Error(`La llegada a ${to.name} está fuera del mapa o bloqueada (${destination.cell.x}, ${destination.cell.y}).`);
+  if(!options.allowUnreachable&&findPath(to,destination.cell,[to.spawn])===null)throw new Error(`La llegada a ${to.name} está aislada de su entrada.`);
   if(!options.allowUnreachable&&findPath(from,from.spawn,interactionCells(from,entity))===null)throw new Error(`No se puede llegar a la salida ${entity.label}.`);
  }
  for(const m of maps)for(const e of m.entities)if(e.interaction?.action==='adventure.exit'&&!a.exits.some(x=>x.fromMap===m.id&&x.entityId===e.id))throw new Error(`Falta el destino de ${e.label}.`);
@@ -55,14 +79,14 @@ export function parseAdventure(value:unknown,options:{allowUnreachable?:boolean}
 }
 export function saveAdventure(storage:Pick<Storage,'setItem'>,value:unknown){const a=parseAdventure(value);storage.setItem(ADVENTURE_KEY,JSON.stringify(a));return a;}
 export function readAdventure(storage:Pick<Storage,'getItem'>):Adventure|null {const raw=storage.getItem(ADVENTURE_KEY);return raw?parseAdventure(JSON.parse(raw)):null;}
-export function connectMaps(value:Adventure,fromMap:string,toMap:string,id:string,arrival?:Cell,position?:Cell):Adventure {
- const a=parseAdventure(value),from=a.maps.find(m=>m.id===fromMap),to=a.maps.find(m=>m.id===toMap);
+export function connectMaps(value:Adventure,fromMap:string,toMap:string,id:string,arrival?:Cell,position?:Cell,options:{allowUnreachable?:boolean}={}):Adventure {
+ const a=parseAdventure(value,options),from=a.maps.find(m=>m.id===fromMap),to=a.maps.find(m=>m.id===toMap);
  if(!from||!to)throw new Error('Selecciona un mapa de origen y destino.');
- const scene=insertEntity(from,'goal',id,'pixel.goal',position);
+ const scene=insertEntity(from,'goal',id,'pixel.goal',position,undefined,options);
  const entity=scene.entities.find(e=>e.id===id)!;entity.label=`Salida a ${to.name}`;entity.interaction={label:`Viajar a ${to.name}`,action:'adventure.exit',resourceId:id};
- const reverse=a.exits.filter(e=>e.fromMap===toMap&&e.toMap===fromMap&&!e.destinationEntityId);
+ const reverse=a.exits.filter(e=>e.fromMap===toMap&&e.toMap===fromMap&&!e.destinationEntityId&&e.arrivalMode!=='position');
  const paired=reverse.length===1?reverse[0]:undefined;
- return parseAdventure({...a,maps:a.maps.map(m=>m.id===fromMap?scene:m),exits:[...a.exits.map(e=>e===paired?{...e,destinationEntityId:id}:e),{id,fromMap,toMap,entityId:id,arrival:arrival??to.spawn,...(paired?{destinationEntityId:paired.entityId}:{})}]});
+ return parseAdventure({...a,maps:a.maps.map(m=>m.id===fromMap?scene:m),exits:[...a.exits.map(e=>e===paired?{...e,destinationEntityId:id}:e),{id,fromMap,toMap,entityId:id,arrival:arrival??to.spawn,...(!arrival?{arrivalMode:'spawn' as const}:{}),...(paired?{destinationEntityId:paired.entityId}:{})}]},options);
 }
 export function travel(value:Adventure,fromMap:string,entityId:string,facing:Facing='se'):{scene:WorldScene;exit:MapExit;facing:Facing} {
  return travelParsed(parseAdventure(value),fromMap,entityId,facing);
@@ -75,17 +99,9 @@ export function createTraveler(value:Adventure){
 function travelParsed(a:Adventure,fromMap:string,entityId:string,facing:Facing){
  const exit=a.exits.find(e=>e.fromMap===fromMap&&e.entityId===entityId);
  if(!exit)throw new Error('No se encuentra el destino de esta salida.');
- const target=a.maps.find(m=>m.id===exit.toMap)!;
- // Old adventures have no explicit pairing: infer only an unambiguous return exit.
- const reverse=a.exits.filter(e=>e.fromMap===exit.toMap&&e.toMap===fromMap);
- const destinationId=exit.destinationEntityId??(reverse.length===1?reverse[0].entityId:undefined);
- const entrance=target.entities.find(e=>e.id===destinationId);
- let spawn={...exit.arrival};
- if(entrance){
-  spawn={...entrance.position};
-  if(!walkable(target,spawn))throw new Error('La baldosa de entrada está bloqueada.');
-  facing=entranceFacing(target,entrance);
- }
+ const destination=exitArrival(a,exit),target=destination.map,spawn=destination.cell;
+ if(!walkable(target,spawn))throw new Error('La baldosa de entrada está bloqueada.');
+ if(destination.entity)facing=entranceFacing(target,destination.entity);
 
  return {exit,facing,scene:{...target,spawn}};
 }
