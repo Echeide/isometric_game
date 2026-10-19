@@ -38,3 +38,27 @@ ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_backend text;
 ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_prefix text;
 ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_manifest jsonb;
 ALTER TABLE platform_releases ADD COLUMN IF NOT EXISTS cartridge_bytes bigint NOT NULL DEFAULT 0;
+
+-- Playing identities never grant access to the authoring platform.
+CREATE TABLE IF NOT EXISTS platform_players(id text PRIMARY KEY,username text NOT NULL UNIQUE,password_hash text NOT NULL,enabled boolean NOT NULL DEFAULT true,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS platform_player_sessions(id text PRIMARY KEY,token_hash text NOT NULL UNIQUE,player_id text NOT NULL REFERENCES platform_players(id) ON DELETE CASCADE,expires_at timestamptz NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS player_session_expiry ON platform_player_sessions(expires_at);
+CREATE TABLE IF NOT EXISTS platform_game_saves(
+ owner_key text NOT NULL,scope_key text NOT NULL,
+ player_id text REFERENCES platform_players(id) ON DELETE CASCADE,user_id text REFERENCES platform_users(id) ON DELETE CASCADE,
+ tenant_id text NOT NULL REFERENCES platform_tenants(id),adventure_id text NOT NULL,
+ publication_slug text REFERENCES platform_publications(slug) ON DELETE CASCADE,release_id text REFERENCES platform_releases(id) ON DELETE SET NULL,
+ state jsonb NOT NULL,revision integer NOT NULL CHECK(revision>0),write_id text NOT NULL,updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(owner_key,scope_key),FOREIGN KEY(tenant_id,adventure_id) REFERENCES platform_adventures(tenant_id,id) ON DELETE CASCADE,
+ CHECK((player_id IS NULL)<>(user_id IS NULL)),
+ CHECK(owner_key=CASE WHEN player_id IS NOT NULL THEN 'player:'||player_id ELSE 'admin:'||user_id END)
+);
+ALTER TABLE platform_game_saves ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_game_saves FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_policies WHERE tablename='platform_game_saves' AND policyname='player_save_boundary') THEN
+  CREATE POLICY player_save_boundary ON platform_game_saves
+   USING(owner_key=current_setting('platform.save_owner',true) AND scope_key=current_setting('platform.save_scope',true))
+   WITH CHECK(owner_key=current_setting('platform.save_owner',true) AND scope_key=current_setting('platform.save_scope',true));
+ END IF;
+END $$;

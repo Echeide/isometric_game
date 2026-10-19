@@ -2,7 +2,7 @@
  import {Layers,Play,RotateCcw,MapPin,Clock,ArrowRight} from 'lucide-svelte';
  import {interfaceLanguage} from '$lib/i18n/context.svelte';
  const ui=interfaceLanguage();
- let {name,mapName='',savedAt,hasSave=false,error='',onnew,oncontinue}:{name:string;mapName?:string;savedAt?:string;hasSave?:boolean;error?:string;onnew:()=>void;oncontinue:()=>void}=$props();
+ let {name,mapName='',savedAt,hasSave=false,error='',onnew,oncontinue,accountName='',loginHref='',cloud=false,disabled=false,busy=false,onretry,onrecover,onimport,reauth=false}:{name:string;mapName?:string;savedAt?:string;hasSave?:boolean;error?:string;onnew:()=>void;oncontinue:()=>void;accountName?:string;loginHref?:string;cloud?:boolean;disabled?:boolean;busy?:boolean;onretry?:()=>void;onrecover?:()=>void;onimport?:()=>void;reauth?:boolean}=$props();
  let confirming=$state(false);
 </script>
 
@@ -12,12 +12,16 @@
   <p class="menu-eyebrow">{ui.text('TU AVENTURA')}</p>
   <h1>{name}</h1>
   <p class="menu-intro">{hasSave?ui.text('Tu historia te espera donde la dejaste.'):ui.text('Cada aventura empieza con un primer paso.')}</p>
-  {#if error}<p class="menu-error" role="alert">{error}</p>{/if}
+  {#if accountName}<p class="account-note">{ui.text('Partida de')} <strong>{accountName}</strong></p>{:else if loginHref}<p class="account-note">{ui.text('Continúa desde cualquier dispositivo con tu cuenta de jugador.')}<br/><a href={loginHref}>{ui.text('Iniciar sesión')}</a> · <a href={loginHref+'&register=1'}>{ui.text('Crear cuenta')}</a></p>{/if}
+  {#if error}<p class="menu-error" role="alert">{ui.text(error)}</p>{/if}
+  {#if onrecover}<button class="menu-primary" disabled={busy} onclick={onrecover}>{ui.text('Cargar partida del servidor')}</button>{/if}
+  {#if reauth}<p class="account-note"><a href={loginHref}>{ui.text('Volver a iniciar sesión')}</a></p>{/if}
+  {#if onretry}<button class="menu-secondary" disabled={busy} onclick={onretry}>{ui.text('Reintentar conexión')}</button>{/if}
   {#if confirming}
    <div class="overwrite" role="group" aria-label={ui.text('Confirmar nuevo juego')}>
     <h2>{ui.text('¿Empezar de nuevo?')}</h2>
     <p>{ui.text('Se sustituirá la partida guardada de esta aventura.')}</p>
-    <button class="menu-primary" onclick={()=>{confirming=false;onnew();}}>{ui.text('Empezar nuevo juego')}<ArrowRight size={18}/></button>
+    <button class="menu-primary" disabled={disabled||busy} onclick={()=>{confirming=false;onnew();}}>{ui.text('Empezar nuevo juego')}<ArrowRight size={18}/></button>
     <button class="menu-secondary" onclick={()=>confirming=false}>{ui.text('Conservar mi partida')}</button>
    </div>
   {:else}
@@ -26,13 +30,14 @@
      <span><MapPin size={17}/><strong>{mapName}</strong></span>
      <span><Clock size={15}/>{#if savedAt}<time datetime={savedAt}>{new Intl.DateTimeFormat(ui.locale,{dateStyle:'medium',timeStyle:'short'}).format(new Date(savedAt))}</time>{:else}{ui.text('Progreso anterior')}{/if}</span>
     </div>
-    <button class="menu-primary" onclick={oncontinue}><Play size={19}/>{ui.text('Continuar')}<ArrowRight class="trailing" size={18}/></button>
-    <button class="menu-secondary" onclick={()=>confirming=true}><RotateCcw size={17}/>{ui.text('Nuevo juego')}</button>
+    <button class="menu-primary" disabled={disabled||busy} onclick={oncontinue}><Play size={19}/>{ui.text('Continuar')}<ArrowRight class="trailing" size={18}/></button>
+    <button class="menu-secondary" disabled={disabled||busy} onclick={()=>confirming=true}><RotateCcw size={17}/>{ui.text('Nuevo juego')}</button>
    {:else}
-    <button class="menu-primary" onclick={onnew}><Play size={19}/>{ui.text('Nuevo juego')}<ArrowRight class="trailing" size={18}/></button>
+    <button class="menu-primary" disabled={disabled||busy} onclick={onnew}><Play size={19}/>{ui.text('Nuevo juego')}<ArrowRight class="trailing" size={18}/></button>
    {/if}
   {/if}
-  <p class="save-note">{ui.text('La partida se guarda automáticamente en este navegador.')}</p>
+  {#if onimport}<button class="menu-secondary" disabled={disabled||busy} onclick={onimport}>{ui.text('Continuar partida de este dispositivo')}</button>{/if}
+  <p class="save-note">{cloud?ui.text('La partida se guarda en tu cuenta y se sincroniza entre dispositivos.'):ui.text('La partida se guarda automáticamente en este navegador.')}</p>
  </div>
 </section>
 
@@ -51,5 +56,6 @@
  .save-note{font-size:11px;line-height:1.6;color:#788571;margin-top:25px}
  .overwrite{padding:20px;border:1px solid #d9e1d0;border-radius:12px;background:#ffffff80}.overwrite h2{font-size:20px;letter-spacing:-.4px}.overwrite p{font-size:13px;color:#6e7d68;line-height:1.6;margin:12px 0 20px}
  .menu-error{font-size:13px;line-height:1.6;color:#8a4336;background:#fff0eb;border:1px solid #ebd0c5;border-radius:10px;padding:14px;margin-bottom:18px}
+ .account-note{font-size:12px;line-height:1.8;color:#63775a;margin:-10px 0 24px}.account-note a{color:#36582f;text-decoration:underline}button:disabled{opacity:.55;cursor:wait}
  @media(max-height:650px){.player-menu{padding:24px 20px}.menu-symbol{height:54px;width:54px;margin-bottom:16px;border-radius:16px}.menu-intro{margin:12px 0 20px}.save-note{margin-top:18px}}
 </style>

@@ -1,7 +1,9 @@
 <script lang="ts">
  import {adventureLocale,adventureLanguages,adventureText,localizeScene,localizeModule} from '$lib/i18n/adventure';import {languageName} from '$lib/i18n/locale';
  import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
- let {published=null}:{published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string}|null}=$props();
+ let {published=null}:{published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string;releaseId?:string}|null}=$props();
+ import {page} from '$app/state';
+ import {registerActiveSave} from '$lib/player/active-save';
  import {applyModuleResult,moduleScore} from '$lib/modules/module-results';
  import type {ModuleResult} from '$lib/modules/routing';
  import AudioDock from '$lib/modules/AudioDock.svelte';
@@ -29,6 +31,13 @@
  const legacyStorage=scopedStorage(()=>localStorage,progressPrefix);
  import {localGameSaves,createGameSession,newGameSave,restoreGame,gameSaveKey,type GameSave,type GameSaveRepository,type GameSession,type PlayerPosition} from '$lib/storage/game-save';
  import PlayerMenu from '$lib/components/PlayerMenu.svelte';
+ import {cloudGameSaves,saveTransport,type CloudGameSaves,type SyncStatus} from '$lib/storage/cloud-game-save';
+ let cloud=$state.raw<CloudGameSaves>(),syncStatus=$state<SyncStatus|null>(null),guestCandidate=$state.raw<GameSave|null>(null),menuBusy=$state(false);
+ const saveAccount=$derived(published&&page.data.player?{key:'player:'+page.data.player.id,name:page.data.player.username}:page.data.principal?{key:'admin:'+page.data.principal.user.id,name:page.data.principal.user.username}:null);
+ const playerLogin=$derived((saveAccount?.key.startsWith('admin:')?'/login':'/player/login')+'?next='+encodeURIComponent(page.url.pathname+page.url.search));
+ const cloudProblem=$derived(syncStatus&&['offline','conflict','unauthorized','content-changed','error'].includes(syncStatus.state)?syncStatus:null);
+ function syncLabel(){return ui.text(syncStatus?.state==='synced'?'Partida sincronizada':syncStatus?.state==='pending'||syncStatus?.state==='saving'?'Guardando partida…':syncStatus?.state==='loading'?'Consultando partida…':'Partida pendiente de sincronizar');}
+ const syncBlocked=$derived(!!cloud&&(!cloud.ready||['conflict','unauthorized','content-changed','error'].includes(syncStatus?.state??'')));
  let progressStorage=$state.raw<Storage>(legacyStorage);
  let session:GameSession|undefined,repository:GameSaveRepository|undefined,saveTimer:ReturnType<typeof setTimeout>|undefined;
  let sessionGeneration=$state(0);
@@ -36,12 +45,15 @@
  let phase=$state<'boot'|'menu'|'loading'|'playing'>('boot'),savedGame=$state.raw<GameSave|null>(null),menuError=$state(''),restoreNotice=$state('');
  function saveCheckpoint(){clearTimeout(saveTimer);saveTimer=undefined;if(!session||phase!=='playing')return true;try{session.transaction(()=>{writeProgress(progressStorage,adventure!.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});saveStory(progressStorage,adventure!.id,$state.snapshot(story),$state.snapshot(inventory));});testError='';return true;}catch{testError=ui.text('No se pudo guardar el progreso en este navegador.');return false;}}
  function playerChanged(value:import('@isometrico/world').WorldPlayerState){if(phase!=='playing'||!controller||value.sceneId!==currentScene.id)return;playerPosition={mapId:value.sceneId,cell:{...value.cell},facing:value.facing};if(!value.moving)saveCheckpoint();else if(!saveTimer)saveTimer=setTimeout(saveCheckpoint,500);}
- function openGameMenu(){if(phase!=='playing'||assetsLoading||transitionImage||!saveCheckpoint())return false;audioPlayer.close();savedGame=session!.saved;session!.close();sessionGeneration++;session=undefined;progressStorage=legacyStorage;controller=undefined;panel=null;information=null;narrativeId=null;phase='menu';mapsReady=false;menuError='';graphicsAbort.abort();graphicsLoader?.release();graphicsLoader=undefined;return true;}
+ function leaveWorld(){session?.close();sessionGeneration++;session=undefined;progressStorage=legacyStorage;controller=undefined;panel=null;information=null;narrativeId=null;phase='menu';mapsReady=false;graphicsAbort.abort();graphicsLoader?.release();graphicsLoader=undefined;}
+ async function openGameMenu(){if(phase!=='playing'||assetsLoading||transitionImage||menuBusy)return false;menuBusy=true;try{if(!saveCheckpoint())return false;audioPlayer.close();await cloud?.flush();savedGame=repository!.read();leaveWorld();menuError='';return true;}finally{menuBusy=false;}}
+ async function recoverServer(){if(!cloud||menuBusy)return;menuBusy=true;try{saveCheckpoint();audioPlayer.close();savedGame=await cloud.useServer();leaveWorld();menuError='';}catch(e){menuError=(e as Error).message;}finally{menuBusy=false;}}
+ async function retrySync(){if(!cloud||menuBusy)return;menuBusy=true;try{if(phase==='playing')await cloud.flush();else savedGame=await cloud.load();menuError='';}catch(e){menuError=(e as Error).message;}finally{menuBusy=false;}}
  let activityLog=$state<Activity[]>([]),testError=$state('');
  function record(message:string){if(!adventure)return;activityLog=appendActivity(activityLog,message);try{writeProgress(progressStorage,adventure.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});testError='';}catch{testError=ui.text("No se pudo guardar el progreso en este navegador.");}}
  function toggleTestGoal(key:string){if(!adventure)return;const goal=milestones(adventure).find(g=>g.key===key);if(!goal)return;const wasDone=completed.includes(key);completed=wasDone?completed.filter(k=>k!==key):[...completed,key];record(`${wasDone?'Reabierto':'Completado'} desde pruebas: ${goal.label} (${goal.map}).`);}
  function toggleTestTask(id:string){const task=tasks.find(t=>t.id===id);if(!task)return;const wasDone=task.status==='done';tasks=tasks.map(t=>t.id===id?{...t,status:wasDone?'todo':'done'}:t);record(`${wasDone?'Reabierta':ui.text("Completada")} desde pruebas: ${task.title}.`);}
- function restartAdventure(){if(openGameMenu())void startGame('new');}
+ async function restartAdventure(){if(await openGameMenu())void startGame('new');}
 
  import ContentModulePlayer from '$lib/modules/ContentModulePlayer.svelte';
  import {objectContentModules} from '$lib/modules/adventure-modules';
@@ -80,7 +92,7 @@
   }finally{assetsLoading=false;}
  }
 
- onDestroy(()=>{saveCheckpoint();session?.close();clearTimeout(saveTimer);disposed=true;sceneRequest++;audioPlayer.close();graphicsAbort.abort();graphicsLoader?.release();});
+ onDestroy(()=>{saveCheckpoint();session?.close();void cloud?.flush(true);cloud?.close();clearTimeout(saveTimer);disposed=true;sceneRequest++;audioPlayer.close();graphicsAbort.abort();graphicsLoader?.release();});
  import { tick,onMount } from 'svelte';
  import MapDissolve from '$lib/components/MapDissolve.svelte';
  import {objectiveKey} from '$lib/demo/playable-adventure';
@@ -110,25 +122,33 @@
  let resourceEntityId=$state(''),objectModuleId=$state<string|null>(null),objectModulesFinished=$state(false),moduleError=$state('');
  const objectModules=$derived(adventure?objectContentModules(adventure,{mapId:currentScene.id,entityId:resourceEntityId}):[]);
  const currentObjectModule=$derived(objectModules.find(m=>m.id===objectModuleId));
- function prepareMenu(){
-  if(!adventure)return;repository=localGameSaves(legacyStorage,adventure);menuError='';
-  try{savedGame=repository.read();if(!savedGame&&legacyStorage.getItem(gameSaveKey(adventure.id))!==null)menuError=ui.text('La partida guardada no es compatible o está dañada. Puedes empezar un nuevo juego.');}
-  catch{savedGame=null;menuError=ui.text('No se pudo leer la partida guardada en este navegador.');}
+ async function prepareMenu(){
+  if(!adventure)return;phase='boot';cloud?.close();cloud=undefined;syncStatus=null;guestCandidate=null;repository=localGameSaves(legacyStorage,adventure);menuError='';
+  try{
+   if(saveAccount){
+    guestCandidate=repository.read();const query=new URLSearchParams(published?{publication:published.key!}:{adventure:adventure.id});query.set('account',saveAccount.key);if(!published&&page.data.principal?.tenant)query.set('tenant',page.data.principal.tenant.id);if(published?.releaseId)query.set('release',published.releaseId);
+    const current:CloudGameSaves=cloudGameSaves({storage:localStorage,key:'isometrico.cloud.v1:'+JSON.stringify([saveAccount.key,progressPrefix(),adventure.id]),adventure,transport:saveTransport('/api/game-saves?'+query),onstatus:value=>{if(!disposed&&cloud===current)syncStatus=value;}});cloud=current;repository=current;savedGame=await current.load();if(disposed){current.close();return;}if(savedGame)guestCandidate=null;
+   }else{savedGame=repository.read();if(!savedGame&&legacyStorage.getItem(gameSaveKey(adventure.id))!==null)menuError=ui.text('La partida guardada no es compatible o está dañada. Puedes empezar un nuevo juego.');}
+  }
+  catch(e){savedGame=repository.read();menuError=cloud?(e as Error).message:ui.text('No se pudo leer la partida guardada en este navegador.');}
   const query=new URLSearchParams(location.search);mode=adventureEntry(adventure,{savedMapId:savedGame?.position.mapId,previewMapId:published?null:query.get('map')??query.get('world')}).id;
   phase='menu';
  }
  async function initialize(){phase='boot';narrativeQueue=[];narrativeId=null;panel=null;mapsReady=false;loadError='';loadProgress=null;try{
-  const library=published?{activeId:published.adventure.id,adventures:[published.adventure]}:await loadAdventureLibrary();adventures=library.adventures;
+  const library=published?{activeId:published.adventure.id,adventures:[published.adventure]}:await loadAdventureLibrary();if(disposed)return;adventures=library.adventures;
   const requestedAdventure=new URLSearchParams(location.search).get('adventure');
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
-  contentLanguage=adventureLocale(adventure,new URLSearchParams(location.search).get('lang'));prepareMenu();
+  contentLanguage=adventureLocale(adventure,new URLSearchParams(location.search).get('lang'));await prepareMenu();
  }catch(e){if(!disposed)loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}}
- async function startGame(choice:'new'|'continue'){
-  if(!adventure||!repository||phase!=='menu')return;
+ async function startGame(choice:'new'|'continue'|'local'){
+  if(!adventure||!repository||phase!=='menu'||syncBlocked)return;
   const request=++sceneRequest;phase='loading';menuError='';restoreNotice='';
   try{
    const query=new URLSearchParams(location.search),initial=adventureEntry(adventure,{previewMapId:published?null:query.get('map')??query.get('world')});
-   const save=choice==='continue'?repository.read():newGameSave(adventure,initial.id);if(!save)throw Error(ui.text('No hay una partida disponible para continuar.'));
+   if(cloud){await cloud.load();if(cloud.blocked)throw Error(syncStatus?.message??ui.text('No se pudo sincronizar la partida.'));}
+   if(disposed||request!==sceneRequest)return;
+   if(choice==='local'&&repository.read())throw Error(ui.text('Ya hay una partida en tu cuenta. Pulsa Continuar para recuperarla.'));
+   const save=choice==='continue'?repository.read():choice==='local'?guestCandidate:newGameSave(adventure,initial.id);if(!save)throw Error(ui.text('No hay una partida disponible para continuar.'));
    const restored=restoreGame(adventure,save),nextTraveler=createTraveler(adventure);await loadGraphics(adventure,restored.scene);if(disposed||request!==sceneRequest)return;
    tasks=restored.progress.tasks;completed=restored.progress.completed;activityLog=restored.progress.log;story=restored.story;inventory=restored.inventory;
    currentScene=restored.scene;mode=currentScene.id;playerPosition=restored.position;arrivalFacing=playerPosition.facing;arrivalCamera=undefined;panMode=false;celebration=0;transitionImage=null;transitionReady=false;
@@ -137,11 +157,12 @@
    narrativeQueue=choice==='new'?entry.ids:resumeNarratives(adventure,$state.snapshot(story),currentScene.id,save.narrativeQueue);
    sessionGeneration++;session=createGameSession(repository,save,()=>({position:structuredClone(playerPosition),narrativeQueue:[...narrativeQueue]}));progressStorage=session.storage;
    session.transaction(()=>{writeProgress(progressStorage,adventure!.id,{tasks:$state.snapshot(tasks),completed:[...completed],log:$state.snapshot(activityLog)});saveStory(progressStorage,adventure!.id,$state.snapshot(story),$state.snapshot(inventory));});
+   await cloud?.flush();if(cloud?.blocked)throw Error(syncStatus?.message??ui.text('No se pudo sincronizar la partida.'));
    traveler=nextTraveler;worldKey++;mapsReady=true;phase='playing';
    if(restored.adjusted&&choice==='continue')restoreNotice=ui.text('El mapa ha cambiado. Hemos ajustado tu posición a una casilla segura.');
-  }catch(e){if(!disposed&&request===sceneRequest){session?.close();session=undefined;progressStorage=legacyStorage;phase='menu';mapsReady=false;graphicsLoader?.release();menuError=ui.text('No se pudo iniciar la partida: ')+(e as Error).message;}}
+  }catch(e){if(!disposed&&request===sceneRequest){session?.close();session=undefined;progressStorage=legacyStorage;phase='menu';mapsReady=false;savedGame=repository.read();graphicsLoader?.release();menuError=ui.text('No se pudo iniciar la partida: ')+(e as Error).message;}}
  }
- onMount(()=>{void initialize();const flush=()=>{saveCheckpoint();};const visibility=()=>{if(document.visibilityState==='hidden')flush();};window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',visibility);return()=>{window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',visibility);};});
+ onMount(()=>{void initialize();const unregister=registerActiveSave(async()=>{if(!saveCheckpoint())return false;return cloud?cloud.flush():true;});const flush=()=>{saveCheckpoint();void cloud?.flush(true);};const online=()=>void cloud?.flush();const visibility=()=>{if(document.visibilityState==='hidden')flush();};window.addEventListener('online',online);window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',visibility);return()=>{unregister();window.removeEventListener('online',online);window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',visibility);};});
  function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;playerPosition={mapId:currentScene.id,cell:c.getPlayerCell?.()??scene.spawn,facing:c.getFacing()};saveCheckpoint();if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;graphicsLoader?.background(currentScene.id);runNarrativeQueue();}
  async function changeScene(next:WorldScene,facing:Facing,progress?:{story:StoryProgress;inventory:typeof inventory;messages:string[]}){
   const request=++sceneRequest;
@@ -250,10 +271,11 @@
  function shortcut(entityId:string){void closePanel().then(()=>controller?.goTo(entityId));}
 
  async function switchAdventure(value:string){
-  if(!adventure||assetsLoading||transitionImage||value===adventure.id)return;if(phase==='playing'&&!openGameMenu())return;audioPlayer.close();
+  if(!adventure||assetsLoading||transitionImage||value===adventure.id)return;if(phase==='playing'&&!await openGameMenu())return;audioPlayer.close();
   try{
-   const next=await selectAdventure(value);adventure=next;contentLanguage=adventureLocale(next);narrativeQueue=[];prepareMenu();
+   const next=await selectAdventure(value);adventure=next;contentLanguage=adventureLocale(next);narrativeQueue=[];
    const url=new URL(location.href);url.search='';url.searchParams.set('adventure',value);history.replaceState(null,'',url);
+   await prepareMenu();
   }catch(e){menuError=(e as Error).message;}
  }
 
@@ -271,13 +293,13 @@
   <a class="immersive-brand" href="/" aria-label={ui.text("Isométrico, inicio")}><span class="brand-mark"><Layers size={22}/></span><span class="wordmark">isométrico</span></a>
   <div class="header-divider"></div>
   <div class="world-select"><label class="sr-only" for="world-select">{ui.text("Cambiar de aventura")}</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={phase==='boot'||phase==='loading'||!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{storyText(['adventure','name'],item.name)}</option>{/each}</select><ChevronDown size={15}/></div></div>
-  <div class="topbar-right">{#if contentLanguages.length>1}<label class="story-language" title={ui.text('Idioma de la aventura')}><span class="sr-only">{ui.text('Idioma de la aventura')}</span><select aria-label={ui.text('Idioma de la aventura')} disabled={panel==='chat'&&currentObjectModule?.type==='chat'||panel==='narrative'&&currentNarrativeModule?.type==='chat'} value={contentLanguage} onchange={event=>changeLanguage(event.currentTarget.value)}>{#each contentLanguages as language}<option value={language}>{languageName(language)}</option>{/each}</select></label>{/if}{#if !published}<a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>{ui.text("Editar mapa")}</a><span class="demo-badge">{ui.text("VISTA PREVIA")}</span>{/if}{#if phase==='playing'}<button class="header-action" disabled={assetsLoading||!!transitionImage} onclick={openGameMenu} aria-label={ui.text("Volver al menú")} title={ui.text("Menú de la aventura")}><Menu size={19}/></button><button class="header-action" onclick={()=>showPanel('space')} aria-label={ui.text("Abrir lugares y progreso")} title={ui.text("Lugares y progreso")}><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label={ui.text("Ayuda")} title={ui.text("Ayuda")}><CircleHelp size={19}/></button>{#if Object.keys(story.moduleResults??{}).length}<span class="module-score" role="status" aria-label={ui.text("Puntos de la aventura")}>{moduleScore(story)} pts</span>{/if}<span class="avatar-mini">E</span>{/if}</div>
+  <div class="topbar-right">{#if contentLanguages.length>1}<label class="story-language" title={ui.text('Idioma de la aventura')}><span class="sr-only">{ui.text('Idioma de la aventura')}</span><select aria-label={ui.text('Idioma de la aventura')} disabled={panel==='chat'&&currentObjectModule?.type==='chat'||panel==='narrative'&&currentNarrativeModule?.type==='chat'} value={contentLanguage} onchange={event=>changeLanguage(event.currentTarget.value)}>{#each contentLanguages as language}<option value={language}>{languageName(language)}</option>{/each}</select></label>{/if}{#if !published}<a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>{ui.text("Editar mapa")}</a><span class="demo-badge">{ui.text("VISTA PREVIA")}</span>{/if}{#if phase==='playing'}<button class="header-action" disabled={assetsLoading||!!transitionImage||menuBusy} onclick={openGameMenu} aria-label={ui.text("Volver al menú")} title={ui.text("Menú de la aventura")}><Menu size={19}/></button><button class="header-action" onclick={()=>showPanel('space')} aria-label={ui.text("Abrir lugares y progreso")} title={ui.text("Lugares y progreso")}><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label={ui.text("Ayuda")} title={ui.text("Ayuda")}><CircleHelp size={19}/></button>{#if Object.keys(story.moduleResults??{}).length}<span class="module-score" role="status" aria-label={ui.text("Puntos de la aventura")}>{moduleScore(story)} pts</span>{/if}<span class="sync-label" role="status" data-sync-state={syncStatus?.state}>{cloud?syncLabel():''}</span><span class="avatar-mini">E</span>{/if}</div>
  </header>
  <main class="immersive-world" aria-label={ui.text("Espacio virtual")}>
   <div class:outdoors={resolveEnvironment(scene).outdoor} class="map-stage">
-   {#if phase==='menu'&&adventure}{#key adventure.id}<PlayerMenu name={storyText(['adventure','name'],adventure.name)} hasSave={!!savedGame} savedAt={savedGame?.savedAt} mapName={savedMapName} error={menuError} onnew={()=>void startGame('new')} oncontinue={()=>void startGame('continue')}/>{/key}{:else if loadError}<div class="load-error"><p role="alert">{ui.text(loadError)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button></div>{:else if !mapsReady}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World translate={ui.text} followCamera paused={!!panel||assetsLoading} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} onplayer={playerChanged} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{#if assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{/if}{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
+   {#if phase==='menu'&&adventure}{#key adventure.id}<PlayerMenu name={storyText(['adventure','name'],adventure.name)} hasSave={!!savedGame} savedAt={savedGame?.savedAt} mapName={savedMapName} accountName={saveAccount?.name} loginHref={playerLogin} cloud={!!cloud} disabled={syncBlocked} busy={menuBusy} error={menuError||cloudProblem?.message||''} onretry={cloud&&(syncStatus?.state==='offline'||syncStatus?.state==='error'||!cloud.ready)?retrySync:undefined} onrecover={cloud&&syncStatus?.state==='conflict'?recoverServer:undefined} reauth={syncStatus?.state==='unauthorized'} onimport={cloud&&guestCandidate&&!savedGame?()=>void startGame('local'):undefined} onnew={()=>void startGame('new')} oncontinue={()=>void startGame('continue')}/>{/key}{:else if loadError}<div class="load-error"><p role="alert">{ui.text(loadError)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button></div>{:else if !mapsReady}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World translate={ui.text} followCamera paused={!!panel||assetsLoading||menuBusy||syncBlocked} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} onplayer={playerChanged} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{#if assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{/if}{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
    {#if phase==='playing'}
-   {#if testError||restoreNotice}<div class="save-feedback" class:save-error={!!testError} role={testError?'alert':'status'}><span>{testError||restoreNotice}</span>{#if !testError}<button onclick={()=>restoreNotice=''} aria-label={ui.text("Cerrar aviso")}><X size={16}/></button>{/if}</div>{/if}
+   {#if testError||restoreNotice||cloudProblem}<div class="save-feedback" class:save-error={!!testError||!!cloudProblem} role={testError||cloudProblem?'alert':'status'}><span>{ui.text(testError||cloudProblem?.message||restoreNotice)}</span>{#if syncStatus?.state==='conflict'}<button disabled={menuBusy} onclick={recoverServer}>{ui.text("Cargar partida del servidor")}</button>{:else if syncStatus?.state==='offline'}<button disabled={menuBusy} onclick={retrySync}>{ui.text("Reintentar conexión")}</button>{:else if syncStatus?.state==='unauthorized'}<a href={playerLogin}>{ui.text("Volver a iniciar sesión")}</a>{:else if syncStatus?.state==='content-changed'}<button onclick={()=>location.reload()}>{ui.text("Recargar aventura")}</button>{:else if !testError&&!cloudProblem}<button onclick={()=>restoreNotice=''} aria-label={ui.text("Cerrar aviso")}><X size={16}/></button>{/if}</div>{/if}
    <div class="scene-heading"><div class="eyebrow">{adventure?storyText(['adventure','name'],adventure.name):ui.text('MI AVENTURA')}</div><h1>{scene.name}</h1><span>{ui.text(resolveEnvironment(scene).label)}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label={ui.text("Abrir inventario")} title={ui.text("Inventario")}><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
@@ -341,6 +363,7 @@
 {/if}
 
 <style>
+.sync-label{font-size:11px;color:#5e7552;max-width:135px}.save-feedback button,.save-feedback a{font-size:12px;text-decoration:underline;white-space:nowrap}@media(max-width:700px){.sync-label{display:none}.save-feedback{flex-wrap:wrap;width:calc(100% - 30px)}}
 .save-feedback{position:absolute;top:18px;left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:15px;max-width:calc(100% - 30px);padding:12px 16px;border:1px solid #cedbbe;border-radius:10px;background:#fbfff5;color:#496237;font-size:12px;box-shadow:0 4px 15px #29413612}.save-feedback.save-error{color:#8a4336;background:#fff0eb;border-color:#ebd0c5}.save-feedback button{display:grid;place-items:center;flex-shrink:0}
 .story-language select{max-width:110px;padding:5px;border:1px solid #d6dfce;border-radius:7px;background:#fffef8;color:#35502f;font:12px system-ui}
 

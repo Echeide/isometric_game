@@ -18,7 +18,7 @@ export interface GameSave {
 export interface GameSaveRepository {read:()=>GameSave|null;write:(save:GameSave)=>void}
 export const gameSaveKey=(id:string)=>'isometrico.save.v1:'+id;
 const facings:Facing[]=['ne','se','sw','nw'];
-function ownsRecord(id:string,key:string){
+export function ownsGameRecord(id:string,key:string){
  if(['progress','inventory','story'].some(kind=>key===`isometrico.${kind}.v1:${id}`))return true;
  if(!key.startsWith('isometrico.chat.v1:'))return false;
  try{const scope=JSON.parse(key.slice('isometrico.chat.v1:'.length));return Array.isArray(scope)&&scope[0]===id;}catch{return false;}
@@ -29,24 +29,30 @@ export function initialPosition(a:Adventure,mapId=a.startMap):PlayerPosition{
 }
 export function newGameSave(a:Adventure,mapId?:string):GameSave{return {version:1,adventureId:a.id,position:initialPosition(a,mapId),narrativeQueue:[],records:{['isometrico.progress.v1:'+a.id]:JSON.stringify(freshProgress())}};}
 
-/** The repository boundary can later be backed by an authenticated save API. */
+export function parseGameSave(raw:unknown,a:Adventure):GameSave|null{
+ try{
+  const value=raw as GameSave;
+  if(!value||value.version!==1||value.adventureId!==a.id||!value.records||typeof value.records!=='object'||Array.isArray(value.records))return null;
+  const records=Object.fromEntries(Object.entries(value.records).filter(([key,value])=>ownsGameRecord(a.id,key)&&typeof value==='string'));
+  const p=value.position,cell=p?.cell;
+  const position:PlayerPosition={mapId:typeof p?.mapId==='string'?p.mapId:a.startMap,cell:cell&&Number.isSafeInteger(cell.x)&&Number.isSafeInteger(cell.y)?{...cell}:{x:-1,y:-1},facing:facings.includes(p?.facing)?p.facing:'se'};
+  return {version:1,adventureId:a.id,records,position,narrativeQueue:Array.isArray(value.narrativeQueue)?value.narrativeQueue.filter(id=>typeof id==='string'):[],...(typeof value.savedAt==='string'&&Number.isFinite(Date.parse(value.savedAt))?{savedAt:value.savedAt}:{})};
+ }catch{return null;}
+}
+
+/** Local guest games and legacy progress; cloud games use the same save format. */
 export function localGameSaves(storage:Storage,a:Adventure):GameSaveRepository{
  return {
   read(){
    const raw=storage.getItem(gameSaveKey(a.id));
    if(raw!==null){
     try{
-     const value=JSON.parse(raw) as GameSave;
-     if(!value||value.version!==1||value.adventureId!==a.id||!value.records||typeof value.records!=='object'||Array.isArray(value.records))return null;
-     const records=Object.fromEntries(Object.entries(value.records).filter(([key,value])=>ownsRecord(a.id,key)&&typeof value==='string'));
-     const p=value.position,cell=p?.cell;
-     const position:PlayerPosition={mapId:typeof p?.mapId==='string'?p.mapId:a.startMap,cell:cell&&Number.isSafeInteger(cell.x)&&Number.isSafeInteger(cell.y)?{...cell}:{x:-1,y:-1},facing:facings.includes(p?.facing)?p.facing:'se'};
-     return {version:1,adventureId:a.id,records,position,narrativeQueue:Array.isArray(value.narrativeQueue)?value.narrativeQueue.filter(id=>typeof id==='string'):[],...(typeof value.savedAt==='string'&&Number.isFinite(Date.parse(value.savedAt))?{savedAt:value.savedAt}:{})};
+     return parseGameSave(JSON.parse(raw),a);
     }catch{return null;}
    }
    // Import legacy progress in memory; opening the menu never writes or erases it.
    const records:Record<string,string>={};
-   for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key&&ownsRecord(a.id,key)){const value=storage.getItem(key);if(value!==null)records[key]=value;}}
+   for(let i=0;i<storage.length;i++){const key=storage.key(i);if(key&&ownsGameRecord(a.id,key)){const value=storage.getItem(key);if(value!==null)records[key]=value;}}
    return Object.keys(records).length?{...newGameSave(a),records}:null;
   },
   write(save){storage.setItem(gameSaveKey(a.id),JSON.stringify(save));}
@@ -67,7 +73,7 @@ export function createGameSession(repository:GameSaveRepository,initial:GameSave
  const storage:Storage={
   get length(){return Object.keys(current()).length;},key:i=>Object.keys(current())[i]??null,
   getItem:key=>Object.hasOwn(current(),key)?current()[key]:null,
-  setItem(key,value){if(!ownsRecord(saved.adventureId,key))throw Error('El registro no pertenece a esta aventura.');mutate(records=>records[key]=value);},
+  setItem(key,value){if(!ownsGameRecord(saved.adventureId,key))throw Error('El registro no pertenece a esta aventura.');mutate(records=>records[key]=value);},
   removeItem:key=>mutate(records=>{delete records[key];}),
   clear:()=>mutate(records=>{for(const key of Object.keys(records))delete records[key];})
  };

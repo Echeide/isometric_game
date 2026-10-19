@@ -31,7 +31,7 @@ El editor `/editor` gestiona una aventura completa. Al abrirlo por primera vez i
 5. **Guardar** conserva todo en este navegador; **Guardar y jugar** abre `/` desde el mapa inicial.
 6. **Exportar JSON** descarga la aventura completa. **Importar** abre una aventura o incorpora un mapa JSON antiguo como un mapa adicional; las colisiones de identificadores se resuelven asignando uno nuevo.
 
-Las salidas se activan al pulsarlas (o con Enter desde una casilla adyacente), nunca por caminar cerca. Se validan los mapas, referencias, accesibilidad de salidas y llegadas libres conectadas con la entrada. El progreso de objetivos del jugador se mantiene durante los viajes de la sesión, pero se reinicia al recargar. El jugador único en `/` integra las tareas, el proyecto, el chat local y los objetivos de la demo. `/adventure` redirige a `/` y conserva los parámetros del enlace. El selector muestra todos los mapas de la aventura. Los mensajes, tareas y objetivos conservan su estado al cambiar de mapa durante la sesión.
+Las salidas se activan al pulsarlas (o con Enter desde una casilla adyacente), nunca por caminar cerca. Se validan los mapas, referencias, accesibilidad de salidas y llegadas libres conectadas con la entrada. El reproductor conserva mapa, casilla, orientación, inventario, objetivos y narrativa. El menú permite empezar de nuevo o continuar. La carga inicial prepara los gráficos del mapa seleccionado y después precarga los demás en segundo plano.
 
 El documento tiene `kind: "isometric-adventure"`, `version: 1`, `id`, `name`, `startMap`, `maps` y `exits`. Cada salida contiene `id`, `fromMap`, `entityId`, `toMap` y `arrival: {x, y}`. Su objeto de origen usa la acción `adventure.exit`; el motor de mundo sigue siendo independiente del formato de aventura.
 
@@ -48,7 +48,15 @@ El documento tiene `kind: "isometric-adventure"`, `version: 1`, `id`, `name`, `s
 - Accesos directos equivalentes para no depender del canvas ni del movimiento.
 - Un único estado de tarea activa. Trabajar es una acción explícita: no se deduce de la posición.
 
-Los personajes son de ejemplo. El chat no envía mensajes a terceros ni inventa respuestas. Todos los cambios se mantienen **solo en memoria durante la sesión**; se pierden al recargar. No hay autenticación, Prisma, presencia compartida ni servidor de chat conectado. No se ha publicado ningún servicio.
+Los personajes son de ejemplo. El chat no envía mensajes a terceros ni inventa respuestas.
+
+## Partidas y cuentas de jugador
+
+En `/play/[slug]` se puede jugar como invitado con guardado local o crear una cuenta en `/player/login`. Las cuentas de jugador son independientes de los administradores y no permiten editar aventuras. Al iniciar sesión, **Continuar** recupera la partida de PostgreSQL desde cualquier dispositivo. Las pruebas de `/preview` usan la cuenta de administración actual y conservan un guardado separado de la aventura pública.
+
+**Continuar partida de este dispositivo** permite incorporar explícitamente el progreso local cuando la cuenta todavía no tiene una partida para esa aventura. El servidor comprueba la versión del guardado; si otro dispositivo ha avanzado, se detiene la sincronización y se ofrece **Cargar partida del servidor**, conservando una copia local del progreso pendiente. Los cortes de conexión mantienen una cola persistente de cambios y los reintentos no duplican guardados.
+
+Las tablas se crean mediante la migración habitual de `Database.init()`. `PLAYER_TEST_DATABASE_URL` debe apuntar a una base de datos desechable terminada en `_test` para ejecutar `tests/player-server.test.ts`; nunca se debe usar la base de datos de la aplicación para las pruebas de integración.
 
 ## Estructura
 

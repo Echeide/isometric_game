@@ -1,1 +1,1 @@
-export const load=({locals}:import('./$types').LayoutServerLoadEvent)=>({locale:locals.locale??'es',principal:locals.principal??null});
+export const load=({locals}:import('./$types').LayoutServerLoadEvent)=>({locale:locals.locale??'es',principal:locals.principal??null,player:locals.player?{id:locals.player.id,username:locals.player.username}:null});
