@@ -56,3 +56,19 @@ it('counts a custom base floor as used and does not report obsolete preset paths
  expect(resourceUsages([scene],{...entry,id:'path'})).toEqual([]);
  expect(resourceUsages([{...scene,tiles:{'2,2':'path'}}],{...entry,id:'path'})).toEqual(['Mapa']);
 });
+it('shrinks painted maps by cropping every cell layer and out-of-bounds walls',()=>{
+ const source:WorldScene={...fixture(),width:20,height:8,tiles:{'18,0':'grass','19,0':'grass','1,7':'path'},terrains:{'19,0':'family.grass'},elevations:{'19,0':1},stairs:{'19,0':'se'},blocked:[{x:19,y:0}],walls:[{x:19,y:0,axis:'x',kind:'wall'},{x:18,y:0,axis:'x',kind:'wall'}]};
+ const resized=parseScene(resizeMapWalls(source,19,7));
+ expect(resized.tiles).toEqual({'18,0':'grass'});
+ expect(resized.terrains).toEqual({});expect(resized.elevations).toEqual({});expect(resized.stairs).toEqual({});expect(resized.blocked).toEqual([]);
+ expect(resized.walls).toEqual([{x:18,y:0,axis:'x',kind:'wall'}]);
+ expect(source.tiles!['19,0']).toBe('grass');expect(source.width).toBe(20);
+});
+it('shrinks generated perimeter walls and preserves objects for explicit repositioning',()=>{
+ const source=changeMapEnvironment({...fixture(),walls:[]},'interior');
+ const resized=parseScene(resizeMapWalls(source,7,6));
+ expect(resized.walls).toHaveLength(13);expect(resized.automaticWalls).toHaveLength(13);
+ const occupied={...fixture(),entities:[{id:'edge',kind:'tree' as const,label:'Árbol',position:{x:7,y:2}}]};
+ expect(resizeMapWalls(occupied,7,8).entities).toEqual(occupied.entities);
+ expect(()=>parseScene(resizeMapWalls(occupied,7,8))).toThrow('Posición no válida: edge');
+});

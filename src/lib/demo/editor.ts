@@ -1,4 +1,10 @@
 import { parseScene, interiorMembers, visualCatalog, type VisualAsset, type WorldEntity, type WorldScene } from '@isometrico/world';
+/** Commit inspector changes only when the same scene can be displayed by the editor. */
+export function updateEntity(draft:WorldScene,id:string,values:Partial<WorldEntity>):WorldScene {
+ if(!draft.entities.some(entity=>entity.id===id))throw new Error('No se encuentra el objeto seleccionado.');
+ return parseScene({...draft,entities:draft.entities.map(entity=>entity.id===id?{...entity,...values}:entity)},{allowUnreachable:true});
+}
+
 /** Find a valid free placement rather than stacking every new item at (1,1). */
 export function insertEntity(draft: WorldScene, kind: WorldEntity['kind'], id: string, visualId?: string, position?: {x:number;y:number},catalog:readonly VisualAsset[]=visualCatalog): WorldScene {
  const base=parseScene(draft);

@@ -1,7 +1,7 @@
 <script lang="ts">
  import {adventureLocale,adventureLanguages,adventureText,localizeScene,localizeModule} from '$lib/i18n/adventure';import {languageName} from '$lib/i18n/locale';
  import {interfaceLanguage} from '$lib/i18n/context.svelte';const ui=interfaceLanguage();
- let {published=null}:{published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string}|null}=$props();
+ let {published=null,resumeMapId=null}:{resumeMapId?:string|null;published?:{adventure:Adventure;graphics:import("@isometrico/world").PixelArtPack;key?:string}|null}=$props();
  import {applyModuleResult,moduleScore} from '$lib/modules/module-results';
  import type {ModuleResult} from '$lib/modules/routing';
  import AudioDock from '$lib/modules/AudioDock.svelte';
@@ -50,21 +50,28 @@
  import { graphics as defaultGraphics } from '$lib/demo/pixelart';
  import LoadProgress from '$lib/components/LoadProgress.svelte';
  import type {LoadProgress as Progress} from '$lib/storage/preload';
- import {resolveGraphics,preloadGraphics,localAdventures,storageScope} from '$lib/storage/local-adventures';
+ import {resourceBlob,localAdventures,storageScope} from '$lib/storage/local-adventures';
+ import {adventureEntry,createMapGraphicsLoader} from '$lib/storage/map-graphics';
  import {onDestroy} from 'svelte';
  let graphics=$state.raw(defaultGraphics);
- const resourceReleases:Array<()=>void>=[];
- let disposed=false;
- const preloadAbort=new AbortController();let loadProgress=$state<Progress|null>(null),assetsLoading=$state(true);
- async function loadGraphics(id:string){
+ let graphicsLoader:ReturnType<typeof createMapGraphicsLoader>|undefined;
+ let disposed=false,graphicsAbort=new AbortController(),sceneRequest=0;
+ let loadProgress=$state<Progress|null>(null),assetsLoading=$state(true);
+ async function loadGraphics(value:Adventure,initial:WorldScene){
   controller=undefined;assetsLoading=true;loadProgress=null;loadError='';
-  try{const options={signal:preloadAbort.signal,onProgress:(p:Progress)=>loadProgress=p};
-   const resolved=published?await preloadGraphics(published.graphics,async url=>{const response=await fetch(url,{signal:preloadAbort.signal});if(!response.ok)throw new Error(ui.text("No se pudo descargar un gráfico."));return response.blob();},options):await resolveGraphics(id,options);
-   if(disposed){resolved.release();return;}resourceReleases.push(resolved.release);graphics=resolved.pack;
+  graphicsAbort.abort();graphicsLoader?.release();graphicsAbort=new AbortController();
+  const signal=graphicsAbort.signal;
+  try{
+   const pack=published?published.graphics:await localAdventures.pack(value.id);signal.throwIfAborted();
+   graphicsLoader=createMapGraphicsLoader(pack,value,async url=>{
+    if(!published)return resourceBlob(url,localAdventures,signal);
+    const response=await fetch(url,{signal});if(!response.ok)throw new Error(ui.text("No se pudo descargar un gráfico."));return response.blob();
+   },signal);
+   graphics=await graphicsLoader.ensure(initial,{onProgress:p=>loadProgress=p});
   }finally{assetsLoading=false;}
  }
 
- onDestroy(()=>{disposed=true;audioPlayer.close();preloadAbort.abort();resourceReleases.forEach(release=>release());});
+ onDestroy(()=>{disposed=true;sceneRequest++;audioPlayer.close();graphicsAbort.abort();graphicsLoader?.release();});
  import { tick,onMount } from 'svelte';
  import MapDissolve from '$lib/components/MapDissolve.svelte';
  import {objectiveKey} from '$lib/demo/playable-adventure';
@@ -96,15 +103,21 @@
   const library=published?{activeId:published.adventure.id,adventures:[published.adventure]}:await loadAdventureLibrary();adventures=library.adventures;
   const requestedAdventure=new URLSearchParams(location.search).get('adventure');
   adventure=adventures.find(a=>a.id===(requestedAdventure??library.activeId))??adventures.find(a=>a.id===library.activeId)!;
-  contentLanguage=adventureLocale(adventure,new URLSearchParams(location.search).get('lang'));await loadGraphics(adventure.id);const query=new URLSearchParams(location.search),requested=query.get('map')??query.get('world');
-  const initial=adventure.maps.find(m=>m.id===(requested??adventure!.startMap))??adventure.maps.find(m=>m.id===adventure!.startMap)!;
+  contentLanguage=adventureLocale(adventure,new URLSearchParams(location.search).get('lang'));const query=new URLSearchParams(location.search);
+  const initial=adventureEntry(adventure,{savedMapId:resumeMapId,previewMapId:published?null:query.get('map')??query.get('world')});
+  await loadGraphics(adventure,initial);
   restoreProgress(adventure);inventory=readInventory(progressStorage,adventure.id);traveler=createTraveler(adventure);currentScene=parseScene(initial);mode=currentScene.id;queueNarrativeEntry();
  }catch(e){if(!disposed)loadError=`No se pudo cargar la aventura: ${(e as Error).message}`;}finally{mapsReady=true;}}
  onMount(()=>{void initialize();});
- function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;runNarrativeQueue();}
- function changeScene(next:WorldScene,facing:Facing){
+ function ready(c:WorldController){c.setFacing(arrivalFacing);if(arrivalCamera)c.restoreCamera(arrivalCamera);controller=c;if(panel==='chat')c.setConversation(resourceEntityId);primaryCameraAction=c.getCamera().action;transitionReady=true;graphicsLoader?.background(currentScene.id);runNarrativeQueue();}
+ async function changeScene(next:WorldScene,facing:Facing,beforeEnter?:()=>void){
+  const request=++sceneRequest;
   arrivalCamera=controller?.getCamera();transitionReady=false;transitionImage=controller?.captureFrame()??null;
-  celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;narrativeId=null;queueNarrativeEntry();
+  assetsLoading=true;loadProgress=null;
+  try{const pack=await graphicsLoader!.ensure(next,{onProgress:p=>{if(request===sceneRequest)loadProgress=p;}});if(disposed||request!==sceneRequest)return;graphics=pack;}
+  catch(e){if(!disposed&&request===sceneRequest){transitionImage=null;transitionReady=true;status=`No se pudo cargar el mapa: ${(e as Error).message}`;}return;}
+  finally{if(request===sceneRequest)assetsLoading=false;}
+  beforeEnter?.();celebration=0;arrivalFacing=facing;currentScene=next;mode=next.id;panel=null;information=null;controller=undefined;worldKey++;status=`Has llegado a ${next.name}.`;narrativeId=null;queueNarrativeEntry();
  }
  let tasks=$state<Task[]>(structuredClone(initialTasks));
  let panel=$state<'tests'|'obtained'|'locked'|'inventory'|'tasks'|'project'|'chat'|'goal'|'space'|'help'|'object'|'condition'|'narrative'|null>(null);
@@ -164,7 +177,7 @@
   if(event.action==='adventure.exit'){information=null;executeInteraction(event);return;}
   information=event;
  }
- function executeInteraction(event:WorldInteraction){
+ async function executeInteraction(event:WorldInteraction){
    information=null;
    if(transitionImage)return;
    if(!checkInteraction(event))return;
@@ -181,7 +194,7 @@
       if(pickup?.visualId)blockedExit.image=graphics.objects[pickup.visualId]?.image;
       opener=document.activeElement instanceof HTMLElement?document.activeElement:null;panel='locked';record(`Salida cerrada: ${blockedExit.name}. Falta ${blockedExit.item}.`);return;
     }
-    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);const reaction=react(adventure,$state.snapshot(story),progress,{mapId:event.sceneId,entityId:event.entityId},'interact');commitStory(reaction.progress,reaction.inventory,reaction.messages);record(`Viaje: ${currentScene.name} → ${next.scene.name}.`);changeScene(next.scene,next.facing);}
+    try{const next=traveler!(event.sceneId,event.entityId,controller?.getFacing());const progress=useExit(adventure,$state.snapshot(inventory),next.exit.id);const reaction=react(adventure,$state.snapshot(story),progress,{mapId:event.sceneId,entityId:event.entityId},'interact');await changeScene(next.scene,next.facing,()=>{commitStory(reaction.progress,reaction.inventory,reaction.messages);record(`Viaje: ${currentScene.name} → ${next.scene.name}.`);});}
     catch(e){status=(e as Error).message;}
     return;
    }
@@ -201,9 +214,9 @@
  async function switchAdventure(value:string){
   if(!adventure||assetsLoading||transitionImage||value===adventure.id)return;audioPlayer.close();
   try{
-   const next=await selectAdventure(value);await loadGraphics(next.id);
+   const next=await selectAdventure(value);await loadGraphics(next,adventureEntry(next));
    restoreProgress(next);
-   inventory=readInventory(progressStorage,next.id);traveler=createTraveler(next);adventure=next;contentLanguage=adventureLocale(next);changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
+   inventory=readInventory(progressStorage,next.id);traveler=createTraveler(next);adventure=next;contentLanguage=adventureLocale(next);await changeScene(parseScene(next.maps.find(m=>m.id===next.startMap)!), 'se');
    const url=new URL(location.href);url.search='';url.searchParams.set('adventure',value);history.replaceState(null,'',url);
   }catch(e){status=(e as Error).message;}
  }
@@ -221,12 +234,12 @@
  <header class="topbar">
   <a class="immersive-brand" href="/" aria-label={ui.text("Isométrico, inicio")}><span class="brand-mark"><Layers size={22}/></span><span class="wordmark">isométrico</span></a>
   <div class="header-divider"></div>
-  <div class="world-select"><label class="sr-only" for="world-select">{ui.text("Cambiar de aventura")}</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={!mapsReady||assetsLoading||!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{storyText(['adventure','name'],item.name)}</option>{/each}</select><ChevronDown size={15}/></div></div>
+  <div class="world-select"><label class="sr-only" for="world-select">{ui.text("Cambiar de aventura")}</label><div><Layers size={17}/><select id="world-select" value={adventure?.id} disabled={!mapsReady||!!transitionImage} onchange={e=>switchAdventure(e.currentTarget.value)}>{#each adventures as item}<option value={item.id}>{storyText(['adventure','name'],item.name)}</option>{/each}</select><ChevronDown size={15}/></div></div>
   <div class="topbar-right">{#if contentLanguages.length>1}<label class="story-language" title={ui.text('Idioma de la aventura')}><span class="sr-only">{ui.text('Idioma de la aventura')}</span><select aria-label={ui.text('Idioma de la aventura')} disabled={panel==='chat'&&currentObjectModule?.type==='chat'||panel==='narrative'&&currentNarrativeModule?.type==='chat'} value={contentLanguage} onchange={event=>changeLanguage(event.currentTarget.value)}>{#each contentLanguages as language}<option value={language}>{languageName(language)}</option>{/each}</select></label>{/if}{#if !published}<a class="editor-link" href={`/sprites?adventure=${encodeURIComponent(adventure?.id??'')}`}>Sprites</a><a class="editor-link" href={`/editor?adventure=${encodeURIComponent(adventure?.id??'')}&map=${encodeURIComponent(mode)}`}>{ui.text("Editar mapa")}</a><span class="demo-badge">{ui.text("VISTA PREVIA")}</span>{/if}<button class="header-action" onclick={()=>showPanel('space')} aria-label={ui.text("Abrir lugares y progreso")} title={ui.text("Lugares y progreso")}><LayoutGrid size={19}/></button><button class="header-action" onclick={()=>showPanel('help')} aria-label={ui.text("Ayuda")} title={ui.text("Ayuda")}><CircleHelp size={19}/></button>{#if Object.keys(story.moduleResults??{}).length}<span class="module-score" role="status" aria-label={ui.text("Puntos de la aventura")}>{moduleScore(story)} pts</span>{/if}<span class="avatar-mini">E</span></div>
  </header>
  <main class="immersive-world" aria-label={ui.text("Espacio virtual")}>
   <div class:outdoors={resolveEnvironment(scene).outdoor} class="map-stage">
-   {#if loadError}<div class="load-error"><p role="alert">{ui.text(loadError)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button></div>{:else if !mapsReady||assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World translate={ui.text} followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
+   {#if loadError}<div class="load-error"><p role="alert">{ui.text(loadError)}</p><button onclick={initialize}>{ui.text("Reintentar carga")}</button></div>{:else if !mapsReady}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{:else if mapsReady}<World translate={ui.text} followCamera paused={!!panel} {exitIndicators} hiddenIds={collectedIds(inventory,currentScene)} revision={worldKey} {panMode} {graphics} {adapter} {celebration} working={hasTasks&&!!active} onready={ready} oncamera={camera=>primaryCameraAction=camera.action} onstatus={s=>status=s}/>{#if assetsLoading}<div class="preload-stage"><LoadProgress progress={loadProgress}/></div>{/if}{/if}<MapDissolve image={transitionImage} ready={transitionReady} ondone={()=>{transitionImage=null;runNarrativeQueue();}}/>
    <div class="scene-heading"><div class="eyebrow">{adventure?storyText(['adventure','name'],adventure.name):ui.text('MI AVENTURA')}</div><h1>{scene.name}</h1><span>{ui.text(resolveEnvironment(scene).label)}</span></div>
    <div class="map-compass" aria-hidden="true"><span>N</span><ArrowUpRight size={22}/></div>
    <button class="map-inventory" onclick={()=>showPanel('inventory')} aria-label={ui.text("Abrir inventario")} title={ui.text("Inventario")}><Backpack size={22}/><span>{Object.values(inventory.counts).reduce((a,b)=>a+b,0)}</span></button>
