@@ -191,6 +191,8 @@ En **Mapa → Baldosas**, pinta suelo o usa **Vacío** para eliminar casillas. P
 
 En **Mapa → Paredes**, pulsa junto a un borde del suelo para colocar un tramo o borrarlo. **Puertas** transforma una pared existente en un paso. **Seleccionar borde** permite seleccionar una puerta y conectarla a otro mapa, editar su destino o desvincularla. Las paredes y los huecos afectan a los recorridos. La opacidad es ajustable en el editor; durante el juego las paredes que ocultan al personaje se atenúan automáticamente.
 
+Los selectores **Suelo base** y **Suelo de la casilla** muestran un material por familia, sin listar sus variantes interiores ni sus bordes. Elegir una familia activa sus variaciones y bordes automáticos; la casilla **Variaciones y bordes** permite usar su base fija. Las piezas individuales siguen disponibles en la paleta de pintado y en el taller. En el taller, abre **Acera → Familia → Preparar bordillos y variaciones** para completar sus quince bordes, esquinas, franjas y piezas aisladas, con juntas de piedra y la paleta de la aventura. Guarda la familia antes de pintar; las piezas ya existentes se conservan y se pueden retocar en Piskel.
+
 El JSON guarda huecos como `tiles["x,y"] = "void"` y bordes en `walls` (`x`, `y`, `axis`, `kind`, y `exitId` opcional para puertas conectadas). Sin `walls`, los mapas interiores conservan sus paredes perimetrales predeterminadas; `walls: []` crea un interior sin paredes.
 
 ### Biblioteca base de objetos

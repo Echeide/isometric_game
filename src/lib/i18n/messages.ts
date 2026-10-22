@@ -2,6 +2,8 @@ import * as m from '../paraglide/messages.js';
 import type {UiLocale} from './locale';
 /** Stable source keys permit incremental migration without translating authored content. */
 const keys={
+  "Preparar bordillos y variaciones": "ui_ef0406a8dfe7",
+  "Bordillos preparados. Guarda la familia y pinta con Acera para colocarlos automáticamente.": "ui_8b1bdfbf5496",
   "Partida de": "ui_de2e3dce8594",
   "Continúa desde cualquier dispositivo con tu cuenta de jugador.": "ui_aa92ee09871c",
   "Iniciar sesión": "ui_9c18b1ef163a",

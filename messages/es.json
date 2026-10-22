@@ -2101,5 +2101,7 @@
   "ui_0f44068c6b6c": "Volver a la aventura",
   "ui_30aff4c59602": "Salir como jugador",
   "ui_18ff671a5d74": "El usuario debe tener entre 3 y 64 letras, números, puntos, guiones o guiones bajos.",
-  "ui_c76e0e07f79d": "Ese nombre de jugador ya está en uso."
+  "ui_c76e0e07f79d": "Ese nombre de jugador ya está en uso.",
+  "ui_ef0406a8dfe7": "Preparar bordillos y variaciones",
+  "ui_8b1bdfbf5496": "Bordillos preparados. Guarda la familia y pinta con Acera para colocarlos automáticamente."
 }

@@ -4,14 +4,19 @@
  import SpriteThumbnail from '$lib/components/SpriteThumbnail.svelte';
  import {detachTile,tileFamilyId,terrainMasks,terrainMaskLabel,interiorMembers,type TileFamilies} from '../../../packages/world/src/tile-families';
  import type {TileKind} from '@isometrico/world';
+ import {baseTileChoices} from './resources';
+ import type {TerrainBorderStyle} from './terrain-template';
  type Choice={id:string;name:string;image:string;frame?:[number,number,number,number]};
- let {families,selected,choices,resolve,canAdd=false,busy=false,onchange,onselect,onadd,onprepare,showAdd=true}:{showAdd?:boolean;families:TileFamilies;selected:string;choices:Choice[];resolve:(url:string)=>string;canAdd?:boolean;busy?:boolean;onchange:(next:TileFamilies)=>void;onselect:(id:string)=>void;onadd:()=>void;onprepare:()=>void}=$props();
+ let {families,selected,choices,resolve,canAdd=false,busy=false,onchange,onselect,onadd,onprepare,showAdd=true}:{showAdd?:boolean;families:TileFamilies;selected:string;choices:Choice[];resolve:(url:string)=>string;canAdd?:boolean;busy?:boolean;onchange:(next:TileFamilies)=>void;onselect:(id:string)=>void;onadd:()=>void;onprepare:(style:TerrainBorderStyle)=>void}=$props();
  const familyId=$derived(tileFamilyId(families,selected)),family=$derived(familyId?families[familyId]:undefined);
  const members=$derived(family?Object.entries(family.tiles).map(([id,weight])=>({...choices.find(c=>c.id===id)!,weight:weight??0})).filter(m=>m.id):[]);
  const total=$derived(family?interiorMembers(family).reduce((sum,m)=>sum+m.weight,0):0);
  const borderIds=$derived(new Set(Object.values(family?.borders??{})));
  const slots=[9,1,3,8,0,2,12,4,6];
  const needsTemplates=$derived(!family||terrainMasks.some(mask=>!family.borders?.[mask])||interiorMembers(family).length<3);
+ const sidewalk=$derived(selected==='sidewalk'||!!family&&Object.hasOwn(family.tiles,'sidewalk'));
+ const adjacentChoices=$derived(baseTileChoices(choices,families).filter(c=>c.familyId!==familyId));
+ const adjacentSelection=$derived(adjacentChoices.find(c=>c.id===family?.borderAgainst||c.familyId&&Object.hasOwn(families[c.familyId].tiles,family?.borderAgainst??''))?.id??family?.borderAgainst??'');
  function join(id:string){
   if(id===(familyId??''))return;
   const next=detachTile(families,selected);
@@ -38,14 +43,14 @@
    </div>
   {/each}</div>
   <div class="terrain-settings"><h3>{ui.text("Bordes automáticos")}</h3><p>{ui.text("Asigna una pieza completa a cada borde. Las piezas de borde no se mezclan en el interior.")}</p>
-  <label>{ui.text("Borde contra")}<select aria-label={ui.text("Borde contra")} value={family.borderAgainst??''} onchange={e=>familyId&&onchange({...families,[familyId]:{...family!,borderAgainst:e.currentTarget.value as TileKind||undefined}})} disabled={busy}><option value="">{ui.text("Cualquier otro terreno")}</option>{#each choices.filter(c=>!Object.hasOwn(family!.tiles,c.id)) as c}<option value={c.id}>{c.name}</option>{/each}</select></label>
+  <label>{ui.text("Borde contra")}<select aria-label={ui.text("Borde contra")} value={adjacentSelection} onchange={e=>familyId&&onchange({...families,[familyId]:{...family!,borderAgainst:e.currentTarget.value as TileKind||undefined}})} disabled={busy}><option value="">{ui.text("Cualquier otro terreno")}</option>{#each adjacentChoices as c}<option value={c.id}>{c.familyId?families[c.familyId].name:c.name}</option>{/each}</select></label>
   <div class="border-grid" aria-label={ui.text("Esquema de bordes")}>{#each slots as mask}<div class="border-slot">{#if mask===0}<span>{ui.text("Interior")}</span><small>{ui.text("Según pesos")}</small>{:else}{@const entry=choices.find(c=>c.id===family!.borders?.[mask])}<button type="button" title={terrainMaskLabel(mask)} aria-label={ui.text("Editar borde {arg0}",{arg0:terrainMaskLabel(mask)})} disabled={busy||!canAdd||!entry||entry.id===selected} onclick={()=>entry&&onselect(entry.id)}>{#if entry}<SpriteThumbnail image={resolve(entry.image)} frame={entry.frame} width={48} height={24}/>{:else}<Plus size={16}/>{/if}<span>{terrainMaskLabel(mask)}</span></button><select aria-label={ui.text("Pieza de borde {arg0}",{arg0:terrainMaskLabel(mask)})} value={family.borders?.[mask]??''} onchange={e=>assign(mask,e.currentTarget.value)} disabled={busy}><option value="">{ui.text("Sin borde")}</option>{#each members as member}<option value={member.id}>{member.name}</option>{/each}</select>{/if}</div>{/each}</div>
   <details><summary>{ui.text("Franjas estrechas y piezas aisladas")}</summary>{#each terrainMasks.filter(mask=>!slots.includes(mask)) as mask}<label>{terrainMaskLabel(mask)}<select aria-label={ui.text("Pieza de borde {arg0}",{arg0:terrainMaskLabel(mask)})} value={family.borders?.[mask]??''} onchange={e=>assign(mask,e.currentTarget.value)} disabled={busy}><option value="">{ui.text("Sin borde")}</option>{#each members as member}<option value={member.id}>{member.name}</option>{/each}</select></label>{/each}</details>
-  <button type="button" class="add" disabled={!canAdd||busy||!needsTemplates} onclick={onprepare}>{ui.text("Preparar plantillas y variaciones")}</button><p>{ui.text("Completa las piezas que faltan sobre tu textura y con la paleta de la aventura. Guarda y retócalas en Piskel.")}</p>
+  <button type="button" class="add" disabled={!canAdd||busy||!needsTemplates} onclick={()=>onprepare(sidewalk?'curb':'shade')}>{sidewalk?ui.text("Preparar bordillos y variaciones"):ui.text("Preparar plantillas y variaciones")}</button><p>{ui.text("Completa las piezas que faltan sobre tu textura y con la paleta de la aventura. Guarda y retócalas en Piskel.")}</p>
   </div>
   {#if !total}<p class="warning">{ui.text("Asigna un peso mayor que cero a alguna textura.")}</p>{/if}
  {:else}
-  <button type="button" disabled={busy} onclick={create}>{ui.text("Crear familia con este suelo")}</button><button type="button" class="add" disabled={!canAdd||busy||!needsTemplates} onclick={onprepare}>{ui.text("Preparar plantillas y variaciones")}</button>
+  <button type="button" disabled={busy} onclick={create}>{ui.text("Crear familia con este suelo")}</button><button type="button" class="add" disabled={!canAdd||busy||!needsTemplates} onclick={()=>onprepare(sidewalk?'curb':'shade')}>{sidewalk?ui.text("Preparar bordillos y variaciones"):ui.text("Preparar plantillas y variaciones")}</button>
  {/if}
  {#if showAdd}<button type="button" class="add" disabled={!canAdd||busy} onclick={onadd}><Plus size={14}/> {ui.text("Añadir variante de textura")}</button>{/if}
  {#if !canAdd}<p>{ui.text("Guarda el suelo antes de añadir otra variante.")}</p>{/if}

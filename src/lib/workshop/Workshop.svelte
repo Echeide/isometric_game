@@ -416,7 +416,7 @@
    adventure=currentAdventure;pack=currentPack;packSignature=resourceSignature(currentPack);catalogSignature=catalogVersion(currentAdventure);selected=id;paletteLinks={};preparedTiles={};dirty=false;notice=kind==='player'?'Jugador guardado. Pulsa «Usar como jugador» para activarlo.':kind==='tile'?'Suelo guardado. Ya puedes seleccionarlo en Baldosas y pintar el mapa.':'Recurso guardado. Ya está disponible en el editor y en el juego.';
   }catch(e){message(e);}finally{busy=false;}
  }
- async function prepareTerrainTemplates(){
+ async function prepareTerrainTemplates(style:'shade'|'curb'='shade'){
   if(busy||dirty||kind!=='tile'||!current||!adventure)return;busy=true;error='';
   try{
    await latest();const families=clone(tileFamilies),familyId=tileFamilyId(families,selected)??`family.${crypto.randomUUID()}`;
@@ -426,12 +426,12 @@
    if(Object.keys(pack.tiles).filter(id=>id.startsWith('custom.')).length+missing.length+extra>128)throw Error('La biblioteca admite hasta 128 suelos propios.');
    const prepared:typeof preparedTiles={},images:Array<{id:string;blob:Blob}>=[];family.borders??={};
    for(const [mask,variant]of [...missing.map(mask=>[mask,0]),...Array.from({length:extra},(_,i)=>[0,i+1])]){
-    const id=`custom.${crypto.randomUUID()}` as TileKind,key=crypto.randomUUID(),pixels=terrainTemplate(source,frame,mask,adventure.palette,variant),blob=new Blob([new Uint8Array(encodePalettePNG(pixels))],{type:'image/png'});
+    const id=`custom.${crypto.randomUUID()}` as TileKind,key=crypto.randomUUID(),pixels=terrainTemplate(source,frame,mask,adventure.palette,variant,style),blob=new Blob([new Uint8Array(encodePalettePNG(pixels))],{type:'image/png'});
     prepared[id]={image:`asset:${key}`,name:`${family.name.slice(0,65)} · ${mask?terrainMaskLabel(mask):'Interior '+variant}`};images.push({id:key,blob});family.tiles[id]=mask?0:10;if(mask)family.borders[mask]=id;
    }
    for(const image of images){await addImage(`asset:${image.id}`,image.blob);pending.set(image.id,image.blob);}
    if(disposed)return;preparedTiles=prepared;tileFamilies=families;tilePreview='family';dirty=true;
-   notice='Plantillas preparadas. Guarda la familia y retoca cada pieza en Piskel.';
+   notice=style==='curb'?'Bordillos preparados. Guarda la familia y pinta con Acera para colocarlos automáticamente.':'Plantillas preparadas. Guarda la familia y retoca cada pieza en Piskel.';
   }catch(e){message(e);}finally{busy=false;}
  }
  async function activate(){if(dirty||busy)return;busy=true;error='';try{const {currentAdventure,currentPack}=await latest();if(selected==='default')delete currentPack.activePlayer;else currentPack.activePlayer=selected;await localAdventures.save(currentAdventure,{pack:currentPack,blobs:{}});pack=currentPack;packSignature=resourceSignature(currentPack);catalogSignature=catalogVersion(currentAdventure);notice='Jugador activado para esta aventura.';}catch(e){message(e);}finally{busy=false;}}

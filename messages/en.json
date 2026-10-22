@@ -2101,5 +2101,7 @@
   "ui_0f44068c6b6c": "Return to adventure",
   "ui_30aff4c59602": "Sign out as player",
   "ui_18ff671a5d74": "Your username must contain 3–64 letters, numbers, dots, hyphens or underscores.",
-  "ui_c76e0e07f79d": "That player name is already taken."
+  "ui_c76e0e07f79d": "That player name is already taken.",
+  "ui_ef0406a8dfe7": "Prepare curbs and variations",
+  "ui_8b1bdfbf5496": "Curbs prepared. Save the family and paint with Sidewalk to place them automatically."
 }

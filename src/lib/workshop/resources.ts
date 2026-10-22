@@ -1,4 +1,4 @@
-import {resolveEnvironment,characterImage,actorPoses,visualCatalog,resolveVisualCatalog,isCustomTile,type CharacterPack,type ObjectSprite,type PixelArtPack,type VisualAsset,type TileKind,type BuiltinTileKind,type VisualCatalogOverrides} from '@isometrico/world';
+import {resolveEnvironment,characterImage,actorPoses,visualCatalog,resolveVisualCatalog,isCustomTile,interiorMembers,type TileFamilies,type CharacterPack,type ObjectSprite,type PixelArtPack,type VisualAsset,type TileKind,type BuiltinTileKind,type VisualCatalogOverrides} from '@isometrico/world';
 export type ResourceKind='object'|'npc'|'player'|'tile'|'railing';
 export type ResourceEntry={id:string;kind:ResourceKind;name:string;image:string;custom:boolean;category?:VisualAsset['category'];frame?:[number,number,number,number]};
 export function resourceSearchText(value:string){return value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();}
@@ -26,6 +26,24 @@ export const tileLabels:Record<BuiltinTileKind,string>={office:'Oficina',grass:'
 /** One resolved palette for the workshop and map editor, including cropped custom tiles. */
 export function workshopTiles(pack:PixelArtPack){
  return (Object.keys(pack.tiles) as TileKind[]).map(id=>({id,label:pack.tileNames?.[id]??(isCustomTile(id)?id:tileLabels[id]),image:pack.tiles[id],frame:pack.tileFrames?.[id]}));
+}
+/** Material selectors show one interior per family; the workshop keeps every piece. */
+export function baseTileChoices<T extends {id:string}>(entries:T[],families:TileFamilies={}):Array<T&{familyId:string|undefined}>{
+ const byId=new Map(entries.map(e=>[e.id,e])),membership=new Map(Object.entries(families).flatMap(([id,f])=>Object.keys(f.tiles).map(tile=>[tile,id] as const))),seen=new Set<string>();
+ return entries.flatMap<T&{familyId:string|undefined}>(entry=>{
+  const familyId=membership.get(entry.id);if(!familyId)return [{...entry,familyId:undefined}];
+  if(seen.has(familyId))return [];seen.add(familyId);
+  const primary=interiorMembers(families[familyId]).map(m=>byId.get(m.id)).find((entry):entry is T=>entry!==undefined);
+  return primary?[{...primary,familyId}]:[];
+ });
+}
+export function mapFloorChoices(pack:PixelArtPack){
+ return baseTileChoices(workshopTiles(pack),pack.tileFamilies).map(tile=>({...tile,label:tile.familyId?pack.tileFamilies![tile.familyId].name:tile.label,value:tile.familyId?`terrain:${tile.familyId}` as const:tile.id}));
+}
+/** Existing manually placed variants display their material without rewriting the map. */
+export function mapFloorValue(pack:PixelArtPack,tile:TileKind|'void',terrain?:string){
+ const familyId=terrain??Object.keys(pack.tileFamilies??{}).find(id=>Object.hasOwn(pack.tileFamilies![id].tiles,tile));
+ return familyId?`terrain:${familyId}`:tile;
 }
 export function standaloneCharacter(character:CharacterPack,variant='default'):CharacterPack{
  const c:CharacterPack=JSON.parse(JSON.stringify(character));delete c.variants;
