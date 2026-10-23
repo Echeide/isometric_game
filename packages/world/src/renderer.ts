@@ -4,14 +4,15 @@ import {prepareWallOcclusion,wallOccludesActor} from './wall-occlusion';
 import 'pixi.js/prepare';
 import {advanceRoute} from './movement';
 import {resolveEnvironment} from './environments';
-import {terrainCellAt,topContains,levelAt,stairAt,stairDirections,STAIR_STEPS,LEVEL_HEIGHT,projectSurface,surfaceHeight,wallHeight} from './elevation';
+import {terrainCellAt,topContains,levelAt,stairAt,STAIR_STEPS,LEVEL_HEIGHT,projectSurface,surfaceHeight,wallHeight} from './elevation';
+import {stairTread} from './stair-texture';
 import {exitFacing} from './exits';
 import {alphaHitArea,footprintHitArea} from './alpha-hit';
 import {depthOrder,movingDepthIndex,type DepthItem} from './depth';
 import {sceneWalls,wallCells,hasTile,wallEndExposed} from './walls';
 import type {Wall} from './types';
 import { cameraGestures } from './camera-gestures';
-import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Text, Sprite, Polygon, Rectangle, Texture, Matrix } from 'pixi.js';
 import {railingArt,railingGroup} from './railing-art';
 import {decorationPosition,decorationBounds} from './decorations';
 import { loadPixelArt, pixelObject, pixelNpc, npcClip, directionalNpc, type LoadedPixelArt, type PixelArtPack } from './pixelart';
@@ -107,11 +108,13 @@ export async function createWorld(host: HTMLElement, scene: WorldScene, onArrive
       const stair=stairAt(scene,{x,y});
       if(stair){
         if(textureTile)textureTile.visible=false;
-        const d=stairDirections[stair];
+        const texture=tileTextures.get(kind)!;
         for(let step=0;step<STAIR_STEPS;step++){
-          const along=(d.x+d.y)>0?step:STAIR_STEPS-1-step;
-          const sx=x+(d.x?step/STAIR_STEPS:0),sy=y+(d.y?step/STAIR_STEPS:0),h=z+(along+1)*LEVEL_HEIGHT/STAIR_STEPS;
-          box(tile,sx,sy,d.x?1/STAIR_STEPS:1,d.y?1/STAIR_STEPS:1,h-minimumHeight,scene.baseTile!==undefined||scene.cutColor!==undefined?groundPalette:{top:0xe0d9c1,left:0xa69d85,right:0x8f8876},h);
+          const tread=stairTread({x,y},stair,z/LEVEL_HEIGHT,step);
+          box(tile,tread.x,tread.y,tread.width,tread.depth,tread.height-minimumHeight,scene.baseTile!==undefined||scene.cutColor!==undefined?groundPalette:{top:0xe0d9c1,left:0xa69d85,right:0x8f8876},tread.height);
+          // Keep the full tile's UVs; fitting a fresh diamond to each step would
+          // repeat all four curbs on every tread and break the edge connections.
+          tile.poly(tread.top).fill({texture,textureSpace:'global',matrix:new Matrix(64/texture.width,0,0,32/texture.height,tread.textureX,tread.textureY)});
         }
       }
       tile.hitArea={contains:(px:number,py:number)=>topContains(scene,{x,y},{x:px,y:py})};
